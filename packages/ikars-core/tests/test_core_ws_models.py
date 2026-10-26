@@ -157,7 +157,7 @@ def test_a_known_type_whose_message_is_not_an_object_is_kept_with_an_error() -> 
 
 
 def test_an_unmodelled_type_passes_through_untouched_without_an_error() -> None:
-    result = parse_frame(frame("orderbook_delta", {"market_ticker": "M"}, sid=9, seq=3))
+    result = parse_frame(frame("communication", {"market_ticker": "M"}, sid=9, seq=3))
     assert result.payload is None and result.error is None and result.unknown == ()
     assert (result.sid, result.seq) == (9, 3)
 
