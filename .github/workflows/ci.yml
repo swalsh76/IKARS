@@ -1,0 +1,115 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # a newer push supersedes a pull request's run; every merge commit on main keeps its own result
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  UV_VERSION: "0.13.4"
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e"
+
+jobs:
+  python:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync
+        run: uv sync --locked
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Types
+        run: uv run mypy packages tools conftest.py
+
+      - name: Test and coverage
+        run: uv run pytest --cov --cov-report=term
+
+      - name: Known vulnerabilities
+        run: uv run pip-audit --skip-editable --progress-spinner off
+
+  dotnet:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      # Locked mode and NuGetAudit (every package, transitive included; a finding is an error through
+      # TreatWarningsAsErrors) are both set in Directory.Build.props, so a plain restore enforces them.
+      - name: Restore
+        run: dotnet restore Ikars.slnx
+
+      - name: Format check
+        run: dotnet format Ikars.slnx --verify-no-changes --no-restore
+
+      - name: Build
+        run: dotnet build Ikars.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: >
+          dotnet test --solution Ikars.slnx --configuration Release --no-build
+          --coverlet --coverlet-output-format cobertura
+          --report-trx --results-directory TestResults
+
+      - name: Coverage gate
+        shell: pwsh
+        run: ./tools/ci/check-coverage.ps1 -Path TestResults -MinLinePercent 90
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results
+          path: TestResults/
+          if-no-files-found: warn
+
+  hygiene:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks scans the whole history
+
+      - name: Data guard
+        run: python tools/ci/data_guard.py
+
+      - name: Install gitleaks (pinned release, checksum verified)
+        shell: pwsh
+        run: |
+          $zip = "gitleaks_${env:GITLEAKS_VERSION}_windows_x64.zip"
+          Invoke-WebRequest "https://github.com/gitleaks/gitleaks/releases/download/v${env:GITLEAKS_VERSION}/$zip" -OutFile $zip
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:GITLEAKS_SHA256) { throw "gitleaks checksum mismatch: $actual" }
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\gitleaks"
+          "$env:RUNNER_TEMP\gitleaks" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Secret scan (whole history)
+        run: gitleaks git --redact --no-banner --exit-code 1 .

@@ -194,3 +194,130 @@ One section per milestone and one subsection per slice, each with **Built**, **V
 2. .NET naming: the `Ikars.*` prefix and `.slnx`. Recommended: yes.
 3. Repository description. Proposed: "IKARS: real-time Kalshi trade recommendations from news, data and live order
    books, for Windows 11. Not affiliated with Kalshi."
+
+#### 1.1 progress (2026-10-26): built and verified locally; GitHub steps waiting for the owner's go-ahead
+
+**Built.**
+- Commits:
+  - `main` holds the M0 docs (`8f0bcca`);
+  - branch `m1/1-repo-ci` holds the slice (`e0374c6`) and its review fixes (`d7cbc53`).
+- Repository-local identity: Steve Walsh and the GitHub no-reply address.
+- gitleaks 8.30.1 installed with `winget`.
+- The pre-commit hook is enabled through `core.hooksPath tools/hooks`.
+
+**Verified locally.**
+- Python 3.13.16 (uv-managed):
+  - ruff format and lint clean; mypy strict clean;
+  - pytest 5 passed, 100% coverage;
+  - pip-audit finds no known vulnerabilities.
+- .NET 10.0.402:
+  - locked restore;
+  - `dotnet format` clean;
+  - build with 0 warnings;
+  - 1 test passed; the coverage gate passes (`Ikars.Core` 100%);
+  - no vulnerable packages.
+- Hygiene: the data guard passes (39 tracked files); gitleaks finds nothing in the history or the staged changes.
+- **Planted failures, all caught and then removed** (none committed):
+  - a fake private key, refused by the hook (gitleaks);
+  - a force-added `.parquet`, refused by the data guard;
+  - a Python failing test, format error and type error;
+  - a C# failing test and format error.
+- **Review fix checked:** a 1 MB file staged and then shrunk on disk is still refused, and the guard gives the same
+  result from a subfolder.
+
+**Review (R14).**
+- The M0 commit is docs only. A scan for real host names, the share path and local paths found nothing; gitleaks
+  is clean.
+- The slice commit had `/code-review` run on it at low effort. Two findings, both **fixed** in `d7cbc53`:
+  1. `check-coverage.ps1`, inherited from KalTerm3, judged an assembly with no instrumented lines as 0% and failed
+     CI. It now skips the assembly and lists it.
+  2. `data_guard.py` read sizes from the working tree, so a large staged file could pass once changed on disk, and
+     it only worked from the repository root. It now reads sizes from the index (`git ls-files --format`) at the
+     repository's top level.
+- The fix commit was reviewed by hand: a small diff, and the behaviour was proved by the staged-then-shrunk test.
+
+**Kept, changed and why.**
+- *Kept:*
+  - SPARQ's ruff, mypy, pytest and coverage settings, and its `.gitignore`, extended for databases, ledger exports
+    and logs;
+  - KalTerm3's `Directory.Build.props`, the central package versions, the test project shape and the coverage
+    script.
+- *Changed:*
+  - LF instead of KalTerm3's CRLF;
+  - NuGet lock files restored in locked mode (KalTerm3 had none);
+  - Python 3.13 floor (SPARQ allows 3.12);
+  - the opt-in test markers live in one root `conftest.py` instead of per package;
+  - gitleaks and the data guard are new.
+
+**Problems and fixes.**
+- `gitleaks dir .` reported 200 findings, all inside the ignored `.venv`: third-party package test data. The hook
+  and CI scan only what git tracks, so the documented command is `gitleaks git`.
+- Files written by Python on Windows get CRLF in the working tree. git normalises them to LF on commit
+  (`.gitattributes`), so this only matters for exact-text edits.
+
+#### 1.1 GitHub (2026-10-26, owner's go-ahead)
+
+**Done.**
+- Created public `swalsh76/IKARS` with the approved description; wiki, projects and discussions off; branches
+  deleted after merge.
+- Secret scanning **with push protection**, Dependabot alerts and security fixes, and private vulnerability
+  reporting turned on.
+- Workflow token read-only by default; workflows from fork pull requests need approval for all outside
+  contributors.
+- `main` pushed (`8f0bcca`).
+- Ruleset **"main protection"** (id 25919620), active with no bypass:
+  - deletion and non-fast-forward blocked;
+  - a pull request is required (no review count: a sole owner cannot approve their own pull request);
+  - the checks `python`, `dotnet` and `hygiene` must pass (GitHub Actions).
+- PR #1 opened from `m1/1-repo-ci`.
+
+**Verified.**
+- **A direct push to `main` was refused:** `GH013: Repository rule violations`. Remote `main` stayed at `8f0bcca`.
+- CI on PR #1, first run, all green on `windows-latest`:
+  - `python` 39 s;
+  - `dotnet` 1 m 0 s;
+  - `hygiene` 15 s.
+
+**Review (R14), per merge.**
+
+`/code-review` at medium effort over the branch against `main` found 10 issues. All were checked against the code
+and all **fixed** in `f9db0d9`:
+
+1. `KALSHI_INTEGRATION=0` turned live tests *on* (any non-empty value counted), and the variable is shared with
+   KAPS and SPARQ. Now IKARS's own `IKARS_LIVE`, on only for exactly `1`; `IKARS_LOCAL_DATA` must name an
+   existing folder.
+2. `marker in item.keywords` also matched folder, module and test names. Now `get_closest_marker`. Both behaviours
+   are tested with `pytester` (`tools/ci/test_optin.py`, 9 cases).
+3. The data guard missed `.sqlite3`, `-wal`/`-shm`/`-journal`, `.duckdb.wal`, `.feather`, `.p12` and the ledger's
+   exports. All are now refused (every suffix of a name is checked; the exports match `IKARS-<year>-*`), and
+   `.gitignore` is widened to match.
+4. The coverage merge keyed lines on each report's relative filename, so different `<sources>` roots could
+   double-count. Lines are now keyed on full paths; a duplicated report was shown to leave the totals unchanged.
+5. An unmeasured or uninstrumented production assembly passed the gate. Every `src` project must now be measured,
+   or be listed in `-AllowEmpty`; a required project missing from the reports was shown to fail (exit 1).
+6. The hook was committed as 100644, so other platforms would ignore it. Now 100755.
+7. mypy did not check `tools/` or `conftest.py`. It does now, in CI and in the dev commands.
+8. A newer push to `main` cancelled the previous merge's CI. Cancellation now applies to pull requests only.
+9. The hand-made vulnerable-package step duplicated NuGetAudit with a fragile regex. NuGetAudit is now set in
+   `Directory.Build.props` (all packages, level low, errors through warnings-as-errors). Proved in a scratch copy:
+   System.Text.Json 8.0.0 failed the restore with **NU1903**.
+10. No caching on the Windows runners. Now `astral-sh/setup-uv` v10.3.0 (pinned by SHA; a release over two weeks
+    old) with its cache, and `setup-dotnet`'s NuGet cache keyed on the lock files.
+
+Per-commit `/code-review` (low) on `f9db0d9`:
+- "Locked mode no longer set": **false positive**. `RestoreLockedMode` is in `Directory.Build.props` under
+  `GITHUB_ACTIONS`; it was outside the reviewed hunk.
+- A report with no `<sources>` crashed the coverage gate: **fixed**, and tested with a hand-made report.
+- The ledger-export rule blocked any `ikars-*.csv/.pdf/.txt`: **fixed**. It now matches only `IKARS-<year>-*`, and
+  `ikars-notes.csv` is tested as allowed.
+
+**Problems and fixes.** A PowerShell test command was blocked by the assistant's safety check (a `Remove-Item` on a
+temp wildcard was misread); nothing had run. The vulnerable-package test was redone in a scratch copy of the .NET
+files instead, which left the working tree untouched.
+
+**CI after the fixes** (`f9db0d9`), all green:
+- `python` 36 s
+- `dotnet` 1 m 16 s
+- `hygiene` 14 s
+
+The caches fill on this first run, so later runs should be quicker. **Ready for the owner to merge PR #1.**

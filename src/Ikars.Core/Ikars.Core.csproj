@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Ikars.Core</RootNamespace>
+  </PropertyGroup>
+</Project>

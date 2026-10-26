@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ikars-engine"
+version = "0.0.0"
+description = "The IKARS engine: feeds, plugins, signals, recommendations and the ledger"
+license = "MIT"
+license-files = ["../../LICENSE"]
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ikars_engine"]

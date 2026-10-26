@@ -1,0 +1,6 @@
+#!/bin/sh
+# IKARS pre-commit hook (enable once per clone: git config core.hooksPath tools/hooks).
+# Stops a secret or a data file before it is committed; CI runs the same checks over the whole history.
+set -e
+gitleaks git --pre-commit --staged --redact --no-banner
+python tools/ci/data_guard.py

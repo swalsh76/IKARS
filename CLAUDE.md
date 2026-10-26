@@ -17,8 +17,8 @@ P&L net of fees on entry and exit.
 
 ## Status
 
-**M0 is approved (D1 to D21, 2026-10-26); the scope is frozen.** The M1 slice list (PLAN §4.1) awaits
-the owner. No code starts before those are approved and M1.1's slice plan is approved.
+**M0 is approved (D1 to D21, 2026-10-26); the scope is frozen. M1 is approved and in progress (slice M1.1).** Each
+slice still needs its own approved plan before code.
 
 ### Resume point (keep this current at every step that changes it)
 
@@ -89,8 +89,12 @@ the owner. No code starts before those are approved and M1.1's slice plan is app
 - **IKARS's own read-only Kalshi key is set up (2026-10-26):** User environment variables `IKARS_KALSHI_KEY_ID` and
   `IKARS_KALSHI_PRIVATE_KEY_PATH` (separate from KAPS/SPARQ's `KALSHI_*`). Never print or read the id, the path or the
   file; check with `Test-Path` only; load into a single command's process. First use: M1.2's live tests.
-- **M1 slice list and gates approved (2026-10-26).** **M1.1 (repository, CI and security) in progress** (plan approved, BUILD-LOG 1.1; gitleaks local hook, `Ikars.*` + `.slnx`, the proposed repo description).
-- No git repository yet; it is created in M1.1 once that slice plan is approved.
+- **M1 slice list and gates approved (2026-10-26).** **M1.1 built and verified locally** (BUILD-LOG 1.1): `main` has the M0 docs;
+  branch `m1/1-repo-ci` has the slice, its review fixes and the log. **GitHub steps approved and under way (2026-10-26):** public
+  `swalsh76/IKARS` created; security settings on; `main` pushed; ruleset "main protection" active (PR required,
+  checks `python`, `dotnet`, `hygiene`, no force-push or deletion, no bypass). Branch pushed; **PR #1 open and green**
+  (after a medium review with 10 fixes); a direct push to `main` was refused (GH013). **Waiting for the owner to
+  merge PR #1** (never the assistant). Next after the merge: the M1.2 slice plan (`ikars-core` from `sparq_core`).
 
 ## How the owner wants the work run
 
@@ -131,4 +135,25 @@ the owner. No code starts before those are approved and M1.1's slice plan is app
 
 ## Dev commands
 
-None yet (M1).
+`uv` runs as `python -m uv` on this workstation. Python is 3.13, from `.python-version`, managed by `uv`.
+
+```powershell
+python -m uv sync
+python -m uv run ruff format --check .
+python -m uv run ruff check .
+python -m uv run mypy packages tools conftest.py
+python -m uv run pytest --cov
+python -m uv run pip-audit --skip-editable
+
+dotnet restore Ikars.slnx
+dotnet format Ikars.slnx --verify-no-changes --no-restore
+dotnet build Ikars.slnx -c Release --no-restore
+dotnet test --solution Ikars.slnx -c Release --no-build --coverlet --coverlet-output-format cobertura --report-trx --results-directory TestResults
+./tools/ci/check-coverage.ps1 -Path TestResults -MinLinePercent 90
+
+python tools/ci/data_guard.py          # no data, databases or keys tracked
+gitleaks git --redact --no-banner .    # secrets in the whole history
+```
+
+**Pre-commit hook.** Enable it once per clone with `git config core.hooksPath tools/hooks`. It runs gitleaks on the
+staged changes and the data guard. Test-data rules are in [docs/TESTING.md](docs/TESTING.md).
