@@ -23,7 +23,7 @@ def frame(kind: str, msg: dict[str, Any], seq: int = 1) -> str:
     return json.dumps({"type": kind, "sid": 2, "seq": seq, "sending_ts_ms": 1, "msg": msg})
 
 
-def snapshot(clock: int = 100, **sides: Any) -> OrderbookSnapshotMsg:
+def snapshot(clock: int | None = 100, **sides: Any) -> OrderbookSnapshotMsg:
     body = {"market_ticker": M, "market_id": "id", "clock": clock, **sides}
     payload = parse_frame(frame(ORDERBOOK_SNAPSHOT, body)).payload
     assert isinstance(payload, OrderbookSnapshotMsg)
@@ -170,3 +170,43 @@ def test_valid_deltas_leave_the_book_equal_to_their_sum(
     for side in ("yes", "no"):
         want = sorted(((p, n) for (s, p), n in expected.items() if s == side and n), reverse=True)
         assert book.bids(side) == want
+
+
+# --- as production sent them on 2026-10-26: no clock on either message ---------------------------
+
+PRODUCTION_SNAPSHOT = {"market_ticker": M, "market_id": "id", **BOOK}
+PRODUCTION_DELTA = {
+    "market_ticker": M,
+    "market_id": "id",
+    "price_dollars": "0.6800",
+    "delta_fp": "-10.00",
+    "side": "no",
+    "ts": "2026-01-01T00:00:00.000Z",
+    "ts_ms": 1767225600000,
+}
+
+
+def test_book_messages_without_a_clock_parse() -> None:
+    s = parse_frame(frame(ORDERBOOK_SNAPSHOT, PRODUCTION_SNAPSHOT)).payload
+    d = parse_frame(frame(ORDERBOOK_DELTA, PRODUCTION_DELTA, seq=2)).payload
+    assert isinstance(s, OrderbookSnapshotMsg) and s.clock is None
+    assert isinstance(d, OrderbookDeltaMsg) and d.clock is None and d.delta_e2 == -1_000
+
+
+def test_without_clocks_every_delta_after_the_snapshot_applies() -> None:
+    book = OrderBook(M)
+    s = parse_frame(frame(ORDERBOOK_SNAPSHOT, PRODUCTION_SNAPSHOT)).payload
+    assert isinstance(s, OrderbookSnapshotMsg)
+    assert book.apply_snapshot(s) is Applied.APPLIED and book.ready
+    raise_no = {**PRODUCTION_DELTA, "price_dollars": "0.5400", "delta_fp": "5.00"}
+    d = parse_frame(frame(ORDERBOOK_DELTA, raise_no, seq=2)).payload
+    assert isinstance(d, OrderbookDeltaMsg)
+    assert book.apply_delta(d) is Applied.APPLIED
+    assert book.best_bid("no") == (540_000, 2_500) and book.clock is None
+
+
+def test_a_delta_with_a_clock_after_a_snapshot_without_one_applies() -> None:
+    book = OrderBook(M)
+    book.apply_snapshot(snapshot(clock=None, **BOOK))
+    assert book.apply_delta(delta("0.3000", "1.00", clock=5)) is Applied.APPLIED
+    assert book.clock == 5

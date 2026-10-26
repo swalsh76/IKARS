@@ -151,11 +151,14 @@ BookSide = Annotated[tuple[Level, ...], BeforeValidator(_levels)]
 
 class OrderbookSnapshotMsg(WsModel):
     """The whole book of one market: every change with a clock at or below ``clock`` is included.
-    Each side is that side's **bids** (a YES ask is $1 minus the best NO bid)."""
+    Each side is that side's **bids** (a YES ask is $1 minus the best NO bid).
+
+    ``clock`` is in Kalshi's reference, but production frames did not carry it on 2026-10-26 (the
+    changelog dates it 2026-10-29), so it is optional on both book messages."""
 
     market_ticker: str
     market_id: Text = None
-    clock: int = 0
+    clock: int | None = None
     yes: BookSide = Field(default=(), validation_alias="yes_dollars_fp")
     no: BookSide = Field(default=(), validation_alias="no_dollars_fp")
 
@@ -165,7 +168,7 @@ class OrderbookDeltaMsg(WsModel):
 
     market_ticker: str
     market_id: Text = None
-    clock: int
+    clock: int | None = None  # absent in production on 2026-10-26 (see the snapshot)
     price_e6: RequiredDollarsE6 = Field(validation_alias="price_dollars")
     delta_e2: RequiredCountE2 = Field(validation_alias="delta_fp")  # signed
     side: Literal["yes", "no"]

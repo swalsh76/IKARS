@@ -5,8 +5,10 @@ follow it. Pure and synchronous: the feed, the subscription and any resync are t
 Each side holds that side's **bids**. A YES ask is $1 minus the best NO bid, and a NO ask is $1
 minus the best YES bid. Prices are dollar millionths and sizes contract hundredths, as everywhere.
 
-A delta is applied only after a snapshot and only if its ``clock`` is newer than the snapshot's (a
-snapshot includes every change up to its own clock; several deltas may share one clock). A level
+A delta is applied only after a snapshot. When both carry a ``clock``, a delta at or below the
+snapshot's clock is already in it and is skipped (several deltas may share one clock). Production
+frames had no clock on 2026-10-26; without one, order rests on the subscription's ``seq``, which the
+feed checks for gaps (a gap there must also be met with a new snapshot). A level
 that would go negative means a message was missed: the book is then **broken** until the next
 snapshot, and the caller should ask for one (``update_subscription`` with ``get_snapshot``). A
 crossed book (the best YES bid plus the best NO bid above $1) is reported, not corrected.
@@ -33,13 +35,14 @@ class OrderBook:
     yes: dict[int, int] = field(default_factory=dict)  # price_e6 -> count_e2
     no: dict[int, int] = field(default_factory=dict)
     snapshot_clock: int | None = None
-    clock: int | None = None  # the newest clock applied
+    clock: int | None = None  # the newest clock applied, when messages carry one
+    has_snapshot: bool = False
     broken: bool = False
 
     @property
     def ready(self) -> bool:
         """A snapshot has been applied and nothing since has broken the book."""
-        return self.snapshot_clock is not None and not self.broken
+        return self.has_snapshot and not self.broken
 
     def apply_snapshot(self, msg: OrderbookSnapshotMsg) -> Applied:
         if msg.market_ticker != self.market_ticker:
@@ -47,17 +50,19 @@ class OrderBook:
         self.yes = _side(msg.yes)
         self.no = _side(msg.no)
         self.snapshot_clock = self.clock = msg.clock
+        self.has_snapshot = True
         self.broken = False
         return Applied.APPLIED
 
     def apply_delta(self, msg: OrderbookDeltaMsg) -> Applied:
         if msg.market_ticker != self.market_ticker:
             return Applied.WRONG_MARKET
-        if self.snapshot_clock is None:
+        if not self.has_snapshot:
             return Applied.NO_SNAPSHOT
         if self.broken:
             return Applied.BROKEN
-        if msg.clock <= self.snapshot_clock:
+        before = self.snapshot_clock
+        if msg.clock is not None and before is not None and msg.clock <= before:
             return Applied.STALE
         levels = self.yes if msg.side == "yes" else self.no
         count = levels.get(msg.price_e6, 0) + msg.delta_e2
@@ -68,7 +73,8 @@ class OrderBook:
             levels.pop(msg.price_e6, None)
         else:
             levels[msg.price_e6] = count
-        self.clock = max(self.clock or 0, msg.clock)
+        if msg.clock is not None:
+            self.clock = max(self.clock or 0, msg.clock)
         return Applied.APPLIED
 
     def bids(self, side: str) -> list[Level]:
