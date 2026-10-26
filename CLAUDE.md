@@ -89,7 +89,10 @@ the owner. No code starts before those are approved and M1.1's slice plan is app
 - **IKARS's own read-only Kalshi key is set up (2026-10-26):** User environment variables `IKARS_KALSHI_KEY_ID` and
   `IKARS_KALSHI_PRIVATE_KEY_PATH` (separate from KAPS/SPARQ's `KALSHI_*`). Never print or read the id, the path or the
   file; check with `Test-Path` only; load into a single command's process. First use: M1.2's live tests.
-- **M1 slice list and gates approved (2026-10-26).** **M1.1 (repository, CI and security) in progress** (plan approved, BUILD-LOG 1.1; gitleaks local hook, `Ikars.*` + `.slnx`, the proposed repo description).
+- **M1 slice list and gates approved (2026-10-26).** **M1.1 built and verified locally** (BUILD-LOG 1.1): `main` has the M0 docs;
+  branch `m1/1-repo-ci` has the slice, its review fixes and the log. **Next, waiting for the owner's go-ahead:** create
+  public `swalsh76/IKARS`, apply the repository settings and the `main` ruleset, push `main` and the branch, open PR #1,
+  watch CI go green, prove the ruleset blocks a direct push; then the owner merges.
 - No git repository yet; it is created in M1.1 once that slice plan is approved.
 
 ## How the owner wants the work run
