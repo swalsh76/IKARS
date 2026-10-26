@@ -89,14 +89,11 @@ slice still needs its own approved plan before code.
 - **IKARS's own read-only Kalshi key is set up (2026-10-26):** User environment variables `IKARS_KALSHI_KEY_ID` and
   `IKARS_KALSHI_PRIVATE_KEY_PATH` (separate from KAPS/SPARQ's `KALSHI_*`). Never print or read the id, the path or the
   file; check with `Test-Path` only; load into a single command's process. First use: M1.2's live tests.
-- **M1 slice list and gates approved (2026-10-26).** **M1.1 built and verified locally** (BUILD-LOG 1.1): `main` has the M0 docs;
-  branch `m1/1-repo-ci` has the slice, its review fixes and the log. **GitHub steps approved and under way (2026-10-26):** public
-  `swalsh76/IKARS` created; security settings on; `main` pushed; ruleset "main protection" active (PR required,
-  checks `python`, `dotnet`, `hygiene`, no force-push or deletion, no bypass). Branch pushed; **PR #1 open and green**
-  (after a medium review with 10 fixes); a direct push to `main` was refused (GH013). **Waiting for the owner to
-  merge PR #1** (the owner asked the assistant to merge on 2026-10-26; the permission system blocked `gh pr merge`,
-  so the owner merges in the web UI or allows it). **M1.2 plan proposed** (BUILD-LOG 1.2, local branch `m1/2-core`,
-  not pushed); three open questions await the owner.
+- **M1 slice list and gates approved (2026-10-26).** **M1.1 done:** PR #1 merged as `2f19222`, CI green on `main`
+  (BUILD-LOG 1.1). **M1.2 (`ikars-core`) in progress** on `m1/2-core`. The plan is approved (BUILD-LOG 1.2):
+  - seed from SPARQ `s1/2q-cleanup` at `c017add`;
+  - the WebSocket limit is learned passively;
+  - the owner fixes the key ACL if needed.
 
 ## How the owner wants the work run
 

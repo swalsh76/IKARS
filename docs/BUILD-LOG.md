@@ -322,7 +322,7 @@ files instead, which left the working tree untouched.
 
 The caches fill on this first run, so later runs should be quicker. **Ready for the owner to merge PR #1.**
 
-### 1.2 `ikars-core` (plan PROPOSED 2026-10-26; branch `m1/2-core`)
+### 1.2 `ikars-core` (plan APPROVED 2026-10-26; branch `m1/2-core`)
 
 **Builds.**
 
@@ -396,3 +396,10 @@ codes):
    would be close to the benchmarking the Developer Agreement forbids.
 3. If the key file's ACL lets other users read it, the owner runs the `icacls` command the assistant gives; the
    assistant never changes the key file. *Recommended: yes.*
+
+**Owner's answers (2026-10-26):**
+1. Seed from SPARQ's `s1/2q-cleanup` at **`c017add`**.
+2. The WebSocket subscription limit is learned passively in M1.4b, never probed.
+3. If the key file's ACL is too open, the owner runs the `icacls` command; the assistant never changes it.
+
+PR #1 (M1.1) was merged by the owner as `2f19222`, and CI on `main` is green.
