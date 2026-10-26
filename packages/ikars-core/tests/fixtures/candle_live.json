@@ -1,0 +1,25 @@
+{
+ "end_period_ts": 1767268800,
+ "open_interest_fp": "3874.70",
+ "volume_fp": "4589.45",
+ "price": {
+  "open_dollars": "0.0300",
+  "high_dollars": "0.7500",
+  "low_dollars": "0.0100",
+  "close_dollars": "0.0100",
+  "mean_dollars": "0.0300",
+  "previous_dollars": "0.0300"
+ },
+ "yes_bid": {
+  "open_dollars": "0.0200",
+  "high_dollars": "0.1500",
+  "low_dollars": "0.0000",
+  "close_dollars": "0.0000"
+ },
+ "yes_ask": {
+  "open_dollars": "0.0300",
+  "high_dollars": "0.7500",
+  "low_dollars": "0.0100",
+  "close_dollars": "0.0100"
+ }
+}

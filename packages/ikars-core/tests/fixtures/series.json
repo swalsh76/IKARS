@@ -1,0 +1,14 @@
+{
+ "ticker": "KXDEMO",
+ "title": "Demo series",
+ "category": "Crypto",
+ "frequency": "daily",
+ "tags": [
+  "Crypto",
+  "Demo"
+ ],
+ "exchange_index": 2,
+ "fee_type": "quadratic_with_maker_fees",
+ "fee_multiplier": 0.5,
+ "contract_url": "https://example.invalid/demo.pdf"
+}

@@ -140,7 +140,7 @@ slice still needs its own approved plan before code.
 python -m uv sync
 python -m uv run ruff format --check .
 python -m uv run ruff check .
-python -m uv run mypy packages tools conftest.py
+python -m uv run mypy packages tools; python -m uv run mypy conftest.py   # two runs: both define a module named conftest
 python -m uv run pytest --cov
 python -m uv run pip-audit --skip-editable
 
