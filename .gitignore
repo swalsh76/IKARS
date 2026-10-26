@@ -1,0 +1,49 @@
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# .NET
+bin/
+obj/
+TestResults/
+.vs/
+*.user
+
+# market data, recordings, databases, ledger exports and logs: never commit
+data/
+logs/
+*.parquet
+*.duckdb
+*.sqlite
+*.sqlite-*
+*.db
+*.arrow
+*.jsonl
+IKARS-*.pdf
+
+# secrets and local config: never commit
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+secrets/
+*.bak
+
+# editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
