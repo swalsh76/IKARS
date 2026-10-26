@@ -106,20 +106,52 @@ def _rows[M: Model](model: type[M], payload: Mapping[str, Any], key: str, where:
     return [_parse(model, row, where) for row in rows]
 
 
-class MarketData:
+class Reader:
+    """Typed reads over a GET-only client: one object, or pages of typed rows. Shared by the market
+    data and the account readers."""
+
     def __init__(self, client: KalshiPublicClient) -> None:
         self._client = client
 
-    # --- single reads -----------------------------------------------------------------------
-
-    async def _object[M: Model](self, path: str, key: str | None, model: type[M]) -> M:
-        payload = await self._client.get_json(path)
+    async def _object[M: Model](
+        self, path: str, key: str | None, model: type[M], params: Mapping[str, Any] | None = None
+    ) -> M:
+        payload = await self._client.get_json(path, params)
         body = payload if key is None else payload.get(key)
         if not isinstance(body, dict):
             raise KalshiResponseError(
                 f"GET {path}: expected an object" + (f" under {key!r}" if key else "")
             )
         return _parse(model, body, f"GET {path}")
+
+    async def _typed_pages[M: Model](
+        self,
+        path: str,
+        items_key: str,
+        model: type[M],
+        params: Mapping[str, Any],
+        cursor: str | None,
+        tolerant: bool = False,
+    ) -> AsyncIterator[TypedPage[M]]:
+        """Pages of typed rows. A row that cannot be read is an error, unless ``tolerant``: then it
+        is set aside, with the reason, in the page's ``invalid`` list and the rest are returned."""
+        async for page in self._client.pages(path, items_key, params, cursor=cursor):
+            items: list[M] = []
+            raws: list[dict[str, Any]] = []
+            invalid: list[tuple[dict[str, Any], str]] = []
+            for row in page.items:
+                try:
+                    items.append(_parse(model, row, f"GET {path}"))
+                    raws.append(row)
+                except KalshiResponseError as exc:
+                    if not tolerant:
+                        raise
+                    invalid.append((row, str(exc)))
+            yield TypedPage(items, raws, page.request_cursor, page.next_cursor, invalid)
+
+
+class MarketData(Reader):
+    # --- single reads -----------------------------------------------------------------------
 
     async def exchange_status(self) -> ExchangeStatus:
         return await self._object("/exchange/status", None, ExchangeStatus)
@@ -161,31 +193,6 @@ class MarketData:
         return _rows(SeriesFeeChange, payload, "series_fee_change_arr", "GET /series/fee_changes")
 
     # --- listings that page -----------------------------------------------------------------
-
-    async def _typed_pages[M: Model](
-        self,
-        path: str,
-        items_key: str,
-        model: type[M],
-        params: Mapping[str, Any],
-        cursor: str | None,
-        tolerant: bool = False,
-    ) -> AsyncIterator[TypedPage[M]]:
-        """Pages of typed rows. A row that cannot be read is an error, unless ``tolerant``: then it
-        is set aside, with the reason, in the page's ``invalid`` list and the rest are returned."""
-        async for page in self._client.pages(path, items_key, params, cursor=cursor):
-            items: list[M] = []
-            raws: list[dict[str, Any]] = []
-            invalid: list[tuple[dict[str, Any], str]] = []
-            for row in page.items:
-                try:
-                    items.append(_parse(model, row, f"GET {path}"))
-                    raws.append(row)
-                except KalshiResponseError as exc:
-                    if not tolerant:
-                        raise
-                    invalid.append((row, str(exc)))
-            yield TypedPage(items, raws, page.request_cursor, page.next_cursor, invalid)
 
     def historical_markets(
         self,
