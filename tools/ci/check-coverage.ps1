@@ -55,8 +55,9 @@ $failed = $false
 foreach ($name in ($assemblies.Keys | Sort-Object)) {
     $lines = $assemblies[$name]
     $total = $lines.Count
+    if ($total -eq 0) { 'skip {0,-22} no instrumented lines' -f $name; continue }   # nothing to cover is not 0% covered
     $covered = @($lines.Values | Where-Object { $_ -gt 0 }).Count
-    $percent = if ($total -eq 0) { 0.0 } else { 100.0 * $covered / $total }
+    $percent = 100.0 * $covered / $total
     $minimum = if ($AssemblyMinimum.ContainsKey($name)) { [double]$AssemblyMinimum[$name] } else { $MinLinePercent }
     $status = if ($percent -ge $minimum) { 'ok  ' } else { 'FAIL' }
     '{0} {1,-22} {2,6:N1}% lines ({3} of {4}), minimum {5:N1}%' -f $status, $name, $percent, $covered, $total, $minimum

@@ -9,7 +9,7 @@ data, databases, ledger exports or keys by extension, and nothing over the size 
 
 import subprocess
 import sys
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
 FORBIDDEN_SUFFIXES = frozenset(
     {".parquet", ".duckdb", ".sqlite", ".db", ".arrow", ".jsonl", ".pem", ".key", ".pfx"}
@@ -31,14 +31,30 @@ def problems(paths: list[str], size_of: dict[str, int]) -> list[str]:
     return found
 
 
-def main() -> int:
-    listing = subprocess.run(  # noqa: S603 - fixed arguments, no shell
-        ["git", "ls-files", "-z"],  # noqa: S607 - git is resolved from PATH on purpose
+def git(*args: str) -> str:
+    return subprocess.run(  # noqa: S603 - fixed arguments, no shell
+        ["git", *args],  # noqa: S607 - git is resolved from PATH on purpose
         capture_output=True,
         check=True,
     ).stdout.decode("utf-8")
-    paths = [p for p in listing.split("\0") if p]
-    size_of = {p: Path(p).stat().st_size for p in paths if Path(p).is_file()}
+
+
+def indexed_sizes() -> dict[str, int]:
+    """Every tracked path with its size **as staged in the index**, not as it is on disk, so a
+    staged file cannot pass by being changed in the working tree afterwards. Paths are relative to
+    the repository's top level, wherever the script is run from."""
+    top = git("rev-parse", "--show-toplevel").strip()
+    listing = git("-C", top, "ls-files", "-z", "--format=%(objectsize) %(path)")
+    sizes = {}
+    for entry in filter(None, listing.split("\0")):
+        size, _, path = entry.partition(" ")
+        sizes[path] = int(size) if size.isdigit() else 0  # a submodule has no object size
+    return sizes
+
+
+def main() -> int:
+    size_of = indexed_sizes()
+    paths = sorted(size_of)
     found = problems(paths, size_of)
     for line in found:
         print(f"data guard: {line}", file=sys.stderr)
