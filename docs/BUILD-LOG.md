@@ -403,3 +403,59 @@ codes):
 3. If the key file's ACL is too open, the owner runs the `icacls` command; the assistant never changes it.
 
 PR #1 (M1.1) was merged by the owner as `2f19222`, and CI on `main` is green.
+
+#### 1.2 progress (2026-10-26)
+
+**Built (commits on `m1/2-core`).**
+1. **Seed** (`344bb3c`): `sparq-core` at SPARQ `c017add`, copied with its tests, made-up fixtures and golden
+   vectors.
+   - Renamed throughout. IKARS's own variables: `IKARS_LIVE`, `IKARS_KALSHI_ENV`, `IKARS_KALSHI_KEY_ID`,
+     `IKARS_KALSHI_PRIVATE_KEY_PATH`; KAPS's `KALSHI_ENV` can no longer switch IKARS to production.
+   - The rate-limit ramp test is dropped.
+   - The package conftest's own opt-in hook is removed, since it used SPARQ's fragile `item.keywords` check.
+   - mypy runs in two CI steps (two modules named `conftest`).
+   - The 95% coverage gate for money and fee code is added to CI.
+   - 923 tests pass on Windows.
+2. **Key files private on Windows** (`046a396`): `winacl` reads the DACL through `ctypes` and refuses a key that
+   anyone but the owner (or OWNER RIGHTS), SYSTEM or Administrators can read, giving the `icacls` fix. SPARQ's
+   check was POSIX-only. **The owner's IKARS key file passes**; only its ACL was read.
+3. **Account reader** (`3d2b23d`):
+   - `AccountSigner` signs exactly the account reads D18 needs, plus the account limits.
+   - `KalshiAccountClient` is the one GET-only client class, preset for those reads, with every attempt signed
+     afresh.
+   - **A hole closed:** SPARQ's data signer and public client allowed every `/historical` route, but Kalshi's
+     reference shows `/historical/fills`, `/orders` and `/positions` are account data. Both now allow only cutoff,
+     markets and trades there.
+4. **Account models and reader** (`0f1769c`): balance, positions (live and archived), fills (live and historical),
+   settlements, deposits, withdrawals, instance transfers and limits. Kalshi's cent fields are converted to dollar
+   millionths. **Kalshi has no interest endpoint (D18 gap):** interest reaches the ledger only as a balance change
+   it cannot explain, so reconciliation must show it and the tax package must name it.
+5. **Order book** (`4d3801c`): the `orderbook_snapshot` and `orderbook_delta` models and a pure in-memory
+   `OrderBook` (stale-clock, no-snapshot and broken-on-negative rules; best ask is $1 minus the other side's best
+   bid; crossed books reported). SPARQ had no book code on any branch.
+6. **Native order options** (`8a0726f`): `docs/research/kalshi-order-options.md`. Every order is a priced limit on
+   the YES book. There is no market, stop, take-profit, trailing, OCO or bracket order. Order groups (cancel all
+   when a contracts cap is hit within a rolling 15 s), `expiration_time`, `cancel_order_on_pause`, `post_only` and
+   `reduce_only` are the native building blocks. Each D14 type is mapped onto them.
+7. **Key-id guard and live checks** (`96a5df4`): see Problems.
+
+**Verified.**
+- Locally: about 1,020 tests pass, coverage 97.5%, money and fees 100%; ruff, mypy and pip-audit clean.
+- **Live (public, no key; about 55 GETs), all passed:**
+  - trades `min_ts` inclusive and `max_ts` exclusive, live and historical;
+  - the largest page is 1,000 (1,001 gives HTTP 400);
+  - cursors are stable, with no duplicates, newest first;
+  - one 429 on each paged walk, retried.
+- **Live with the key: blocked** (see Problems).
+
+**Review (R14).** `/code-review` at low effort on every commit:
+- seed, ACL check, signers, account models, book: no findings;
+- key-id guard: one finding, **fixed** before the commit (the error reason was judged on the untrimmed value).
+
+**Problems and fixes.**
+- The first signed live run got **401 `INVALID_PARAMETER`** on every host. The stored `IKARS_KALSHI_KEY_ID`
+  contains quotes or spaces, so it is not the bare 36-character id; the key file itself loads. **The owner is
+  re-setting the variable.**
+- The signer now refuses such an id with a clear reason that never shows the value.
+- After the variable is fixed: run `test_live_account` and `test_live_ws` (including the order-book check), then
+  close the slice.
