@@ -7,19 +7,23 @@ handshake. It can never sign a POST, a DELETE, an order route or a portfolio rou
 positions and orders), so even a bug elsewhere cannot make the data key place an order or read an
 account value. The trading client, when it exists (K7), is a separate class with its own key.
 
-Every key file must be readable by its owner alone on a POSIX machine, not only the trading key.
+Every key file must be readable by its owner alone, not only the trading key: by file mode on a
+POSIX machine, by ACL on Windows (``winacl``).
 """
 
 import base64
 import os
 import re
 import stat
+import sys
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from ikars_core import winacl
 
 HEADER_KEY = "KALSHI-ACCESS-KEY"
 HEADER_TIMESTAMP = "KALSHI-ACCESS-TIMESTAMP"
@@ -67,18 +71,41 @@ def parse_private_key(data: bytes, source: str) -> Ed25519PrivateKey:
     return key
 
 
+def _refuse_if_shared(target: Path, shown: Path) -> None:
+    """Refuse a key file that anyone but its owner can read: by file mode on POSIX, by ACL on
+    Windows (where SYSTEM and Administrators are allowed too, as they can read any file). Checked
+    before the key's bytes are read."""
+    if sys.platform == "win32":
+        try:
+            readers = winacl.other_readers(target)
+        except OSError as exc:
+            raise AuthError(f"cannot check who can read private key file {shown}: {exc}") from exc
+        if readers:
+            raise AuthError(
+                f"{shown} is readable by other users ({', '.join(readers)}); run: "
+                f'icacls "{shown}" /inheritance:r /grant:r "%USERNAME%:R"'
+            )
+        return
+    try:
+        mode = stat.S_IMODE(target.stat().st_mode)
+    except OSError as exc:
+        raise AuthError(f"cannot read private key file {shown}: {exc.strerror}") from exc
+    if mode & 0o077:
+        raise AuthError(
+            f"{shown} is readable by other users (mode {mode:03o}); run: chmod 600 {shown}"
+        )
+
+
 def load_private_key(path: Path) -> Ed25519PrivateKey:
     """Load an unencrypted PEM Ed25519 private key from a file only its owner can read."""
     target = path.expanduser()
+    if not target.is_file():
+        raise AuthError(f"cannot read private key file {path}: no such file")
+    _refuse_if_shared(target, path)
     try:
-        mode = stat.S_IMODE(target.stat().st_mode)
         data = target.read_bytes()
     except OSError as exc:
         raise AuthError(f"cannot read private key file {path}: {exc.strerror}") from exc
-    if os.name == "posix" and mode & 0o077:
-        raise AuthError(
-            f"{path} is readable by other users (mode {mode:03o}); run: chmod 600 {path}"
-        )
     return parse_private_key(data, str(path))
 
 
