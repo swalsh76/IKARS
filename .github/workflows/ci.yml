@@ -10,7 +10,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # a newer push supersedes a pull request's run; every merge commit on main keeps its own result
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   UV_VERSION: "0.13.4"
@@ -24,8 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install uv
-        run: pipx install uv==${{ env.UV_VERSION }}
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Sync
         run: uv sync --locked
@@ -37,7 +41,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Types
-        run: uv run mypy packages
+        run: uv run mypy packages tools conftest.py
 
       - name: Test and coverage
         run: uv run pytest --cov --cov-report=term
@@ -54,22 +58,19 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
 
-      - name: Restore (locked)
-        run: dotnet restore Ikars.slnx --locked-mode
+      # Locked mode and NuGetAudit (every package, transitive included; a finding is an error through
+      # TreatWarningsAsErrors) are both set in Directory.Build.props, so a plain restore enforces them.
+      - name: Restore
+        run: dotnet restore Ikars.slnx
 
       - name: Format check
         run: dotnet format Ikars.slnx --verify-no-changes --no-restore
 
       - name: Build
         run: dotnet build Ikars.slnx --configuration Release --no-restore
-
-      - name: Vulnerable packages
-        shell: pwsh
-        run: |
-          $report = dotnet list Ikars.slnx package --vulnerable --include-transitive 2>&1 | Out-String
-          Write-Host $report
-          if ($LASTEXITCODE -ne 0 -or $report -match '(?m)^\s+>\s') { throw 'a package with a known vulnerability is in use' }
 
       - name: Test
         run: >

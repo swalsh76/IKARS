@@ -10,6 +10,11 @@
     <Deterministic>true</Deterministic>
     <!-- Hash-pinned restores (G12): packages.lock.json is committed and CI restores in locked mode. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Known vulnerabilities in any package, transitive included, fail the restore (NU1901-NU1904 become errors
+         through TreatWarningsAsErrors). This is the one vulnerability check for .NET, locally and in CI. -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
   </PropertyGroup>
 
   <ItemGroup>

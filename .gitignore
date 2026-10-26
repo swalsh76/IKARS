@@ -27,11 +27,18 @@ logs/
 *.parquet
 *.duckdb
 *.sqlite
+*.sqlite3
 *.sqlite-*
+*.sqlite3-*
 *.db
+*.db-*
+*.wal
 *.arrow
+*.feather
 *.jsonl
 IKARS-*.pdf
+IKARS-*.csv
+IKARS-*.txt
 
 # secrets and local config: never commit
 .env
@@ -39,6 +46,7 @@ IKARS-*.pdf
 *.pem
 *.key
 *.pfx
+*.p12
 secrets/
 *.bak
 

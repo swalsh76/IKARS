@@ -17,7 +17,13 @@ param(
     [ValidateRange(0, 100)][double]$MinLinePercent = 90,
     [string[]]$Exclude = @('Ikars.TestSupport'),
     [string[]]$Include = @('Ikars.*'),
-    [hashtable]$AssemblyMinimum = @{ 'Ikars.Core' = 95 }
+    [hashtable]$AssemblyMinimum = @{ 'Ikars.Core' = 95 },
+    # Every production project must be measured: by default each src\<name>\<name>.csproj. A project that is
+    # missing from every report (no test project references it) or has no instrumented lines fails the gate,
+    # unless it is listed in -AllowEmpty (for example a contracts-only assembly with nothing to execute).
+    [string[]]$Require = @(Get-ChildItem -Path (Join-Path $PSScriptRoot '..\..\src') -Filter '*.csproj' -Recurse -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.BaseName }),
+    [string[]]$AllowEmpty = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,22 +33,45 @@ if ($reports.Count -eq 0) {
     exit 1
 }
 
-# assembly -> ("file:line" -> highest hit count seen in any report)
+# A class's filename is relative to its report's <sources> root, and different reports can use different roots,
+# so each line is keyed on the full path: the same source line is then merged however each report spells it.
+function Resolve-SourcePath([string]$filename, [string[]]$roots) {
+    if ([IO.Path]::IsPathRooted($filename)) { return [IO.Path]::GetFullPath($filename).ToLowerInvariant() }
+    foreach ($root in $roots) {
+        $candidate = Join-Path $root $filename
+        if (Test-Path -LiteralPath $candidate) { return [IO.Path]::GetFullPath($candidate).ToLowerInvariant() }
+    }
+    if ($roots.Count -eq 0) { return [IO.Path]::GetFullPath($filename).ToLowerInvariant() }   # no <sources>: as given
+    return [IO.Path]::GetFullPath((Join-Path $roots[0] $filename)).ToLowerInvariant()
+}
+
+# assembly -> ("full path:line" -> highest hit count seen in any report)
 $assemblies = @{}
 foreach ($report in $reports) {
     $xml = [xml](Get-Content -LiteralPath $report.FullName -Raw)
+    $roots = @($xml.coverage.sources.source | Where-Object { $_ })
     foreach ($package in $xml.coverage.packages.package) {
         if ($Exclude -contains $package.name) { continue }
         if (-not ($Include | Where-Object { $package.name -like $_ })) { continue }
         if (-not $assemblies.ContainsKey($package.name)) { $assemblies[$package.name] = @{} }
         $lines = $assemblies[$package.name]
         foreach ($class in $package.classes.class) {
+            $file = Resolve-SourcePath $class.filename $roots
             foreach ($line in $class.lines.line) {
-                $key = '{0}:{1}' -f $class.filename, $line.number
+                $key = '{0}:{1}' -f $file, $line.number
                 $hits = [int64]$line.hits
                 if (-not $lines.ContainsKey($key) -or $hits -gt $lines[$key]) { $lines[$key] = $hits }
             }
         }
+    }
+}
+
+$failed = $false
+foreach ($name in ($Require | Sort-Object -Unique)) {
+    if ($Exclude -contains $name) { continue }
+    if (-not $assemblies.ContainsKey($name)) {
+        'FAIL {0,-22} not measured: no test project covers it' -f $name
+        $failed = $true
     }
 }
 
@@ -51,11 +80,15 @@ if ($assemblies.Count -eq 0) {
     exit 1
 }
 
-$failed = $false
 foreach ($name in ($assemblies.Keys | Sort-Object)) {
     $lines = $assemblies[$name]
     $total = $lines.Count
-    if ($total -eq 0) { 'skip {0,-22} no instrumented lines' -f $name; continue }   # nothing to cover is not 0% covered
+    if ($total -eq 0) {
+        if ($AllowEmpty -contains $name) { 'ok   {0,-22} no instrumented lines (allowed)' -f $name; continue }
+        'FAIL {0,-22} no instrumented lines: missing symbols, or list it in -AllowEmpty' -f $name
+        $failed = $true
+        continue
+    }
     $covered = @($lines.Values | Where-Object { $_ -gt 0 }).Count
     $percent = 100.0 * $covered / $total
     $minimum = if ($AssemblyMinimum.ContainsKey($name)) { [double]$AssemblyMinimum[$name] } else { $MinLinePercent }
@@ -66,6 +99,6 @@ foreach ($name in ($assemblies.Keys | Sort-Object)) {
 "merged $($reports.Count) report(s); judged: $($Include -join ', '); not judged: $($Exclude -join ', ')"
 
 if ($failed) {
-    Write-Error "Line coverage is below the gate for at least one assembly."
+    Write-Error "The coverage gate failed for at least one assembly (see the FAIL lines above)."
     exit 1
 }

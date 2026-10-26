@@ -7,24 +7,57 @@ data, databases, ledger exports or keys by extension, and nothing over the size 
     python tools/ci/data_guard.py
 """
 
+import re
 import subprocess
 import sys
 from pathlib import PurePosixPath
 
+# Matched against every suffix of the name, so "x.duckdb.wal" and "x.db-journal" are caught too.
 FORBIDDEN_SUFFIXES = frozenset(
-    {".parquet", ".duckdb", ".sqlite", ".db", ".arrow", ".jsonl", ".pem", ".key", ".pfx"}
+    {
+        # market data and recordings
+        ".parquet",
+        ".arrow",
+        ".feather",
+        ".jsonl",
+        # databases and their side files
+        ".duckdb",
+        ".sqlite",
+        ".sqlite3",
+        ".db",
+        ".wal",
+        ".db-wal",
+        ".db-shm",
+        ".db-journal",
+        ".sqlite-wal",
+        ".sqlite-shm",
+        ".sqlite-journal",
+        ".sqlite3-wal",
+        ".sqlite3-shm",
+        ".sqlite3-journal",
+        # keys and certificates
+        ".pem",
+        ".key",
+        ".pfx",
+        ".p12",
+    }
 )
-FORBIDDEN_INFIXES = (".sqlite-",)  # SQLite's -wal and -shm side files
+# The ledger's tax-year package (PLAN D18): IKARS-<year>-summary.pdf, -form8949.csv, -6781.csv,
+# -manifest.txt, -ledger.jsonl. Only that exact shape, so ordinary files named ikars-... still pass.
+LEDGER_EXPORT = re.compile(r"ikars-\d{4}-[a-z0-9]+\.(pdf|csv|txt|jsonl)")
 TEST_FILE_LIMIT_BYTES = 1_000_000
 
 
+def is_forbidden(name: str) -> bool:
+    name = name.lower()
+    suffixes = {s.lower() for s in PurePosixPath(name).suffixes}
+    return bool(suffixes & FORBIDDEN_SUFFIXES) or LEDGER_EXPORT.fullmatch(name) is not None
+
+
 def problems(paths: list[str], size_of: dict[str, int]) -> list[str]:
-    found = []
+    found: list[str] = []
     for path in paths:
-        name = PurePosixPath(path).name.lower()
-        if PurePosixPath(name).suffix in FORBIDDEN_SUFFIXES or any(
-            s in name for s in FORBIDDEN_INFIXES
-        ):
+        if is_forbidden(PurePosixPath(path).name):
             found.append(f"{path}: this kind of file is never committed")
         elif "tests" in PurePosixPath(path).parts and size_of.get(path, 0) > TEST_FILE_LIMIT_BYTES:
             found.append(f"{path}: over {TEST_FILE_LIMIT_BYTES:,} bytes in a tests folder")

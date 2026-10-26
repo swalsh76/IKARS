@@ -8,8 +8,8 @@ API data), news sources' terms of use, and the owner's privacy (PLAN D10, D21-4)
 | Kind | Marker | Runs | Data |
 |---|---|---|---|
 | **Unit and property tests** | none | always, locally and in CI | synthetic data from generators, or tiny hand-written fixtures |
-| **Live Kalshi tests** | `integration` | only with `KALSHI_INTEGRATION=1`; never in CI | the real API, GET only, with IKARS's own read-only key |
-| **Local-recording tests** | `localdata` | only with `IKARS_LOCAL_DATA` set to the recordings' folder; never in CI | the workstation's own recorded feeds, ledger or news, read in place, never copied into the repository |
+| **Live Kalshi tests** | `integration` | only with `IKARS_LIVE=1` (exactly `1`; IKARS's own switch, never KAPS's `KALSHI_INTEGRATION`); never in CI | the real API, GET only, with IKARS's own read-only key |
+| **Local-recording tests** | `localdata` | only with `IKARS_LOCAL_DATA` set to an existing recordings folder; never in CI | the workstation's own recorded feeds, ledger or news, read in place, never copied into the repository |
 
 The root `conftest.py` skips the opt-in kinds unless asked for.
 
