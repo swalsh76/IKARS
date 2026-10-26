@@ -194,3 +194,63 @@ One section per milestone and one subsection per slice, each with **Built**, **V
 2. .NET naming: the `Ikars.*` prefix and `.slnx`. Recommended: yes.
 3. Repository description. Proposed: "IKARS: real-time Kalshi trade recommendations from news, data and live order
    books, for Windows 11. Not affiliated with Kalshi."
+
+#### 1.1 progress (2026-10-26): built and verified locally; GitHub steps waiting for the owner's go-ahead
+
+**Built.**
+- Commits:
+  - `main` holds the M0 docs (`8f0bcca`);
+  - branch `m1/1-repo-ci` holds the slice (`e0374c6`) and its review fixes (`d7cbc53`).
+- Repository-local identity: Steve Walsh and the GitHub no-reply address.
+- gitleaks 8.30.1 installed with `winget`.
+- The pre-commit hook is enabled through `core.hooksPath tools/hooks`.
+
+**Verified locally.**
+- Python 3.13.16 (uv-managed):
+  - ruff format and lint clean; mypy strict clean;
+  - pytest 5 passed, 100% coverage;
+  - pip-audit finds no known vulnerabilities.
+- .NET 10.0.402:
+  - locked restore;
+  - `dotnet format` clean;
+  - build with 0 warnings;
+  - 1 test passed; the coverage gate passes (`Ikars.Core` 100%);
+  - no vulnerable packages.
+- Hygiene: the data guard passes (39 tracked files); gitleaks finds nothing in the history or the staged changes.
+- **Planted failures, all caught and then removed** (none committed):
+  - a fake private key, refused by the hook (gitleaks);
+  - a force-added `.parquet`, refused by the data guard;
+  - a Python failing test, format error and type error;
+  - a C# failing test and format error.
+- **Review fix checked:** a 1 MB file staged and then shrunk on disk is still refused, and the guard gives the same
+  result from a subfolder.
+
+**Review (R14).**
+- The M0 commit is docs only. A scan for real host names, the share path and local paths found nothing; gitleaks
+  is clean.
+- The slice commit had `/code-review` run on it at low effort. Two findings, both **fixed** in `d7cbc53`:
+  1. `check-coverage.ps1`, inherited from KalTerm3, judged an assembly with no instrumented lines as 0% and failed
+     CI. It now skips the assembly and lists it.
+  2. `data_guard.py` read sizes from the working tree, so a large staged file could pass once changed on disk, and
+     it only worked from the repository root. It now reads sizes from the index (`git ls-files --format`) at the
+     repository's top level.
+- The fix commit was reviewed by hand: a small diff, and the behaviour was proved by the staged-then-shrunk test.
+
+**Kept, changed and why.**
+- *Kept:*
+  - SPARQ's ruff, mypy, pytest and coverage settings, and its `.gitignore`, extended for databases, ledger exports
+    and logs;
+  - KalTerm3's `Directory.Build.props`, the central package versions, the test project shape and the coverage
+    script.
+- *Changed:*
+  - LF instead of KalTerm3's CRLF;
+  - NuGet lock files restored in locked mode (KalTerm3 had none);
+  - Python 3.13 floor (SPARQ allows 3.12);
+  - the opt-in test markers live in one root `conftest.py` instead of per package;
+  - gitleaks and the data guard are new.
+
+**Problems and fixes.**
+- `gitleaks dir .` reported 200 findings, all inside the ignored `.venv`: third-party package test data. The hook
+  and CI scan only what git tracks, so the documented command is `gitleaks git`.
+- Files written by Python on Windows get CRLF in the working tree. git normalises them to LF on commit
+  (`.gitattributes`), so this only matters for exact-text edits.
