@@ -94,7 +94,9 @@ slice still needs its own approved plan before code.
   `swalsh76/IKARS` created; security settings on; `main` pushed; ruleset "main protection" active (PR required,
   checks `python`, `dotnet`, `hygiene`, no force-push or deletion, no bypass). Branch pushed; **PR #1 open and green**
   (after a medium review with 10 fixes); a direct push to `main` was refused (GH013). **Waiting for the owner to
-  merge PR #1** (never the assistant). Next after the merge: the M1.2 slice plan (`ikars-core` from `sparq_core`).
+  merge PR #1** (the owner asked the assistant to merge on 2026-10-26; the permission system blocked `gh pr merge`,
+  so the owner merges in the web UI or allows it). **M1.2 plan proposed** (BUILD-LOG 1.2, local branch `m1/2-core`,
+  not pushed); three open questions await the owner.
 
 ## How the owner wants the work run
 

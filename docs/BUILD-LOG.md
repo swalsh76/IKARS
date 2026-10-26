@@ -321,3 +321,78 @@ files instead, which left the working tree untouched.
 - `hygiene` 14 s
 
 The caches fill on this first run, so later runs should be quicker. **Ready for the owner to merge PR #1.**
+
+### 1.2 `ikars-core` (plan PROPOSED 2026-10-26; branch `m1/2-core`)
+
+**Builds.**
+
+1. **Seed `ikars_core` from SPARQ's `sparq_core`.**
+   - The source is about 2,260 lines in 11 modules: auth, clock, config, endpoints, fees, fixedpoint, models,
+     ratelimit, rest, ws, ws_models.
+   - Its tests come too (about 3,900 lines), with the 12 fixtures (already made-up: `KXDEMO-…`) and the golden
+     vectors. `fees.json` is 970,569 bytes, under the data guard's 1 MB limit.
+   - The exact SPARQ commit is recorded (open question 1).
+   - Renames:
+     - `sparq` → `ikars`;
+     - `SPARQ_*` settings → `IKARS_*`;
+     - the live switch → `IKARS_LIVE`;
+     - the key → `IKARS_KALSHI_KEY_ID` and `IKARS_KALSHI_PRIVATE_KEY_PATH`.
+   - **`test_live_ratelimit.py` is dropped entirely**: the rate-limit ramp stays banned.
+   - The 95% coverage gate on `fixedpoint.py` and `fees.py` goes into CI.
+2. **A key-file permission check on Windows.** SPARQ's check is POSIX-only, so on Windows it checks nothing.
+   - The new check reads the file's ACL through the Windows API (`ctypes`, no new package).
+   - It refuses to load a key that any principal other than the owner, SYSTEM or Administrators can read, and
+     gives the `icacls` command that fixes it.
+   - Tested on temporary files whose ACLs the tests set.
+3. **A signed read-only account client** for D18's ledger import and D21-3's limits:
+   - GET only, through the same guard as the public client;
+   - its own allow-list (`/portfolio/...` reads and `/account/limits`), signed with the existing `DataSigner`;
+   - account responses are never logged;
+   - models for balance, positions, fills, settlements and account limits. Transfers and interest come too *if*
+     the API has endpoints for them; checked against Kalshi's docs in the slice, and recorded as a D18 gap if not.
+4. **Order-book models:**
+   - `orderbook_snapshot` and `orderbook_delta` messages (`seq`, `clock`, fixed-point levels);
+   - a pure in-memory book that applies deltas and reports a gap.
+
+   The keeper and resync logic belong to M1.4b. SPARQ's unmerged branches are checked first, and anything already
+   built there is reused.
+5. **Native order options re-checked** against Kalshi's API reference (for D14). Written up in
+   `docs/research/kalshi-order-options.md`: types, time-in-force, post-only, reduce-only, expiry, self-trade
+   prevention, order groups if any.
+6. **Account-level limits (D21-3):** read once from `GET /account/limits` and recorded (open question 2).
+7. **Contract tests:** hand-written fixtures with made-up values for every new model.
+
+**Changes on this machine:** none beyond the repository. The slice reads the key file's ACL (not its contents) to
+check it. If the ACL is too open, the owner is given the command; the assistant does not change it (open
+question 3).
+
+**New packages and licences** (carried from SPARQ):
+
+| Package | Licence |
+|---|---|
+| cryptography | Apache-2.0 or BSD-3 |
+| httpx | BSD-3 |
+| pydantic | MIT |
+| websockets | BSD-3 |
+
+Dev only: `hypothesis` (MPL-2.0), already present. The engine–terminal contracts use `msgspec` from M1.7; the core
+keeps SPARQ's pydantic models.
+
+**Live checks** (GET only, IKARS's own key, about 100 requests in all, nothing printed but public data and status
+codes):
+- `test_live_public` (about 15 GETs);
+- `test_live_bounds` (about 40);
+- `test_live_ws` (subscribe commands on public channels);
+- new `test_live_account`: signed GETs for balance, positions, fills, settlements and limits. It asserts shapes
+  only and **never reports an account value**.
+
+**Open questions.**
+1. **Seed from SPARQ `main` (`15669a4`) or its review clean-up branch `s1/2q-cleanup` (`c017add`)?** The clean-up
+   was approved in SPARQ but is not merged yet. It touches 12 files in `sparq-core`: one rate-limited client
+   config, generic endpoint readers, one model base. *Recommended: `c017add`*, so the refactor is not ported twice.
+   The commit is recorded in this log.
+2. **WebSocket market-subscription limit:** read the account limits only now, and learn the WebSocket limit
+   passively in M1.4b (by recording any "limit reached" error), never by probing? *Recommended: yes.* Probing
+   would be close to the benchmarking the Developer Agreement forbids.
+3. If the key file's ACL lets other users read it, the owner runs the `icacls` command the assistant gives; the
+   assistant never changes the key file. *Recommended: yes.*
