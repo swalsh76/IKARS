@@ -196,9 +196,35 @@ def test_a_missing_key_file_is_reported_without_a_traceback(tmp_path: Path) -> N
 def test_the_environment_supplies_the_key_id_and_the_path(tmp_path: Path) -> None:
     path = write_key(tmp_path, pem(Ed25519PrivateKey.from_private_bytes(SEED)))
     s = DataSigner.from_environment(
-        {"IKARS_KALSHI_KEY_ID": "abc", "IKARS_KALSHI_PRIVATE_KEY_PATH": str(path)}
+        {"IKARS_KALSHI_KEY_ID": KEY_ID, "IKARS_KALSHI_PRIVATE_KEY_PATH": str(path)}
     )
-    assert s.headers("GET", "/trade-api/ws/v2", timestamp_ms=1)[HEADER_KEY] == "abc"
+    assert s.headers("GET", "/trade-api/ws/v2", timestamp_ms=1)[HEADER_KEY] == KEY_ID
+
+
+KEY_ID = "00000000-1111-2222-3333-444444444444"  # made up, shaped like a Kalshi key id
+
+
+@pytest.mark.parametrize(
+    ("value", "reason"),
+    [(f'"{KEY_ID}"', "quotes or spaces"), (f"{KEY_ID[:8]} {KEY_ID[9:]}", "quotes or spaces"),
+     ("abc", "it is 3 characters"), (KEY_ID + "0", "it is 37 characters")],
+)  # fmt: skip
+def test_a_malformed_key_id_from_the_environment_is_refused_without_showing_it(
+    tmp_path: Path, value: str, reason: str
+) -> None:
+    path = write_key(tmp_path, pem(Ed25519PrivateKey.from_private_bytes(SEED)))
+    env = {"IKARS_KALSHI_KEY_ID": value, "IKARS_KALSHI_PRIVATE_KEY_PATH": str(path)}
+    with pytest.raises(AuthError, match=reason) as caught:
+        DataSigner.from_environment(env)
+    assert value not in str(caught.value)
+
+
+def test_a_key_id_with_quotes_or_inner_spaces_is_refused() -> None:
+    key = Ed25519PrivateKey.from_private_bytes(SEED)
+    for bad in ('"k"', "'k'", "k k"):
+        with pytest.raises(AuthError, match="quotes or spaces"):
+            DataSigner(bad, key)
+    assert DataSigner("  k  ", key)  # surrounding spaces are trimmed, as before
 
 
 @pytest.mark.parametrize(

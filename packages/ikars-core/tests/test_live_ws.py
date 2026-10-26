@@ -3,8 +3,8 @@
     $env:IKARS_LIVE = '1'      # the key: IKARS_KALSHI_KEY_ID and IKARS_KALSHI_PRIVATE_KEY_PATH
     pytest packages/ikars-core/tests/test_live_ws.py -q
 
-Read-only: one signed GET and a short subscription to the public ticker, trade and lifecycle
-channels of five open markets. Nothing is written to Kalshi. They ask what a fake cannot: does
+Read-only: one signed GET and short subscriptions to the ticker, trade, lifecycle and order-book
+channels of a few busy markets. Nothing is written to Kalshi. They ask what a fake cannot: does
 Kalshi accept our signature, do real frames parse into the models without errors, do ``seq`` and
 ``sid`` behave as assumed, and does a reconnect restore the subscription.
 
@@ -25,8 +25,15 @@ from typing import Any
 import httpx
 import pytest
 from ikars_core.auth import AuthError, DataSigner
+from ikars_core.book import Applied, OrderBook
 from ikars_core.config import REST_URLS, WS_URLS, Environment
 from ikars_core.ws import Data, FeedConfig, KalshiFeed, Reconnected, SequenceGap
+from ikars_core.ws_models import (
+    ORDERBOOK_CHANNEL,
+    OrderbookDeltaMsg,
+    OrderbookSnapshotMsg,
+    TickerMsg,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -203,3 +210,47 @@ async def test_adding_and_removing_markets_does_not_look_like_a_gap(signer: Data
     assert frames_by_phase["before"] > 0
     assert len(added) == len(first) + len(second) and len(removed) == len(first)
     assert not gaps
+
+
+async def test_books_are_bids_and_stay_consistent(signer: DataSigner) -> None:
+    """Keep the books of the busiest markets from the order-book channel and compare each one's
+    best YES bid and ask with the ticker's: they agree only if each side really is bids (a YES ask
+    being $1 minus the best NO bid). No book should break, since no message should be missed."""
+    tickers = busiest_markets(3)
+    books = {ticker: OrderBook(ticker) for ticker in tickers}
+    applied: Counter[str] = Counter()
+    agree = disagree = crossed = 0
+    async with KalshiFeed(signer, FeedConfig(url=WS_URLS[Environment.PRODUCTION])) as feed:
+        await feed.subscribe(ORDERBOOK_CHANNEL, tickers)
+        await feed.subscribe("ticker", tickers)
+        events = feed.events()
+        deadline = time.monotonic() + SECONDS
+        while time.monotonic() < deadline:
+            try:
+                event = await asyncio.wait_for(anext(events), timeout=deadline - time.monotonic())
+            except TimeoutError:
+                break
+            if not isinstance(event, Data) or event.frame.payload is None:
+                continue
+            message = event.frame.payload
+            if isinstance(message, OrderbookSnapshotMsg):
+                applied[books[message.market_ticker].apply_snapshot(message)] += 1
+            elif isinstance(message, OrderbookDeltaMsg):
+                applied[books[message.market_ticker].apply_delta(message)] += 1
+            elif isinstance(message, TickerMsg) and message.market_ticker in books:
+                book = books[message.market_ticker]
+                if not book.ready or message.yes_bid_e6 is None or message.yes_ask_e6 is None:
+                    continue
+                bid, ask = book.best_bid("yes"), book.best_ask("yes")
+                crossed += book.crossed
+                if bid and ask and (bid[0], ask[0]) == (message.yes_bid_e6, message.yes_ask_e6):
+                    agree += 1
+                else:
+                    disagree += 1
+    LINES.append(f"order book over {SECONDS:g} s on {len(tickers)} markets: {dict(applied)}")
+    LINES.append(f"book vs ticker best YES bid and ask: {agree} agree, {disagree} differ")
+    LINES.append(f"crossed books seen: {crossed}")
+    assert applied[Applied.APPLIED] > 0, "no book message arrived"
+    assert applied[Applied.BROKEN] == 0
+    assert agree + disagree >= 5, "too few ticker frames to compare"
+    assert agree >= 0.8 * (agree + disagree)

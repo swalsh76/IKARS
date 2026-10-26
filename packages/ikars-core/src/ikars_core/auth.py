@@ -63,6 +63,11 @@ ACCOUNT_READS = frozenset(
 )
 
 
+# A Kalshi API key id is a UUID; a pasted value often keeps its quotes.
+_KEY_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+_QUOTES_OR_INNER_SPACE = re.compile(r"[\"'`\s]")
+
+
 class AuthError(Exception):
     """Credentials are missing or unusable."""
 
@@ -161,6 +166,8 @@ class _Signer:
     ) -> None:
         if not key_id.strip():
             raise AuthError("the key id is empty")
+        if _QUOTES_OR_INNER_SPACE.search(key_id.strip()):
+            raise AuthError("the key id contains quotes or spaces (was it pasted with its quotes?)")
         self._key_id = key_id.strip()
         self._key = private_key
         self._now_ms = now_ms
@@ -177,6 +184,16 @@ class _Signer:
         if not key_id or not path:
             raise AuthError(
                 "IKARS_KALSHI_KEY_ID and IKARS_KALSHI_PRIVATE_KEY_PATH must both be set"
+            )
+        if not _KEY_ID.fullmatch(key_id.strip()):
+            # the value is never shown: only what is wrong with it
+            raise AuthError(
+                "IKARS_KALSHI_KEY_ID is not a Kalshi key id (36 characters, 8-4-4-4-12 hex): "
+                + (
+                    "it has quotes or spaces in it"
+                    if _QUOTES_OR_INNER_SPACE.search(key_id.strip())
+                    else f"it is {len(key_id.strip())} characters"
+                )
             )
         return cls(key_id, load_private_key(Path(path)))
 
