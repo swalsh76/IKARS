@@ -92,8 +92,9 @@ slice still needs its own approved plan before code.
 - **M1 slice list and gates approved (2026-10-26).** **M1.1 built and verified locally** (BUILD-LOG 1.1): `main` has the M0 docs;
   branch `m1/1-repo-ci` has the slice, its review fixes and the log. **GitHub steps approved and under way (2026-10-26):** public
   `swalsh76/IKARS` created; security settings on; `main` pushed; ruleset "main protection" active (PR required,
-  checks `python`, `dotnet`, `hygiene`, no force-push or deletion, no bypass). Next: push the branch, PR #1, CI green,
-  prove a direct push to `main` is refused; then **the owner merges** (never the assistant).
+  checks `python`, `dotnet`, `hygiene`, no force-push or deletion, no bypass). Branch pushed; **PR #1 open and green**
+  (after a medium review with 10 fixes); a direct push to `main` was refused (GH013). **Waiting for the owner to
+  merge PR #1** (never the assistant). Next after the merge: the M1.2 slice plan (`ikars-core` from `sparq_core`).
 
 ## How the owner wants the work run
 
