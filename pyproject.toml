@@ -1,0 +1,71 @@
+[project]
+name = "ikars-workspace"
+version = "0.0.0"
+description = "IKARS workspace root (not published)"
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ikars-core",
+    "ikars-engine",
+    "hypothesis>=6.140",
+    "mypy>=1.18",
+    "pip-audit>=2.9",
+    "pytest>=8.4",
+    "pytest-asyncio>=1.2",
+    "pytest-cov>=7.0",
+    "ruff>=0.14",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+ikars-core = { workspace = true }
+ikars-engine = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "S", "DTZ"]
+
+[tool.ruff.lint.per-file-ignores]
+# assert is how pytest checks
+"packages/*/tests/**" = ["S101", "S608"]
+"tools/**/test_*.py" = ["S101"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+mypy_path = [
+    "packages/ikars-core/src",
+    "packages/ikars-engine/src",
+]
+explicit_package_bases = true
+# each package has a thin tests/conftest.py of fixtures; two modules cannot share the name
+exclude = ['(^|/)conftest\.py$']
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["packages", "tools"]
+pythonpath = ["tools/ci"]
+addopts = "--import-mode=importlib"
+markers = [
+    "integration: hits the real Kalshi API (opt-in via KALSHI_INTEGRATION=1)",
+    "localdata: needs the workstation's own recordings (opt-in via IKARS_LOCAL_DATA; never in CI)",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["ikars_core", "ikars_engine"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true

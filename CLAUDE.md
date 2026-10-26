@@ -131,4 +131,25 @@ the owner. No code starts before those are approved and M1.1's slice plan is app
 
 ## Dev commands
 
-None yet (M1).
+`uv` runs as `python -m uv` on this workstation. Python is 3.13, from `.python-version`, managed by `uv`.
+
+```powershell
+python -m uv sync
+python -m uv run ruff format --check .
+python -m uv run ruff check .
+python -m uv run mypy packages
+python -m uv run pytest --cov
+python -m uv run pip-audit --skip-editable
+
+dotnet restore Ikars.slnx
+dotnet format Ikars.slnx --verify-no-changes --no-restore
+dotnet build Ikars.slnx -c Release --no-restore
+dotnet test --solution Ikars.slnx -c Release --no-build --coverlet --coverlet-output-format cobertura --report-trx --results-directory TestResults
+./tools/ci/check-coverage.ps1 -Path TestResults -MinLinePercent 90
+
+python tools/ci/data_guard.py          # no data, databases or keys tracked
+gitleaks git --redact --no-banner .    # secrets in the whole history
+```
+
+**Pre-commit hook.** Enable it once per clone with `git config core.hooksPath tools/hooks`. It runs gitleaks on the
+staged changes and the data guard. Test-data rules are in [docs/TESTING.md](docs/TESTING.md).
