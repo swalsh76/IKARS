@@ -1,9 +1,11 @@
-"""Async, read-only REST client for Kalshi's public market-data endpoints.
+"""Async, read-only REST clients for Kalshi: public market data, and the account reads.
 
 Read-only is enforced twice and structurally: no write method exists, and a transport-level guard
-refuses any request that is not a GET to the configured host and to an allowed family of paths
-(``/historical``, ``/markets``, ``/series``, ``/events``, ``/exchange``). The trading client, when
-it exists (K7), is a separate class with its own key; this one never signs and never sends an order.
+refuses any request that is not a GET to the configured host and to an allowed path. The public
+client (unsigned) allows the market-data families (``/markets``, ``/series``, ``/events``,
+``/exchange`` and the public ``/historical`` reads); the account client signs with the account
+reader and allows exactly the account reads. The trading client, when it exists (M7), is a separate
+class with its own key; neither of these ever sends an order.
 
 Every wait is bounded: each attempt has a timeout, retries have a limit and backoff is capped.
 JSON is read with floats kept as text, so a multiplier such as ``0.5`` never becomes a binary float.
@@ -17,18 +19,23 @@ import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, Protocol, Self
 from urllib.parse import urlparse
 
 import httpx
 
+from ikars_core.auth import ACCOUNT_READS, AccountSigner
 from ikars_core.config import KalshiConfig
 from ikars_core.ratelimit import TokenBucket, backoff
 
 log = logging.getLogger("ikars_core")
 
 _RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
-_ALLOWED_PATH = re.compile(r"/(?:historical|markets|series|events|exchange)(?:/[A-Za-z0-9_.\-]+)*")
+# The public families; under /historical only cutoff, markets and trades (fills, orders and
+# positions there are account data, read only by the account client).
+_ALLOWED_PATH = re.compile(
+    r"/(?:markets|series|events|exchange|historical/(?:cutoff|markets|trades))(?:/[A-Za-z0-9_.\-]+)*"
+)
 
 
 class KalshiError(Exception):
@@ -64,14 +71,25 @@ def path_allowed(path: str) -> bool:
     return all(segment not in {".", ".."} for segment in path.split("/"))
 
 
-def _guard(base_host: str, base_path: str) -> Callable[[httpx.Request], Awaitable[None]]:
+def account_path_allowed(path: str) -> bool:
+    """Whether ``path`` (relative to the API base, no query string) is one of the account reads."""
+    return path in ACCOUNT_READS
+
+
+class Signer(Protocol):
+    def headers(self, method: str, path: str) -> dict[str, str]: ...
+
+
+def _guard(
+    base_host: str, base_path: str, allowed: Callable[[str], bool]
+) -> Callable[[httpx.Request], Awaitable[None]]:
     async def check(request: httpx.Request) -> None:
         target = f"{request.method} {request.url.host}{request.url.path}"
         if request.method != "GET":
             raise ReadOnlyViolation(f"{target} blocked: the client is read-only")
         if request.url.host != base_host or not request.url.path.startswith(base_path + "/"):
             raise ReadOnlyViolation(f"{target} blocked: not the configured API")
-        if not path_allowed(request.url.path[len(base_path) :]):
+        if not allowed(request.url.path[len(base_path) :]):
             raise ReadOnlyViolation(f"{target} blocked: not an allowed read path")
 
     return check
@@ -106,8 +124,12 @@ class KalshiPublicClient:
         transport: httpx.AsyncBaseTransport | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         jitter: Callable[[], float] = lambda: random.uniform(0.5, 1.0),  # noqa: S311 - not security
+        allowed: Callable[[str], bool] = path_allowed,
+        signer: Signer | None = None,
     ) -> None:
         self._config = config
+        self._allowed = allowed
+        self._signer = signer
         parsed = urlparse(config.rest_url)
         self._base = config.rest_url
         self._base_path = parsed.path.rstrip("/")
@@ -122,7 +144,7 @@ class KalshiPublicClient:
             transport=transport,
             timeout=config.timeout_seconds,
             headers={"User-Agent": config.user_agent, "Accept": "application/json"},
-            event_hooks={"request": [_guard(parsed.hostname or "", self._base_path)]},
+            event_hooks={"request": [_guard(parsed.hostname or "", self._base_path, allowed)]},
             follow_redirects=False,
         )
         if config.is_production:
@@ -157,7 +179,7 @@ class KalshiPublicClient:
         ``max_retries`` times, each attempt paced by the rate limiter and each retry preceded by a
         capped, jittered backoff.
         """
-        if not path_allowed(path):
+        if not self._allowed(path):
             raise ReadOnlyViolation(f"GET {path} blocked: not an allowed read path")
         query = {k: v for k, v in (params or {}).items() if v is not None}
         cfg = self._config
@@ -165,7 +187,11 @@ class KalshiPublicClient:
             await self._bucket.acquire(cfg.request_cost_tokens)
             self.stats.requests += 1
             try:
-                response = await self._http.get(self._base + path, params=query)
+                # signed afresh on every attempt, so a retry never reuses an old timestamp
+                headers = (
+                    self._signer.headers("GET", self._base_path + path) if self._signer else None
+                )
+                response = await self._http.get(self._base + path, params=query, headers=headers)
             except httpx.TransportError as exc:
                 self.stats.transport_errors += 1
                 if attempt == cfg.max_retries:
@@ -224,3 +250,26 @@ class KalshiPublicClient:
                 )
             seen.add(next_cursor)
             cursor = next_cursor
+
+
+class KalshiAccountClient(KalshiPublicClient):
+    """The same GET-only client, signing with the account reader and limited to exactly the account
+    reads (:data:`ikars_core.auth.ACCOUNT_READS`): no market data, no order route, no write."""
+
+    def __init__(
+        self,
+        config: KalshiConfig,
+        signer: AccountSigner,
+        *,
+        bucket: TokenBucket | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
+        super().__init__(
+            config,
+            bucket=bucket,
+            transport=transport,
+            sleep=sleep,
+            allowed=account_path_allowed,
+            signer=signer,
+        )

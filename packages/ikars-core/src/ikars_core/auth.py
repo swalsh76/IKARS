@@ -1,11 +1,16 @@
-"""Request signing for Kalshi's data key. Ed25519 only: RSA-PSS is deliberately unsupported.
+"""Request signing for IKARS's read-only key. Ed25519 only: RSA-PSS is deliberately unsupported.
 
 Kalshi signs a request as ``timestamp + METHOD + path`` (the query string is not part of it).
-The data key lives on the server host, so what it can sign is limited here and not left to the
-caller: a data signer signs only a GET to a read route in the allow-list below, or the WebSocket
-handshake. It can never sign a POST, a DELETE, an order route or a portfolio route (balances,
-positions and orders), so even a bug elsewhere cannot make the data key place an order or read an
-account value. The trading client, when it exists (K7), is a separate class with its own key.
+What a signer may sign is limited here and not left to the caller, and every signer signs GETs
+only, so even a bug elsewhere cannot make the key place an order:
+
+- a :class:`DataSigner` signs the public market-data routes and the WebSocket handshake, and never
+  a route that returns account data (balances, positions, fills, settlements, transfers, or the
+  account's own history under ``/historical``);
+- an :class:`AccountSigner` signs exactly the account reads the ledger needs (PLAN D18) and the
+  account's API limits, and nothing else: no order routes, no market data.
+
+The trading client, when it exists (M7), is a separate class with its own key.
 
 Every key file must be readable by its owner alone, not only the trading key: by file mode on a
 POSIX machine, by ACL on Windows (``winacl``).
@@ -19,6 +24,7 @@ import sys
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Self
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -34,9 +40,26 @@ WS_PATH = "/trade-api/ws/v2"
 
 # A path segment may not start with a dot, so ``.`` and ``..`` can never appear in a signed path.
 _SEGMENT = r"[A-Za-z0-9_\-][A-Za-z0-9_.\-]*"
+# The public historical families only: /historical/fills, /orders and /positions are account data.
 _READ_ROUTES = re.compile(
-    rf"{re.escape(API_PREFIX)}/(?:(?:markets|events|series|exchange|historical)(?:/{_SEGMENT})*"
+    rf"{re.escape(API_PREFIX)}/(?:(?:markets|events|series|exchange"
+    rf"|historical/(?:cutoff|markets|trades))(?:/{_SEGMENT})*"
     r"|account/limits)"
+)
+# Exactly these account reads (list endpoints, no sub-paths), for the ledger import and the limits.
+ACCOUNT_READS = frozenset(
+    {
+        "/portfolio/balance",
+        "/portfolio/positions",
+        "/portfolio/fills",
+        "/portfolio/settlements",
+        "/portfolio/deposits",
+        "/portfolio/withdrawals",
+        "/portfolio/intra_exchange_instance_transfers",
+        "/historical/fills",
+        "/historical/positions",
+        "/account/limits",
+    }
 )
 
 
@@ -51,6 +74,11 @@ class SigningRefused(AuthError):
 def read_route(path: str) -> bool:
     """Is ``path`` (query string removed) a route the data key may sign for a GET?"""
     return path == WS_PATH or _READ_ROUTES.fullmatch(path) is not None
+
+
+def account_route(path: str) -> bool:
+    """Is ``path`` (query string removed) an account read the account signer may sign?"""
+    return path.startswith(API_PREFIX) and path[len(API_PREFIX) :] in ACCOUNT_READS
 
 
 def parse_private_key(data: bytes, source: str) -> Ed25519PrivateKey:
@@ -113,12 +141,15 @@ def _now_ms() -> int:
     return time.time_ns() // 1_000_000
 
 
-class DataSigner:
-    """Builds the signed headers for read-only requests and the WebSocket handshake.
+class _Signer:
+    """Builds signed headers for a GET to a route ``_allowed`` accepts; see the subclasses.
 
     ``offset_ms`` is how far the local clock is ahead of Kalshi's (negative: behind), from
     :mod:`ikars_core.clock`; it is subtracted so that the signed timestamp is Kalshi's time.
     """
+
+    _allowed: Callable[[str], bool]
+    _name: str
 
     def __init__(
         self,
@@ -136,7 +167,7 @@ class DataSigner:
         self.offset_ms = offset_ms
 
     @classmethod
-    def from_environment(cls, environ: Mapping[str, str] | None = None) -> "DataSigner":
+    def from_environment(cls, environ: Mapping[str, str] | None = None) -> Self:
         """From ``IKARS_KALSHI_KEY_ID`` and ``IKARS_KALSHI_PRIVATE_KEY_PATH``."""
         env = os.environ if environ is None else environ
         key_id, path = (
@@ -153,9 +184,9 @@ class DataSigner:
         """Signed headers for a GET of ``path`` (a URL path with or without a query string)."""
         bare = path.split("?", 1)[0]
         if method.upper() != "GET":
-            raise SigningRefused(f"the data key signs GET requests only, not {method.upper()}")
-        if not read_route(bare):
-            raise SigningRefused(f"the data key does not sign requests to {bare}")
+            raise SigningRefused(f"the {self._name} signs GET requests only, not {method.upper()}")
+        if not type(self)._allowed(bare):
+            raise SigningRefused(f"the {self._name} does not sign requests to {bare}")
         stamp = self._now_ms() - self.offset_ms if timestamp_ms is None else timestamp_ms
         signature = self._key.sign(f"{stamp}GET{bare}".encode())
         return {
@@ -163,3 +194,17 @@ class DataSigner:
             HEADER_TIMESTAMP: str(stamp),
             HEADER_SIGNATURE: base64.b64encode(signature).decode(),
         }
+
+
+class DataSigner(_Signer):
+    """Signs the public market-data reads and the WebSocket handshake; never account data."""
+
+    _allowed = staticmethod(read_route)
+    _name = "data key"
+
+
+class AccountSigner(_Signer):
+    """Signs exactly the account reads in :data:`ACCOUNT_READS`; never market data or orders."""
+
+    _allowed = staticmethod(account_route)
+    _name = "account reader"
