@@ -459,3 +459,65 @@ PR #1 (M1.1) was merged by the owner as `2f19222`, and CI on `main` is green.
 - The signer now refuses such an id with a clear reason that never shows the value.
 - After the variable is fixed: run `test_live_account` and `test_live_ws` (including the order-book check), then
   close the slice.
+
+#### 1.2 live checks and merge review (2026-10-26, after the owner re-set the key id)
+
+**Verified live with IKARS's own key** (GET and subscribe only):
+- Production accepts the signature on both hosts; the demo answers "not found", as expected for a production key.
+- **Account (4 checks):** every one of the owner's real records parsed, under the final, stricter models: positions
+  (live, settled and archived), fills, historical fills, settlements, deposits, withdrawals and instance transfers.
+  Fills carry a direction and dollar fields arrive as text.
+  - Kalshi's undocumented `updated_ts` and `created_ts` are **Unix seconds**.
+  - The API tier is **basic**: read bucket 200 tokens/s with a burst of 600, write 100/s with a burst of 100 (each
+    request costs tokens). This is the D21-3 budget input.
+- **WebSocket (5 checks):**
+  - the signed handshake succeeds;
+  - 1,563 frames parsed with no errors and no unknown fields;
+  - no `seq` gaps;
+  - a forced disconnect reconnects;
+  - adding and removing markets is not a gap;
+  - the receive delay after `sending_ts_ms` is about 46 ms.
+- **Order book:**
+  - Production book messages carry **no `clock`** (Kalshi's reference has it; the changelog dates it
+    2026-10-29). The first run therefore rejected 17,772 deltas in 20 s, and the model was fixed (`ef0a714`).
+  - After the fix: 33,464 book messages applied in 30 s on the three busiest markets, **none broken**.
+  - The book at each ticker frame's own `ts_ms` matched the ticker **86 of 87 times**, which confirms that both
+    sides are bids and a YES ask is $1 minus the best NO bid.
+  - Delta rates were **783, 234 and 98 a second** (the 15-minute BTC, ETH and XRP contracts). This sizes M1.4b's
+    watched set.
+
+**Review (R14), per merge.** `/code-review` at medium effort over `main...m1/2-core` found 10 issues. All were
+checked against the code, and all **fixed** in `ff5a13d`:
+
+1. The data key's WebSocket would subscribe to *any* channel, private account channels included. It now accepts
+   market-data channels only (`MARKET_DATA_CHANNELS`).
+2. The data key could sign `/account/limits` (account data), and the account client did not check its signer at
+   run time. Limits are now the account reader's only, and the client refuses any other signer. The reference
+   signing vectors for that route pass through the account reader with the identical signature.
+3. A bad side in a snapshot left a half-applied book reporting ready. Both sides are now built before either is
+   replaced, and the parser refuses negative sizes and non-positive prices.
+4. Key-loading errors contained the key file's path (CLAUDE.md forbids printing key paths). They now say "the
+   private key file", and the fix commands use the environment variable.
+5. A fill could parse with no direction, which would silently corrupt the ledger's cost basis. The direction is
+   now required: taken from `outcome_side` or `book_side`, or else from the legacy `side` and `action`.
+   Disagreeing fields are refused.
+6. The ACL check missed conditional (callback) allow entries and `WRITE_DAC`/`WRITE_OWNER`. They are now counted;
+   the rights are tested with icacls.
+7. `positions` duplicated the client's paging loop with weaker checks. There is now one `payloads()` loop.
+8. The public route rules existed twice with different regexes. There is now one table (`auth.public_route`).
+9. An integer in a dollar field would have been read as whole dollars, a 100-fold error if Kalshi ever sent cents
+   there. Account dollar fields now take text only.
+10. A 36-character malformed key id got a misleading reason. It now gets the right one.
+
+**Problems and fixes (this part).**
+- The missing `clock`: see above.
+- The first live book comparison was too naive for markets this fast (about 800 deltas a second against a ticker
+  about once a second). It now compares at matching times.
+
+**Close-out of M1.2.**
+- Offline: 1,025 tests pass; coverage about 97%, money and fees 100%; ruff, mypy and pip-audit clean.
+- Live: 8 public checks and 9 signed checks pass.
+- Left for later slices: the order-book keeper and resync, the watched set and the request budget (M1.4b); the
+  ledger store and import (M1.5).
+- Interest is not exposed by Kalshi's API (a D18 gap): the ledger's reconciliation must show unexplained balance
+  changes and the tax package must name them.

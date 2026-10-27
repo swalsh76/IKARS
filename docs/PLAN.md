@@ -634,7 +634,7 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 | D21 third gap review (gates, end-to-end slice, shared account, test data, cost ceiling) and **scope freeze** | **approved 2026-10-26** |
 | M1 slices (§4.1) and gates (§4.2) | **approved 2026-10-26** |
 | M1.1 Repository, CI and security | **done** (BUILD-LOG 1.1; PR #1 merged 2026-10-26 as `2f19222`) |
-| M1.2 `ikars-core` | plan approved 2026-10-26 (seed from SPARQ `c017add`); **in progress** |
+| M1.2 `ikars-core` | built and verified, live included (BUILD-LOG 1.2); **PR #2 awaiting the owner's merge** |
 
 ## 9. Parking lot
 
