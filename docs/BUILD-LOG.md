@@ -667,3 +667,60 @@ when the ask is paid. It now shows the spread separately and the figures follow 
 
 **Waiting on the owner:** comments or approval. The approved source goes into `docs/design/mockups/` on branch
 `m1/3-mockups`.
+
+#### 1.4a built (2026-10-27)
+
+**Built** (`ikars-engine`, offline; commits `7ab6439` and `49468ba`):
+
+| Area | What |
+|---|---|
+| Paths | `%LOCALAPPDATA%\IKARS`, or `data-portable\` beside the program when `portable.marker` exists. |
+| Settings | Versioned TOML (`tomllib` / `tomli-w`); step-by-step migrations with a backup first (names never collide); atomic, fsynced writes; secrets refused (by whole words of key names, and PEM blocks in values); only environment-variable names allowed. |
+| Logs | JSON lines, rotated; the redaction filter on every handler (key id, key path in both slash forms and its file name, case-insensitive; PEM blocks; bearer tokens; in messages, arguments, extra fields and exceptions). |
+| Model | `Ref`, `Item` (publisher time, **received time**, `hops`), `Link` as `msgspec` structs, reused by M1.7. |
+| Time and input | `WallClock` and `VirtualClock`; Parquet recordings (`RECORDING_SCHEMA`); a `ReplaySource` that merges in received order and moves the clock to each item **before** releasing it; a `LiveSource`. |
+| Plugins | Entry points `ikars.plugins`. Live: a task and a bounded inbox each, **drop-oldest with a recorded gap**, gaps also for items left at stop. Replay: deterministic, in name order. Everywhere: a timeout on every call; crash boundary with backoff; paused after repeated crashes (a stable minute resets the count); pause cancels a producer; resume restarts it unless it had finished. |
+| Engine | Routing with a hop limit carried on items (holds live and in replay). Replay emits are delivered breadth-first after the emitting call returns (each plugin's time is its own), strictly one delivery at a time. Listeners are synchronous and contained. Budget: degrade, pause and resume of paid plugins. A health summary. |
+| Measures | Log-scale latency histograms (percentiles never optimistic), stage timings, a monthly cost tracker in dollar millionths, a skew monitor over `ikars_core.clock`. |
+| Smoke | `python -m ikars_engine smoke`: an offline replay of 100 synthetic items through a test plugin. |
+
+**Verified.**
+- 1,118 tests pass; coverage 97.5%; ruff, mypy (64 files) and pip-audit clean.
+- Covered by the tests:
+  - byte-identical replays;
+  - nothing released before its received time (also a property test);
+  - containment of raising, hanging, flooding and crashing plugins;
+  - planted secrets never in the log file or another handler;
+  - settings migration, backup and refusal;
+  - live and replay hop limits;
+  - budget degrade, pause and resume across a month;
+  - listener faults contained.
+
+**Review (R14).**
+- **Per commit:** three rounds on the core found 9 issues, all fixed before `7ab6439`:
+  1. the hop limit did nothing live;
+  2. a pause could be undone by a backoff;
+  3. pause did not stop a running producer;
+  4. `seconds=0` meant the default;
+  5. lifetime crash counting;
+  6. a slow listener timed out its plugin;
+  7. budget pauses were never lifted;
+  8. a resume right after a pause restarted nothing;
+  9. a finished one-shot source re-ran on resume.
+- **Per merge:** the medium review over the branch found 10 issues, and its follow-up found 3 more; all fixed in
+  `49468ba`. They are listed in that commit: silent drops at stop; narrow secret detection; case-sensitive
+  redaction; redaction on one handler only; a truncating money migration; raw version errors; downstream time
+  charged upstream; no fsync and colliding backup names; a stale month total; listener faults; plus routing an
+  emit made outside a delivery, serialising deliveries, and counting leftovers on cancellation.
+
+**Kept, changed and why.**
+- *Kept:* SPARQ's clock estimator (`ikars_core.clock`), wrapped and not copied; KAPS's "log what was skipped" rule,
+  now the gap record.
+- *New:* everything else; neither KAPS nor SPARQ had a plugin host, a replay engine or a cost ceiling.
+- *Moved to M1.5:* the test that account models are never passed to a logger. No engine code touches account data
+  until the ledger, so there is nothing yet to enforce; the redaction layer it backs up is in place and tested.
+
+**Problems and fixes.**
+- `pyarrow` ships no type stubs: a mypy override, as in SPARQ.
+- Python on Windows writes CRLF and the shell mangled two large inline edit scripts; edits now go through script
+  files or exact `Edit` calls.
