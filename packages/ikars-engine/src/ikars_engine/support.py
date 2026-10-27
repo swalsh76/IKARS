@@ -24,6 +24,7 @@ import sys
 import threading
 import zipfile
 from collections.abc import Iterable, Mapping
+from contextlib import closing
 from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
@@ -136,7 +137,7 @@ def ledger_cash_e6(ledger: Path) -> list[int]:
     if not ledger.is_file():
         return []
     try:
-        with sqlite3.connect(f"{ledger.as_uri()}?mode=ro", uri=True) as db:
+        with closing(sqlite3.connect(f"{ledger.as_uri()}?mode=ro", uri=True)) as db:
             row = db.execute("SELECT SUM(cash_e6) FROM record WHERE stream = 'real'").fetchone()
     except sqlite3.Error:
         return []
@@ -167,7 +168,7 @@ def gaps_text(state: Path) -> str:
     if not state.is_file():
         return ""
     try:
-        with sqlite3.connect(f"{state.as_uri()}?mode=ro", uri=True) as db:
+        with closing(sqlite3.connect(f"{state.as_uri()}?mode=ro", uri=True)) as db:
             rows = db.execute(
                 "SELECT id, channel, reason, start_ns, end_ns, recovery, status, detail FROM gap"
                 " ORDER BY id DESC LIMIT ?",

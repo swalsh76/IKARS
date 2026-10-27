@@ -3,6 +3,7 @@
 import json
 import sqlite3
 import zipfile
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -206,7 +207,7 @@ def test_bundles_are_kept_to_the_latest_ten(tmp_path: Path) -> None:
 def test_without_the_engine_the_ledger_s_cash_is_still_redacted(tmp_path: Path) -> None:
     paths, environ = engine_folder(tmp_path)
     assert support.ledger_cash_e6(paths.ledger / "ledger.sqlite") == []
-    with sqlite3.connect(paths.ledger / "ledger.sqlite") as db:
+    with closing(sqlite3.connect(paths.ledger / "ledger.sqlite")) as db, db:
         db.execute("CREATE TABLE record (stream TEXT, cash_e6 INTEGER)")
         db.executemany("INSERT INTO record VALUES (?, ?)",
                        [("real", 1_000_000_000), ("real", 234_560_000), ("paper", 7)])  # fmt: skip
