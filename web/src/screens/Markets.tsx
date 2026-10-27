@@ -1,16 +1,26 @@
-import { CellStyleModule, ClientSideRowModelModule, ModuleRegistry, RowStyleModule, type ColDef, type RowClickedEvent } from "ag-grid-community";
+import {
+  CellStyleModule,
+  ClientSideRowModelApiModule,
+  ClientSideRowModelModule,
+  ModuleRegistry,
+  RowStyleModule,
+  type ColDef,
+  type GridApi,
+  type RowClickedEvent,
+} from "ag-grid-community";
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import { AgGridReact } from "ag-grid-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { QuoteUpdate } from "../api/contracts";
-import { useMarkets, useSnapshot, useTerminal } from "../app/hooks";
+import { useQuoteChanges, useSnapshot, useTerminal } from "../app/hooks";
 import { href } from "../nav/route";
 import { cachedRow, categories, type MarketRow } from "../view/market";
 
 // Only the grid's parts in use (a smaller bundle). AG Grid's CSS-file theme ("legacy"), not its
 // injected one: the engine's CSP allows no inline style (M1.8a-web-2a).
-ModuleRegistry.registerModules([ClientSideRowModelModule, RowStyleModule, CellStyleModule]);
+// ClientSideRowModelApi: applyTransaction (each quote updates only its own row)
+ModuleRegistry.registerModules([ClientSideRowModelModule, ClientSideRowModelApiModule, RowStyleModule, CellStyleModule]);
 
 const PAGE = 200; // at most the engine's subscriptions per stream
 const SEARCH_WAIT_MS = 300;
@@ -47,15 +57,23 @@ export function Markets({ query, category = "" }: { query: string; category?: st
   const page = useSnapshot(`/v1/markets?${params.toString()}`, "MarketPage", 60_000);
   const items = useMemo(() => (page.state === "ready" ? page.value.items : []), [page]);
   const tickers = useMemo(() => items.map((m) => m.ticker), [items]);
-  const changes = useMarkets(tickers);
-
-  // a row object changes only when its market or its quote does, so the grid redraws just the rows
-  // that moved, not all of them at every update (merge review 4)
-  const rows = useMemo(
-    () => items.map((market) => cachedRow(market, hub.get(`quote:${market.ticker}`) as QuoteUpdate | undefined)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `changes` counts the quotes' updates
-    [items, hub, changes],
+  const byTicker = useMemo(() => new Map(items.map((m) => [m.ticker, m])), [items]);
+  const rowOf = useCallback(
+    (ticker: string) => {
+      const market = byTicker.get(ticker);
+      return market ? cachedRow(market, hub.get(`quote:${ticker}`) as QuoteUpdate | undefined) : undefined;
+    },
+    [byTicker, hub],
   );
+  // React renders the grid only when the list of markets changes; a quote changes only its own row,
+  // straight in the grid, with no React render, so an update fits in a frame (D20 J: the owner's
+  // console run, p99 at 33 ms with the page's own work at 17.5 ms, before this)
+  const rows = useMemo(() => tickers.map(rowOf).filter((r): r is MarketRow => r !== undefined), [tickers, rowOf]);
+  const grid = useRef<GridApi<MarketRow> | null>(null);
+  useQuoteChanges(tickers, (changed) => {
+    const update = changed.map(rowOf).filter((r): r is MarketRow => r !== undefined);
+    if (update.length) grid.current?.applyTransaction({ update });
+  });
 
   // every category seen, so choosing one does not hide the others (merge review 6)
   const [known, setKnown] = useState<string[]>([]);
@@ -101,6 +119,13 @@ export function Markets({ query, category = "" }: { query: string; category?: st
           rowData={rows}
           columnDefs={columns}
           getRowId={(p) => p.data.ticker}
+          onGridReady={(e) => {
+            grid.current = e.api;
+            // quotes that came before the grid was ready: take every row's current value now
+            const update = tickers.map(rowOf).filter((r): r is MarketRow => r !== undefined);
+            if (update.length) e.api.applyTransaction({ update });
+          }}
+          onGridPreDestroyed={() => (grid.current = null)}
           onRowClicked={(e: RowClickedEvent<MarketRow>) => e.data && navigator.go(href({ screen: "market", ticker: e.data.ticker }))}
           rowClass="clickable"
           suppressNoRowsOverlay

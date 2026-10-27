@@ -1,5 +1,5 @@
-import { useSnapshot, useValue } from "../app/hooks";
-import { gapRow, healthCards } from "../view/health";
+import { useMeterReading, useSnapshot, useValue } from "../app/hooks";
+import { gapRow, healthCards, meterCard } from "../view/health";
 
 function Gaps() {
   const gaps = useSnapshot("/v1/gaps?days=7&limit=200", "GapPage", 30_000);
@@ -43,10 +43,11 @@ function Gaps() {
 
 export function Health() {
   const health = useValue("health");
+  const reading = useMeterReading();
   if (health === null) return <p className="muted">Waiting for the engine's health…</p>;
   return (
     <div className="grid">
-      {healthCards(health).map((card) => (
+      {[...healthCards(health), meterCard(reading)].map((card) => (
         <section className="card" key={card.title} aria-label={card.title}>
           <div className="card-head">
             <span className={`dot level-${card.level}`} aria-hidden="true" />

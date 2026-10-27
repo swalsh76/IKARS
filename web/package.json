@@ -17,7 +17,8 @@
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "test": "vitest run --coverage",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "load": "playwright test -c playwright.load.config.ts"
   },
   "dependencies": {
     "ag-grid-community": "36.2.0",

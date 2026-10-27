@@ -3,8 +3,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hub } from "../api/hub";
+import { Meter } from "../api/meter";
 import type { Route } from "../nav/route";
-import { TerminalContext, useMarkets, useRoute, useSnapshot, useTerminal, useValue } from "./hooks";
+import { TerminalContext, useMarkets, useMeterReading, useQuoteChanges, useRoute, useSnapshot, useTerminal, useValue } from "./hooks";
 import { Guarded } from "../screens/Guarded";
 import type { Terminal } from "./terminal";
 
@@ -19,6 +20,7 @@ function fakeTerminal(): { terminal: Terminal; setRoute: (r: Route) => void } {
   const listeners = new Set<() => void>();
   const terminal = {
     hub,
+    meter: new Meter({ frame: (f) => f(), wallMs: () => 1_000, perfMs: () => 0, hidden: () => false, shownOrHidden: () => 0 }),
     stream: {} as Terminal["stream"],
     navigator: {
       current: () => route,
@@ -182,6 +184,56 @@ describe("useMarkets", () => {
     expect(container.textContent).toBe("2 7");
     await act(async () => root.render(<TerminalContext value={terminal}>{null}</TerminalContext>));
     expect(terminal.hub.get("quote:KXA")).toBeUndefined(); // released: its value goes too
+  });
+});
+
+describe("the meter's reading", () => {
+  it("is read again on its timer", async () => {
+    vi.useFakeTimers();
+    const { terminal } = fakeTerminal();
+    function View() {
+      return <p>{useMeterReading(500).samples}</p>;
+    }
+    await show(terminal, <View />);
+    expect(container.textContent).toBe("0");
+    terminal.meter.flushed([990 * 1e6]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(container.textContent).toBe("1");
+  });
+});
+
+describe("useQuoteChanges", () => {
+  it("hands a flush's changed quotes over at once, without re-rendering, and lets go when left", async () => {
+    const { terminal } = fakeTerminal();
+    const want = vi.spyOn(terminal.hub, "want");
+    const batches: string[][] = [];
+    let renders = 0;
+    function View() {
+      renders += 1;
+      useQuoteChanges(["KXA", "KXB"], (changed) => batches.push(changed));
+      return null;
+    }
+    await show(terminal, <View />);
+    expect(want).toHaveBeenCalledWith(["KXA", "KXB"]);
+    const before = renders;
+    const quote = (ticker: string) => ({ event: "quote" as const, data: { ticker, yes_bid_e6: 1, yes_ask_e6: 2, last_price_e6: null, received_ns: 1 } });
+    await act(async () => {
+      terminal.hub.handle(quote("KXA"));
+      terminal.hub.handle(quote("KXB"));
+      terminal.hub.flush();
+      await Promise.resolve();
+    });
+    expect(batches).toEqual([["KXA", "KXB"]]); // one call for the flush
+    expect(renders).toBe(before); // and no render
+    terminal.hub.handle(quote("KXA"));
+    terminal.hub.flush(); // a batch is queued...
+    // ...and the screen closes before it runs (a synchronous act: the effects end at once)
+    act(() => root.render(<TerminalContext value={terminal}>{null}</TerminalContext>));
+    await Promise.resolve();
+    expect(batches).toHaveLength(1); // the queued batch was dropped
+    expect(terminal.hub.get("quote:KXA")).toBeUndefined(); // released
   });
 });
 

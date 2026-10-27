@@ -9,7 +9,7 @@ export default async function demoServer(): Promise<() => Promise<void>> {
   const repository = join(import.meta.dirname, "..", "..");
   // uv as this workstation runs it (python -m uv), or as CI installs it (IKARS_UV=uv)
   const [uv, ...uvArgs] = (process.env.IKARS_UV ?? "python -m uv").split(" ");
-  const server = spawn(uv ?? "python", [...uvArgs, "run", "python", "-m", "ikars_engine", "demo-api", "--markets", "30", "--hz", "5"], {
+  const server = spawn(uv ?? "python", [...uvArgs, "run", "python", "-m", "ikars_engine", "demo-api", "--markets", process.env.IKARS_DEMO_MARKETS ?? "30", "--hz", process.env.IKARS_DEMO_HZ ?? "5"], {
     cwd: repository,
     stdio: ["ignore", "pipe", "inherit"],
   });
