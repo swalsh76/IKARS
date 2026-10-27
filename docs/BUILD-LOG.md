@@ -1137,17 +1137,22 @@ minute; unexplained money labelled by the owner; FIFO.
    - It alerts on: engine down; feed stale (no frame for 10 minutes while the exchange is open); backup failed or
      over 36 hours old; ledger chain broken; reconciliation not exact; storage over its warning level.
    - **Kept from KAPS:** a problem must hold for 2 checks in a row before it alerts; a reminder every 6 hours
-     while it lasts; one message when it clears; its own small state file, so it never repeats itself; a message
-     that fails to send is retried at the next check.
+     while it lasts; one message when it clears; its own small state file, so it never repeats itself; a
+     notification that fails to show is retried at the next check.
 5. **The alert framework (H):**
    - priority levels: urgent, high, normal, low;
    - de-duplication by key, and a minimum interval per key (throttling);
-   - **quiet hours** (a setting), during which only urgent alerts are pushed;
+   - **quiet hours** (a setting), during which only urgent alerts pop up;
    - lower priorities held for an **hourly digest**.
    - It is one module, used by the watchdog now and by the engine's recommendations in M4.
-6. **ntfy push (G6):** a private topic, **stored with DPAPI** (D8) under the user's profile, entered once with
-   `alerts set-topic`, which reads it without echoing it. The topic never appears in a log, an error or a reply,
-   and messages carry status text only. `alerts test` sends one test message.
+6. **Workstation notifications (G6, as amended):** **no phone pushes** (owner, 2026-10-27).
+   - Alerts appear as **Windows notifications (toasts)** on the workstation. They use Windows' own notification
+     classes through Windows PowerShell: no package, nothing sent off the machine.
+   - IKARS registers its own notification name under `HKCU` (user space), so a toast says "IKARS", not
+     "Windows PowerShell", and Windows' own settings (Do Not Disturb, per-app mute) apply to it.
+   - Every alert is also written to an alert log, `alerts.jsonl` in the data folder, which the terminal shows from
+     M1.8, so an alert dismissed or missed is never lost.
+   - `alerts test` shows one test notification. Alerts carry status text only, no account values.
 7. **GPU detection (D15, moved here):** at start, `nvidia-smi` (shipped with the driver) reports the GPU's name,
    memory, driver and CUDA version into health; without an NVIDIA GPU, health says "CPU only". There is no new
    package. NVML through `nvidia-ml-py` is the alternative, if more is needed later.
@@ -1155,35 +1160,39 @@ minute; unexplained money labelled by the owner; FIFO.
 **Changes on this machine:**
 - A `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value, `IKARS Engine`.
 - A per-user scheduled task, `IKARS Watchdog`, every 5 minutes.
-- The DPAPI-protected topic file under `%LOCALAPPDATA%\IKARS`.
-- Test pushes to your private topic.
-- All of it is user space, no admin rights; the `remove-autostart` command undoes the first two.
+- The notification name `IKARS` under `HKCU\Software\Classes\AppUserModelId`.
+- Test notifications on the workstation.
+- All of it is user space, no admin rights; the `remove-autostart` command undoes all three.
 
 **Tests:**
-- the watchdog's rules: confirmation, reminders, clearing, restart limits, a failed send retried;
+- the watchdog's rules: confirmation, reminders, clearing, restart limits, a failed notification retried;
 - the alert framework: priority, de-duplication, throttling, quiet hours, the digest;
+- the alert log; the toast's text and escaping, with a fake notifier;
 - the lock file, and the stop request;
-- the DPAPI round trip, and the topic never in a log or an error;
 - GPU parsing, from captured `nvidia-smi` text;
-- the Run-key and task commands, with fakes.
+- the Run-key, task and notification-name commands, with fakes.
 
 **Live checks:**
 - `serve` starts in the background and `stop` stops it cleanly;
 - a second `serve` is refused;
-- after a killed engine, the watchdog restarts it within one check and sends one "engine down" then one
-  "recovered" push;
+- after a killed engine, the watchdog restarts it within one check and shows one "engine down" then one
+  "recovered" notification;
 - auto-start works after you sign out and back in (you do that step);
-- `alerts test` reaches your phone;
+- `alerts test` shows a notification named IKARS;
 - GPU detection reports the RTX 5070 Ti.
 
-**Open questions.**
-1. **The ntfy topic:** *recommended:* a **new private topic for IKARS** on `ntfy.sh` (KAPS's server). It is
-   separate from KAPS's topic, so the two can be muted or revoked on their own. You subscribe on your phone and
-   give me the topic once, through `alerts set-topic`.
-2. **Quiet hours:** *recommended:* **22:00 to 07:00** workstation time, during which only urgent alerts push.
-   Urgent means engine down, ledger chain broken or backup failed. Is that the window you want?
+**Open questions.** (The ntfy topic question was withdrawn: phone pushes are out.)
+1. **How notifications are shown:**
+   - *Recommended:* Windows' own notification classes through Windows PowerShell, with no new package.
+   - *Alternative:* the `windows-toasts` Python package (Apache-2.0), which is tidier code but a new dependency.
+2. **Quiet hours:** *recommended:* **22:00 to 07:00** workstation time, during which only urgent alerts pop up
+   (engine down, ledger chain broken or backup failed). The rest wait for the digest and the alert log. Is that
+   the window you want?
 3. **Keep awake:** *recommended:* keep the **system** awake while the engine runs, and let the display sleep.
    *Alternative:* no keep-awake, so the PC sleeps as usual and the engine records the gap.
 4. **Watchdog interval:** *recommended:* **every 5 minutes**, with the 2-check confirmation, so an alert comes
    about 10 minutes after a failure. *Alternative:* every minute, like KAPS, for faster alerts at a little more
    noise.
+
+**Owner's change (2026-10-27):** phone pushes (item 6, ntfy) removed; notifications stay on the workstation.
+PLAN G6, the M1 and M4 outlines, the M1.6 row and DEPENDENCIES were amended to match.

@@ -56,7 +56,7 @@ slice still needs its own approved plan before code.
   - the replay harness
   - pre-registration
   - background run mode
-  - phone alerts
+  - workstation alerts (amended 2026-10-27: no phone pushes; Windows notifications)
   - other-venue prices
   - settlement rules and the calendar
   - the recommendation lifecycle
@@ -100,7 +100,7 @@ slice still needs its own approved plan before code.
   **M1.5a done** (PR #7 merged as `087b819`): reconciles **exactly** with Kalshi.
   **M1.5 done** (PR #8 merged as `5b6f702`): the real ledger lives in `%LOCALAPPDATA%\IKARS\ledger`; share backups
   and the restore drill pass. **M1.6 plan PROPOSED** (BUILD-LOG 1.6, branch `m1/6-run-mode`): waiting for the
-  owner's answers (ntfy topic, quiet hours, keep-awake, watchdog interval). No code before approval. The owner allows
+  owner's answers (toast method, quiet hours, keep-awake, watchdog interval; phone pushes removed by the owner). No code before approval. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

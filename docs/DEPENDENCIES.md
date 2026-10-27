@@ -50,7 +50,7 @@ exact set and versions are in `uv.lock`.
 |---|---|---|---|---|
 | **GPU detection** | M1.6 | base | — | Reads the NVIDIA driver through `nvidia-smi` (ships with the driver) or NVML (`nvidia-ml-py`, BSD); chosen in M1.6's plan. No GPU means CPU paths only, reported in health. |
 | Windows Task Scheduler | M1.6 | base | built in | A per-user logon task and a watchdog task; no admin. |
-| ntfy | M1.6 | base | service (Apache-2.0 / GPL-2.0 server) | A private topic, stored with DPAPI (D8); plain HTTP, no client library. |
+| Windows notifications (toasts) | M1.6 | base | built in | Through Windows PowerShell's WinRT notification classes; no package. (Phone pushes with ntfy were dropped by the owner, 2026-10-27.) |
 | DPAPI | M1.5 / M1.6 | base | built in | Through the standard library (`ctypes`) or `pywin32`; chosen in the slice. |
 | DuckDB | M1.5 onward (queries, D4) | base | MIT | Python wheel. |
 | PDF/A writer for the tax package | M5 (D18) | base | to choose | Library chosen in M5's plan. |
