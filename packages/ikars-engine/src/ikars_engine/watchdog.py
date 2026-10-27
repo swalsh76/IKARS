@@ -29,6 +29,8 @@ from pathlib import Path
 from typing import Any
 
 from ikars_engine.alerts import HIGH, URGENT, Alert, AlertDesk, NotificationFailed
+from ikars_engine.autostart import windowless_python
+from ikars_engine.files import write_text_atomic
 from ikars_engine.runmode import at, engine_running, read_snapshot, stopped_by_owner
 
 log = logging.getLogger("ikars_engine.watchdog")
@@ -43,6 +45,7 @@ class Rules:
     reminder_hours: int = 6
     restart_limit: int = 3  # an hour
     snapshot_stale_s: int = 180  # the engine writes one a minute
+    start_grace_s: int = 600  # a starting engine's first snapshot comes after discovery
     feed_stale_s: int = 600  # while the exchange is trading
     backup_late_hours: int = 36
 
@@ -72,9 +75,13 @@ def evaluate(obs: Observation, rules: Rules) -> list[Problem]:
         return [Problem("engine", "the engine is not running", urgent=True)]
     snap = obs.snapshot
     written = at(snap, "written_ns")
-    if not isinstance(written, int) or obs.now_ns - written > rules.snapshot_stale_s * NS:
+    starting = at(snap, "starting") is True
+    stale_s = rules.start_grace_s if starting else rules.snapshot_stale_s
+    if not isinstance(written, int) or obs.now_ns - written > stale_s * NS:
         silent = "the engine is running but has stopped reporting"
         return [Problem("engine-silent", silent, urgent=True)]
+    if starting:
+        return []  # nothing else to judge until its first real snapshot
     problems = []
     silence = at(snap, "feed", "seconds_since_last_frame")
     if (
@@ -174,9 +181,7 @@ def load_state(path: Path) -> State:
 def save_state(path: Path, state: State) -> None:
     text = json.dumps({"problems": {k: asdict(v) for k, v in state.problems.items()},
                        "restarts_ns": state.restarts_ns})  # fmt: skip
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(text, encoding="utf-8")
-    temporary.replace(path)
+    write_text_atomic(path, text)
 
 
 # --- restarting ---------------------------------------------------------------------------------
@@ -184,9 +189,7 @@ def save_state(path: Path, state: State) -> None:
 
 def engine_command(root: Path | None) -> list[str]:
     """``pythonw -m ikars_engine serve`` (no console) from this interpreter's folder."""
-    windowless = Path(sys.executable).with_name("pythonw.exe")
-    python = str(windowless) if windowless.exists() else sys.executable
-    command = [python, "-m", "ikars_engine", "serve"]
+    command = [windowless_python(), "-m", "ikars_engine", "serve"]
     return command + (["--root", str(root)] if root is not None else [])
 
 

@@ -476,3 +476,93 @@ def test_a_background_engine_that_fails_says_so_in_the_log(
     logged = json.dumps([r.__dict__ for r in caplog.records], default=str)
     assert "the key variables are not set" in logged
     assert not runmode.engine_running(tmp_path / "data")  # the lock is released
+
+
+# --- the M1.6 merge review's findings -----------------------------------------------------------
+
+
+def test_a_starting_engine_waits_out_a_probe_and_the_probe_writes_nothing(tmp_path: Path) -> None:
+    """Review 4: a status or watchdog probe could turn a starting engine away."""
+    import threading
+    import time as clock
+
+    earlier = runmode.EngineLock(tmp_path)
+    earlier.acquire()  # leaves a lock file behind, as a run does
+    earlier.release()
+    held = open(tmp_path / runmode.LOCK, "a+", encoding="utf-8")  # noqa: SIM115
+    runmode._lock(held)  # a probe holding it this instant
+
+    def probe_done() -> None:
+        runmode._unlock(held)
+        held.close()
+
+    threading.Timer(0.5, probe_done).start()
+    engine = runmode.EngineLock(tmp_path)
+    began = clock.monotonic()
+    engine.acquire(wait_s=3.0)
+    assert clock.monotonic() - began >= 0.4
+    pid = tmp_path / runmode.LOCK
+    engine.release()
+    before = pid.read_text(encoding="utf-8")
+    assert runmode.engine_running(tmp_path) is False
+    assert pid.read_text(encoding="utf-8") == before  # the probe wrote nothing
+    assert runmode.engine_running(tmp_path / "nowhere") is False
+
+
+def test_a_starting_engine_has_a_grace_period() -> None:
+    """Review 5: a new engine was judged by the last run's snapshot."""
+    starting = runmode.starting_snapshot(NOW_NS - 300 * NS)  # five minutes into start-up
+    assert names(Observation(True, False, starting, NOW_NS)) == []
+    stuck = runmode.starting_snapshot(NOW_NS - 900 * NS)
+    assert names(Observation(True, False, stuck, NOW_NS)) == ["engine-silent"]
+
+
+def test_a_failed_notification_is_still_in_the_alert_log(tmp_path: Path) -> None:
+    """Review 7: an alert whose toast failed never reached the alert log."""
+    desk = AlertDesk(FakeNotifier(fail=True), tmp_path, QUIET)
+    with pytest.raises(NotificationFailed):
+        desk.raise_alert(Alert("k", URGENT, "engine down", "x"), NOON)
+    entry = json.loads((tmp_path / "alerts.jsonl").read_text(encoding="utf-8"))
+    assert (entry["key"], entry["outcome"]) == ("k", "failed")
+
+
+def test_bad_quiet_hours_never_stop_the_watchdog(tmp_path: Path) -> None:
+    """Review 3: a malformed setting crashed every watchdog pass."""
+    from ikars_engine.paths import Paths
+    from ikars_engine.runmode_cli import desk_for
+    from ikars_engine.settings import AlertSettings, Settings
+
+    settings = Settings(alerts=AlertSettings(quiet_start="10pm", quiet_end="25:00"))
+    desk = desk_for(Paths(tmp_path), settings)
+    assert desk._quiet == QUIET
+
+
+def test_small_files_are_written_whole(tmp_path: Path) -> None:
+    from ikars_engine.files import write_text_atomic
+
+    target = tmp_path / "deep" / "state.json"
+    write_text_atomic(target, "one")
+    write_text_atomic(target, "two")
+    assert target.read_text(encoding="utf-8") == "two" and not list(tmp_path.rglob("*.tmp"))
+
+
+async def test_an_engine_that_ends_by_itself_is_named() -> None:
+    """Review 2: the loop kept the lock and fresh snapshots after the engine's task ended."""
+    import asyncio
+
+    from ikars_engine.kalshi.runner import _ended
+
+    async def fails() -> object:
+        raise ValueError("routing")
+
+    async def returns() -> object:
+        return None
+
+    failed, ended = asyncio.create_task(fails()), asyncio.create_task(returns())
+    await asyncio.gather(failed, ended, return_exceptions=True)
+    assert _ended(failed) == "the engine's main task ended: ValueError"
+    assert _ended(ended) == "the engine's main task ended"
+    cancelled = asyncio.create_task(asyncio.sleep(10))
+    cancelled.cancel()
+    await asyncio.gather(cancelled, return_exceptions=True)
+    assert _ended(cancelled) == "the engine's main task was cancelled"

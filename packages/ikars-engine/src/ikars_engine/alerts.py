@@ -29,6 +29,8 @@ from datetime import datetime, time
 from pathlib import Path
 from typing import Protocol
 
+from ikars_engine.files import write_text_atomic
+
 URGENT, HIGH, NORMAL, LOW = "urgent", "high", "normal", "low"
 PRIORITIES = (URGENT, HIGH, NORMAL, LOW)
 APP_ID = "IKARS"
@@ -152,7 +154,11 @@ class AlertDesk:
         if pops and last is not None and at - last < self._throttle_ns:
             outcome = "throttled"
         elif pops:
-            self._notifier.show(f"IKARS: {alert.title}", alert.text, alert.priority == URGENT)
+            try:
+                self._notifier.show(f"IKARS: {alert.title}", alert.text, alert.priority == URGENT)
+            except NotificationFailed:  # in the log all the same; the caller tries again
+                self._append({**asdict(alert), "at": now.isoformat(), "outcome": "failed"})
+                raise
             self.state.shown_ns[alert.key] = at
             outcome = "shown"
         else:
@@ -190,9 +196,7 @@ class AlertDesk:
             return DeskState()  # a damaged file must never stop the alerts
 
     def _save(self) -> None:
-        temporary = self._state_path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(asdict(self.state)), encoding="utf-8")
-        temporary.replace(self._state_path)
+        write_text_atomic(self._state_path, json.dumps(asdict(self.state)))
 
 
 def _ns(moment: datetime) -> int:

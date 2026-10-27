@@ -27,6 +27,7 @@ from ikars_engine.alerts import (
     QuietHours,
     ToastNotifier,
 )
+from ikars_engine.logs import Redactor, configure
 from ikars_engine.paths import Paths
 from ikars_engine.settings import Settings
 from ikars_engine.watchdog import check, engine_command
@@ -62,7 +63,11 @@ def add_parsers(commands: Any) -> None:
 
 
 def desk_for(paths: Paths, settings: Settings) -> AlertDesk:
-    quiet = QuietHours.parse(settings.alerts.quiet_start, settings.alerts.quiet_end)
+    try:
+        quiet = QuietHours.parse(settings.alerts.quiet_start, settings.alerts.quiet_end)
+    except ValueError:  # a bad setting must never stop the watchdog: the owner's default, logged
+        log.warning("alerts.quiet_start or quiet_end is not a time; using 22:00 to 07:00")
+        quiet = QuietHours.parse("22:00", "07:00")
     return AlertDesk(
         ToastNotifier(),
         paths.data,
@@ -73,7 +78,7 @@ def desk_for(paths: Paths, settings: Settings) -> AlertDesk:
 
 
 def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
-    root = Path(args.root) if args.root else None
+    root = Path(args.root).resolve() if args.root else None  # later runs start elsewhere
     if args.command == "serve":
         return serve(paths, settings)
     if args.command == "stop":
@@ -82,6 +87,7 @@ def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
         _print(status(paths))
         return 0
     if args.command == "watchdog":
+        configure(paths.logs, Redactor.from_environment([]), filename="watchdog.jsonl")
         did = check(paths.data, desk_for(paths, settings), datetime.now().astimezone(),
                     command=engine_command(root))  # fmt: skip
         _print(did)
@@ -111,15 +117,19 @@ def serve(paths: Paths, settings: Settings) -> int:
     paths.create()
     lock = runmode.EngineLock(paths.data)
     try:
-        lock.acquire()
+        lock.acquire(wait_s=3.0)
     except runmode.AlreadyRunning:
         _print({"refused": "the engine is already running"})
         return 1
     try:
         runmode.clear_stop(paths.data)
+        runmode.write_snapshot(paths.data, runmode.starting_snapshot(time.time_ns()))
 
         def snapshot(health: dict[str, object]) -> None:
-            runmode.write_snapshot(paths.data, runmode.snapshot_of(health, time.time_ns()))
+            try:
+                runmode.write_snapshot(paths.data, runmode.snapshot_of(health, time.time_ns()))
+            except OSError as exc:  # a reader held it this instant: the next minute writes it
+                log.warning("health snapshot not written", extra={"error": type(exc).__name__})
 
         with runmode.keep_awake():
             asyncio.run(

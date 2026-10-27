@@ -17,9 +17,12 @@ import ctypes
 import json
 import os
 import sys
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import IO, Any
+
+from ikars_engine.files import write_text_atomic
 
 LOCK = "engine.lock"
 STOP = "stop.request"
@@ -40,14 +43,21 @@ class EngineLock:
         self.path = folder / LOCK
         self._handle: IO[str] | None = None
 
-    def acquire(self) -> None:
+    def acquire(self, wait_s: float = 0.0) -> None:
+        """Take the lock, trying for ``wait_s`` seconds: a ``status`` or a watchdog probing it
+        holds it for an instant, and must not turn a starting engine away."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         handle = open(self.path, "a+", encoding="utf-8")  # noqa: SIM115 (held for the run)
-        try:
-            _lock(handle)
-        except OSError:
-            handle.close()
-            raise AlreadyRunning("the engine is already running") from None
+        deadline = time.monotonic() + wait_s
+        while True:
+            try:
+                _lock(handle)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    handle.close()
+                    raise AlreadyRunning("the engine is already running") from None
+                time.sleep(0.2)
         handle.seek(0)
         handle.truncate()
         handle.write(str(os.getpid()))
@@ -63,13 +73,17 @@ class EngineLock:
 
 
 def engine_running(folder: Path) -> bool:
-    """True while some process holds the engine's lock."""
-    probe = EngineLock(folder)
-    try:
-        probe.acquire()
-    except AlreadyRunning:
-        return True
-    probe.release()
+    """True while some process holds the engine's lock. The probe takes the lock for an instant
+    and writes nothing (an engine starting meanwhile waits: see :meth:`EngineLock.acquire`)."""
+    path = folder / LOCK
+    if not path.exists():
+        return False
+    with open(path, "a+", encoding="utf-8") as handle:
+        try:
+            _lock(handle)
+        except OSError:
+            return True
+        _unlock(handle)
     return False
 
 
@@ -123,10 +137,13 @@ def clear_stop(folder: Path) -> None:
 
 
 def write_snapshot(folder: Path, snapshot: dict[str, Any]) -> None:
-    folder.mkdir(parents=True, exist_ok=True)
-    temporary = folder / (SNAPSHOT + ".tmp")
-    temporary.write_text(json.dumps(snapshot, default=str), encoding="utf-8")
-    temporary.replace(folder / SNAPSHOT)
+    write_text_atomic(folder / SNAPSHOT, json.dumps(snapshot, default=str))
+
+
+def starting_snapshot(now_ns: int) -> dict[str, Any]:
+    """Written as soon as ``serve`` holds the lock, so the watchdog never judges a new engine by
+    the last run's snapshot; it allows a start-up grace (discovery takes a minute or two)."""
+    return {"written_ns": now_ns, "pid": os.getpid(), "starting": True}
 
 
 def read_snapshot(folder: Path) -> dict[str, Any] | None:
@@ -151,6 +168,7 @@ def snapshot_of(health: dict[str, Any], now_ns: int) -> dict[str, Any]:
     return {
         "written_ns": now_ns,
         "pid": os.getpid(),
+        "starting": False,
         "feed": {
             "connected": at(health, "kalshi", "feed", "connected"),
             "seconds_since_last_frame": at(health, "kalshi", "feed", "seconds_since_last_frame"),
