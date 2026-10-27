@@ -642,7 +642,7 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 | M1.4b Kalshi feeds and recording | **done** (BUILD-LOG 1.4b; PR #5 merged as `58abbe5`); recording volume of about 2.1 GB a day accepted as is |
 | M1.5a Audit ledger | **done** (BUILD-LOG 1.5a; PR #7 merged as `087b819`): reconciles exactly with Kalshi |
 | M1.5b Share backups, restore drill, portfolio | **done** (BUILD-LOG 1.5b; PR #8 merged as `5b6f702`) |
-| M1.6 Run mode and alerts | plan proposed 2026-10-27 (BUILD-LOG 1.6) |
+| M1.6 Run mode and alerts | **built and verified live** (BUILD-LOG 1.6); PR waiting for the owner's merge; the owner's sign-out check of auto-start pending |
 
 ## 9. Parking lot
 

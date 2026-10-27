@@ -1113,7 +1113,7 @@ minute; unexplained money labelled by the owner; FIFO.
 
 **M1.5 done:** PR #8 merged as `5b6f702` (2026-10-27).
 
-### 1.6 Run mode and alerts (plan PROPOSED 2026-10-27; branch `m1/6-run-mode`)
+### 1.6 Run mode and alerts (plan APPROVED 2026-10-27, all four answers as recommended; branch `m1/6-run-mode`)
 
 **Builds** (in `ikars-engine`; no new packages):
 1. **Background run mode (G5):**
@@ -1196,3 +1196,79 @@ minute; unexplained money labelled by the owner; FIFO.
 
 **Owner's change (2026-10-27):** phone pushes (item 6, ntfy) removed; notifications stay on the workstation.
 PLAN G6, the M1 and M4 outlines, the M1.6 row and DEPENDENCIES were amended to match.
+
+**Owner's answers (2026-10-27):** all four as recommended:
+1. notifications through Windows' own classes via Windows PowerShell, with no new package;
+2. quiet hours from 22:00 to 07:00, when only urgent alerts pop up;
+3. the system kept awake while the engine runs, the display free to sleep;
+4. the watchdog every 5 minutes, with the 2-check confirmation.
+
+#### 1.6 built (2026-10-27)
+
+**Built** (`ikars-engine`; commits `ad60325`, `532a3f2`, `fd4fd1a`; no new packages):
+
+| Area | What |
+|---|---|
+| Run mode | `serve`, `stop`, `status`.<br>**Lock:** a single-instance lock that Windows releases however the engine ends. `serve` waits up to 3 s for a probe to let go, and the probe writes nothing.<br>**Stop:** a stop request (checked every 2 s), and a stopped-by-owner mark the watchdog respects.<br>**Snapshot:** a "starting" snapshot at once, then a minute health snapshot with counts, ages and booleans only, written whole with `fsync`.<br>**Keep-awake:** the system stays awake while the engine runs.<br>**Failures:** a start-up failure is written to the log, and so is an engine task that ends by itself, which also makes `serve` exit. |
+| Watchdog | KAPS's rules: a problem must show on 2 checks; a reminder every 6 hours; one message when it clears; its own state file; a notification that fails, or is throttled, is tried again.<br>**Restarts:** at most 3 an hour, never an engine you stopped, said at once.<br>**Alerts on:** engine down or silent (with a 10-minute start-up grace), feed stale while trading, the ledger chain broken or not reconciling, backups failing or over 36 hours old, storage near its budget.<br>**Log:** its own `watchdog.jsonl`. |
+| Alerts | Priorities, de-duplication, throttling, quiet hours 22:00 to 07:00 (a bad setting falls back to that, with a warning), an hourly digest, and the alert log `alerts.jsonl` (failed notifications included).<br>**Windows notifications** come from Windows PowerShell's WinRT classes, with the text passed through environment variables and XML-escaped. **No phone pushes** (your decision, 2026-10-27). |
+| Auto-start | Three entries, installed and removed together, all user space, with `--root` resolved: the HKCU Run entry `IKARS Engine`, the scheduled task `IKARS Watchdog` (every 5 minutes), and the notification name `IKARS`. |
+| GPU | `nvidia-smi` gives the name, memory, driver and CUDA version ("CUDA Version" or the newer "CUDA UMD Version"). Detection runs in the background, and with no NVIDIA card health says "CPU only". |
+| Shared | `files.write_text_atomic` (with `fsync`); `threads.in_daemon_thread` (for a NAS or a driver that hangs); `logs.configure(filename=...)`. |
+
+**Verified.**
+- 1,255 tests pass; coverage 93.7%; ruff, mypy, the data guard and gitleaks are clean. Windows is faked in the
+  tests, except for one real round trip on a throwaway HKCU key.
+- **Live**, on this workstation:
+
+  | Check | Result |
+  |---|---|
+  | `install-autostart` | all three entries installed with no admin rights |
+  | `alerts test` | the notification was shown (the owner to confirm they saw it) |
+  | `serve` in the background | running; the snapshot fresh; GPU **NVIDIA GeForce RTX 5070 Ti**; the ledger verified and reconciling exactly; backups configured |
+  | A second `serve` | refused |
+  | Hard kill, then a watchdog pass | the watchdog restarted the engine (a new process reporting within 10 s). The "engine restarted" notice was **held for the morning digest**, as quiet hours require (it was after 22:00). The scheduled task had already restarted the engine once on its own, when a start failed for lack of the key variables in this editor's session. |
+  | `stop` | a clean stop; the watchdog then left the engine alone; no errors in the log |
+  | The fixed code | restarted on it: the "starting" snapshot, then the real one, GPU in the background, `watchdog.jsonl` written, no errors |
+- **Left for the owner:** sign out and back in, to see the engine start from the Run entry. Until then the engine
+  keeps running in the background from this session.
+
+**Review (R14).**
+- **Per commit (`ad60325`), 4 fixed:**
+
+  | # | Finding | Fix |
+  |---|---|---|
+  | 1 | A throttled alert was recorded as told, so a recurring problem went quiet | Not recorded; due again at the next check |
+  | 2 | The `shown` count included throttled and held alerts | Counts only notifications shown |
+  | 3 | `install-autostart` ignored `--root` | Both the engine and the watchdog get the folder |
+  | 4 | A run under a minute printed no summary | A last summary on exit |
+- **Live finding (`532a3f2`):** a background engine that failed to start left no trace. Now it is logged.
+- **Per merge (medium), all 10 fixed in `fd4fd1a`:**
+
+  | # | Finding | Fix |
+  |---|---|---|
+  | 1 | A snapshot write blocked by a reader could stop the engine | Logged; the next minute writes it |
+  | 2 | An engine task that ended by itself kept the lock and fresh snapshots | `EngineStopped`; `serve` exits; the watchdog restarts it |
+  | 3 | Bad quiet-hours settings crashed every watchdog pass | Fall back to 22:00 to 07:00, with a warning |
+  | 4 | A lock probe could turn a starting engine away, and wrote its own pid | The probe writes nothing; `serve` waits up to 3 s |
+  | 5 | A new engine was judged by the last run's snapshot | A "starting" snapshot and a 10-minute grace |
+  | 6 | A relative `--root` resolved elsewhere later | Resolved before it is stored |
+  | 7 | A failed notification never reached the alert log | Logged as "failed" |
+  | 8 | The watchdog had no log (and `pythonw` has no stderr) | Its own `watchdog.jsonl` |
+  | 9 | Duplicated `pythonw` lookup, and three atomic writes without `fsync` | Shared helpers |
+  | 10 | GPU detection could hold up the start by up to 20 s | Runs in the background |
+- **Per commit (`fd4fd1a`):** 1 fixed: an unexpected error in background GPU detection now reads "detection
+  failed" instead of "detecting" forever.
+
+**Kept, changed and why.**
+- *Kept from KAPS's watchdog:* the confirm, remind and clear rules, the state file, and a retry for an alert that
+  wasn't delivered.
+- *Changed:* delivery is Windows notifications (no ntfy); the observations are a lock and a snapshot, not `systemd`
+  and PostgreSQL; the restart, which `systemd` did for KAPS, is now the watchdog's job.
+
+**Problems and fixes.**
+- This editor's shell predates the key variables. Live runs load them into the process, and at sign-in Windows
+  gives them to the Run entry and the task.
+- The engine's lock file can't be read while it's held, so the process ID comes from the snapshot.
+
+**M1.6 done**, subject to your merge and your sign-out check.
