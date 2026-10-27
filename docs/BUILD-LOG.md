@@ -1624,3 +1624,5 @@ made-up context: 100 watched markets whose quotes and books all change every 100
   the terminal (one hand-over per tick), so a burst never reaches the UI thread as a burst.
 
 **M1.8a built**, subject to the owner's merge.
+
+**M1.8a done:** PR #11 merged as `77849e3` (2026-10-27).
