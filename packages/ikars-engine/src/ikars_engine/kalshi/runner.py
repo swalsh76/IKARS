@@ -130,7 +130,9 @@ def settings_digest(settings: Settings) -> str:
     return hashlib.sha256(msgspec.json.encode(settings)).hexdigest()
 
 
-async def build(paths: Paths, settings: Settings, root: Path | None = None) -> Live:
+async def build(
+    paths: Paths, settings: Settings, root: Path | None = None, restartable: bool = False
+) -> Live:
     config = KalshiConfig(environment=Environment(settings.kalshi.environment))
     zone = taxzone.resolve(settings.tax_time_zone)  # a bad setting fails before anything opens
     clock = WallClock()
@@ -224,7 +226,7 @@ async def build(paths: Paths, settings: Settings, root: Path | None = None) -> L
             ),
             sessions=sessions,
             web_root=web_root,
-            config=TerminalConfig(paths, settings, root),
+            config=TerminalConfig(paths, settings, root, restartable=restartable),
         )
 
     api = ApiServer(api_context, paths.data, port=settings.terminal.port)
@@ -326,7 +328,7 @@ async def run(
         max_bytes=settings.logs.max_bytes,
         files_kept=settings.logs.files_kept,
     )
-    live = await build(paths, settings, root)
+    live = await build(paths, settings, root, restartable=should_stop is not None)
     engine = live.engine
     health: dict[str, object] = {}
     running: list[asyncio.Task[object]] = []

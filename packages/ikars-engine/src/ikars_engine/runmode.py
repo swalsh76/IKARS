@@ -27,6 +27,7 @@ from ikars_engine.files import write_text_atomic
 LOCK = "engine.lock"
 STOP = "stop.request"
 STOPPED_BY_OWNER = "stopped-by-owner"
+RESTART = "restart.request"  # with stop.request: a fresh engine once this one has stopped
 SNAPSHOT = "health.json"
 ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
@@ -129,7 +130,7 @@ def stopped_by_owner(folder: Path) -> bool:
 
 
 def clear_stop(folder: Path) -> None:
-    for name in (STOP, STOPPED_BY_OWNER):
+    for name in (STOP, STOPPED_BY_OWNER, RESTART):  # a start spends a stale restart request too
         (folder / name).unlink(missing_ok=True)
 
 

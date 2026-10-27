@@ -56,6 +56,7 @@ from ikars_engine.runmode import at
 from ikars_engine.session import COOKIE, Sessions
 from ikars_engine.settings_api import SettingsRefused, TerminalConfig
 from ikars_engine.store import Gap
+from ikars_engine.threads import in_daemon_thread
 from ikars_engine.webserve import SECURITY_HEADERS, files_route
 
 log = logging.getLogger("ikars_engine.api")
@@ -641,8 +642,8 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         return ctx.config
 
     async def settings_view(request: Request) -> Response:
-        try:
-            return _json(configured().view())
+        try:  # a thread: the view queries the task scheduler and reads files (merge review 1)
+            return _json(await in_daemon_thread(configured().view))
         except SettingsRefused as exc:  # the file cannot be read: said, never a 500
             return _error(503, "unavailable", str(exc))
 
@@ -650,7 +651,7 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         config = configured()
         try:
             wanted = msgspec.json.decode(await request.body(), type=c.SettingsChange)
-            return _json(config.change(wanted))
+            return _json(await in_daemon_thread(config.change, wanted))
         except msgspec.DecodeError as exc:
             return _error(400, "bad_request", str(exc))
         except SettingsRefused as exc:
@@ -670,7 +671,7 @@ def create_app(ctx: ApiContext) -> ASGIApp:
             return _error(503, "unavailable", "the share did not answer in time")
 
     async def autostart_install(request: Request) -> Response:
-        return _json(configured().install_autostart())
+        return _json(await in_daemon_thread(configured().install_autostart))
 
     async def restart(request: Request) -> Response:
         return _json(configured().restart())

@@ -18,7 +18,7 @@ const VIEW: SettingsView = {
   port: 47821,
   session_days: 30,
   restart_needed: [],
-  key: { id_set: true, path_set: true, file_found: true, owner_only: true, environment: "production" },
+  key: { id_set: true, path_set: true, file_found: true, owner_only: true, environment: "production", needs_restart: false },
   autostart_installed: true,
 };
 
@@ -40,12 +40,13 @@ describe("the key", () => {
   it("is yes or no only, and says what is missing", () => {
     expect(keyLines(VIEW.key).map((l) => l.text)).toEqual(["set", "set · file found · readable by you only", "Production (read-only key)"]);
     expect(keyReady(VIEW.key)).toBe(true);
-    const missing = { id_set: false, path_set: false, file_found: false, owner_only: null, environment: "demo" };
+    const missing = { id_set: false, path_set: false, file_found: false, owner_only: null, environment: "demo", needs_restart: false };
     expect(keyLines(missing).map((l) => l.text)).toEqual(["not set", "the path's variable is not set", "Demo (read-only key)"]);
     expect(keyReady(missing)).toBe(false);
     expect(keyLines({ ...VIEW.key, file_found: false })[1]?.text).toBe("the variable is set but no key file is there");
     expect(keyLines({ ...VIEW.key, owner_only: false })[1]).toMatchObject({ ok: false, text: "set · file found · other accounts can read it" });
     expect(keyLines({ ...VIEW.key, owner_only: null })[1]?.text).toBe("set · file found");
+    expect(keyLines({ ...VIEW.key, needs_restart: true })[2]?.text).toContain("restart the engine to use it");
   });
 });
 

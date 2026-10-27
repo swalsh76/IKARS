@@ -163,9 +163,11 @@ def serve(paths: Paths, settings: Settings, root: Path | None = None) -> int:
         return 1
     finally:
         (paths.data / runmode.STOP).unlink(missing_ok=True)
-        lock.release()
-        if restart_wanted(paths.data):  # Settings' "Restart the engine": a fresh one, now unlocked
+        if restart_wanted(paths.data):
+            # Settings' "Restart the engine": the fresh one starts while this one still holds the
+            # lock (it waits for it), so the watchdog never sees a gap to fill (merge review 8)
             start_engine(engine_command(root))
+        lock.release()
     return 0
 
 

@@ -3,7 +3,10 @@
 // and parts drawn from the tokens by script (the chart) hear the THEME_EVENT and repaint. The choice
 // is saved with the engine's settings (`terminal.skin`). Colours only: the CSP is unchanged.
 
-export type Theme = "system" | "dark" | "light" | "contrast" | "midnight" | "paper";
+import type { SettingsView } from "../api/contracts";
+
+/** The skins, as the engine's settings name them (generated: one list, in settings.py's Skin). */
+export type Theme = SettingsView["skin"];
 
 export interface Skin {
   id: Theme;

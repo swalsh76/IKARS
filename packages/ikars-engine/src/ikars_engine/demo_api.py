@@ -26,6 +26,7 @@ from ikars_core.models import Candlestick
 from ikars_core.ws_models import parse_frame
 
 from ikars_engine.api import ApiContext, ApiServer
+from ikars_engine.autostart import MemoryRegistry
 from ikars_engine.kalshi.discovery import MarketIndex, MarketInfo
 from ikars_engine.ledger import Entry, Ledger
 from ikars_engine.metrics import Metrics
@@ -115,25 +116,6 @@ def made_up_candles(start_s: int, end_s: int, minutes: int, seed: str) -> list[C
             "yes_ask": {"close_dollars": f"0.{price + 1:02d}00"},
         }))  # fmt: skip
     return rows
-
-
-class MemoryRegistry:
-    """The Windows registry, in memory: the demo's start at sign-in never touches the real one."""
-
-    def __init__(self) -> None:
-        self.values: dict[tuple[str, str], str] = {}
-
-    def set(self, key: str, name: str, value: str) -> None:
-        self.values[(key, name)] = value
-
-    def delete_value(self, key: str, name: str) -> bool:
-        return self.values.pop((key, name), None) is not None
-
-    def delete_key(self, key: str) -> bool:
-        return False
-
-    def get(self, key: str, name: str) -> str | None:
-        return self.values.get((key, name))
 
 
 def demo_health(market: Market) -> dict[str, Any]:

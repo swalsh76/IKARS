@@ -536,6 +536,9 @@
         "id_set": {
           "type": "boolean"
         },
+        "needs_restart": {
+          "type": "boolean"
+        },
         "owner_only": {
           "anyOf": [
             {
@@ -555,7 +558,8 @@
         "path_set",
         "file_found",
         "owner_only",
-        "environment"
+        "environment",
+        "needs_restart"
       ],
       "title": "KeyStatus",
       "type": "object"
@@ -1215,7 +1219,14 @@
         "skin": {
           "anyOf": [
             {
-              "type": "string"
+              "enum": [
+                "contrast",
+                "dark",
+                "light",
+                "midnight",
+                "paper",
+                "system"
+              ]
             },
             {
               "type": "null"
@@ -1312,7 +1323,14 @@
           "type": "integer"
         },
         "skin": {
-          "type": "string"
+          "enum": [
+            "contrast",
+            "dark",
+            "light",
+            "midnight",
+            "paper",
+            "system"
+          ]
         },
         "storage_budget_gb": {
           "type": "integer"

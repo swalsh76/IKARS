@@ -27,6 +27,8 @@ from typing import Any
 
 import msgspec
 
+from ikars_engine.settings import Skin
+
 API_VERSION = "2.0"  # 2.0: typed health, AlertView.at_local, sign-in
 
 
@@ -277,13 +279,14 @@ class KeyStatus(msgspec.Struct, kw_only=True):
     file_found: bool  # the key file is there
     owner_only: bool | None  # only this account can read it (None: could not be told)
     environment: str  # production or demo
+    needs_restart: bool  # set in Windows since this engine started: a restart uses it
 
 
 class SettingsView(msgspec.Struct, kw_only=True):
     """``GET /v1/settings`` (M1.8b-1): what the Settings screen and the first-run wizard show."""
 
     first_run: bool  # no settings file yet: the wizard opens
-    skin: str  # system, dark, light, contrast, midnight or paper
+    skin: Skin
     quiet_start: str  # HH:MM, workstation time
     quiet_end: str
     throttle_minutes: int
@@ -304,7 +307,7 @@ class SettingsView(msgspec.Struct, kw_only=True):
 class SettingsChange(msgspec.Struct, kw_only=True, forbid_unknown_fields=True, omit_defaults=True):
     """``PUT /v1/settings``: the settings to change (any left out stay as they are)."""
 
-    skin: str | None = None
+    skin: Skin | None = None
     quiet_start: str | None = None
     quiet_end: str | None = None
     throttle_minutes: int | None = None
@@ -447,8 +450,9 @@ def examples() -> dict[str, Any]:
         close_e6=420_000, bid_close_e6=410_000, ask_close_e6=430_000, volume_e2=2_500,
     )  # fmt: skip
     key = KeyStatus(
-        id_set=True, path_set=True, file_found=True, owner_only=True, environment="production"
-    )
+        id_set=True, path_set=True, file_found=True, owner_only=True, environment="production",
+        needs_restart=False,
+    )  # fmt: skip
     feed = FeedHealth(
         connected=True, seconds_since_last_frame=0.2, open_gaps=0, books_ready=100,
         watched_markets=100, trading_active=True,

@@ -172,6 +172,7 @@ export interface KeyStatus {
 environment: string
 file_found: boolean
 id_set: boolean
+needs_restart: boolean
 owner_only: (boolean | null)
 path_set: boolean
 }
@@ -294,7 +295,7 @@ quiet_end?: (string | null)
 quiet_start?: (string | null)
 read_share_percent?: (number | null)
 session_days?: (number | null)
-skin?: (string | null)
+skin?: (("contrast" | "dark" | "light" | "midnight" | "paper" | "system") | null)
 storage_budget_gb?: (number | null)
 tax_time_zone?: (string | null)
 throttle_minutes?: (number | null)
@@ -315,7 +316,7 @@ quiet_start: string
 read_share_percent: number
 restart_needed: string[]
 session_days: number
-skin: string
+skin: ("contrast" | "dark" | "light" | "midnight" | "paper" | "system")
 storage_budget_gb: number
 tax_time_zone: string
 tax_zone_effective: string

@@ -18,10 +18,11 @@ thread with a time limit: a slow network share must never stall the engine's eve
 import asyncio
 import os
 import secrets
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import msgspec
 from ikars_core.winacl import other_readers
@@ -30,13 +31,14 @@ from ikars_engine import autostart, runmode, taxzone
 from ikars_engine import contracts as c
 from ikars_engine.alerts import QuietHours
 from ikars_engine.paths import Paths
-from ikars_engine.settings import Settings, SettingsError, backup, load, save
+from ikars_engine.settings import Settings, SettingsError, Skin, backup, load, save
 from ikars_engine.share import MARKER, Share, ShareError
 from ikars_engine.threads import in_daemon_thread
 
-SKINS = ("system", "dark", "light", "contrast", "midnight", "paper")
+SKINS: tuple[str, ...] = get_args(Skin)
 SHARE_WAIT_S = 10.0
-RESTART = "restart.request"  # with stop.request: the engine starts afresh once it has stopped
+RESTART = runmode.RESTART
+BACKUPS_KEPT = 20  # the settings file's backups kept (each change but a skin makes one)
 
 # a changed setting -> where it lives in the settings, and its allowed range (whole numbers)
 NUMBERS: dict[str, tuple[str, str, int, int]] = {
@@ -92,11 +94,14 @@ def checked(settings: Settings, change: c.SettingsChange) -> Settings:
                 raise SettingsRefused(f"{name} must be a whole number from {low} to {high}")
         elif name == "skin" and value not in SKINS:
             raise SettingsRefused(f"skin must be one of {', '.join(SKINS)}")
-        elif name == "tax_time_zone" and value:
+        elif name == "tax_time_zone" and value.strip():
             try:
-                taxzone.resolve(value)
+                taxzone.resolve(value.strip())
             except Exception as exc:  # an unknown zone: said plainly
-                raise SettingsRefused(f"{value!r} is not a time zone IKARS knows") from exc
+                raise SettingsRefused(f"{value.strip()!r} is not a time zone IKARS knows") from exc
+        elif name == "backup_share" and value.strip() and not Path(value.strip()).is_absolute():
+            # a relative path would land under the engine's working folder (merge review 3)
+            raise SettingsRefused(r"the share must be a full path, like \\server\share")
         settings = _with(settings, name, value.strip() if isinstance(value, str) else value)
     try:
         QuietHours.parse(settings.alerts.quiet_start, settings.alerts.quiet_end)
@@ -105,8 +110,41 @@ def checked(settings: Settings, change: c.SettingsChange) -> Settings:
     return settings
 
 
-def key_status(settings: Settings, environ: dict[str, str] | None = None) -> c.KeyStatus:
-    env = os.environ if environ is None else environ
+def user_environment(names: tuple[str, ...]) -> dict[str, str]:
+    """These variables as Windows has them for the user now (the engine's own environment is fixed
+    when it starts: a variable set since then shows only here). Empty off Windows."""
+    if sys.platform != "win32":
+        return {}
+    import winreg
+
+    found: dict[str, str] = {}
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            for name in names:
+                try:
+                    value, kind = winreg.QueryValueEx(key, name)
+                except OSError:
+                    continue
+                # an expandable value (%USERPROFILE%\...) reads as Windows gives it to programs
+                expand = kind == winreg.REG_EXPAND_SZ
+                found[name] = os.path.expandvars(value) if expand else str(value)
+    except OSError:
+        return {}
+    return found
+
+
+def key_status(
+    settings: Settings,
+    environ: dict[str, str] | None = None,
+    windows: dict[str, str] | None = None,
+) -> c.KeyStatus:
+    """The key as yes or no: from this engine's environment, or else from what Windows has now (then
+    a restart is needed to use it; merge review 6)."""
+    names = (settings.kalshi.key_id_variable, settings.kalshi.key_path_variable)
+    own = dict(os.environ) if environ is None else environ
+    now = user_environment(names) if windows is None else windows
+    needs_restart = any(not own.get(n) and now.get(n) for n in names)
+    env = {n: own.get(n) or now.get(n, "") for n in names}
     path = env.get(settings.kalshi.key_path_variable, "")
     found = bool(path) and Path(path).is_file()
     owner_only: bool | None = None
@@ -118,6 +156,7 @@ def key_status(settings: Settings, environ: dict[str, str] | None = None) -> c.K
     return c.KeyStatus(
         id_set=bool(env.get(settings.kalshi.key_id_variable)), path_set=bool(path),
         file_found=found, owner_only=owner_only, environment=settings.kalshi.environment,
+        needs_restart=needs_restart,
     )  # fmt: skip
 
 
@@ -152,8 +191,11 @@ class TerminalConfig:
     paths: Paths
     running: Settings
     root: Path | None = None  # the engine's --root, for a restart or the start at sign-in
-    registry: Any = None  # the Windows registry (tests give a fake)
+    registry: autostart.Registry | None = None  # the Windows registry (tests give MemoryRegistry)
     run_command: Callable[[list[str]], int] = autostart.run_quietly
+    restartable: bool = (
+        False  # it runs under ``serve`` (a foreground ``run`` cannot restart itself)
+    )
 
     def _saved(self) -> Settings:
         """The settings on disk (the running ones before the first save); a file that cannot be read
@@ -167,7 +209,10 @@ class TerminalConfig:
 
     def view(self) -> c.SettingsView:
         saved = self._saved()
-        zone = taxzone.resolve(saved.tax_time_zone)
+        try:
+            zone = taxzone.resolve(saved.tax_time_zone)
+        except Exception as exc:  # a hand-edited zone IKARS does not know: said, never a 500
+            raise SettingsRefused(f"the settings' tax time zone cannot be used: {exc}") from exc
         registry = self.registry if self.registry is not None else autostart.UserRegistry()
         try:
             installed = all(autostart.installed(registry, self.run_command).values())
@@ -192,10 +237,19 @@ class TerminalConfig:
     def change(self, change: c.SettingsChange) -> c.SettingsView:
         """Check and save ``change`` (the old file kept as a backup first)."""
         updated = checked(self._saved(), change)
-        if self.paths.settings.exists():
+        only_skin = all(v is None for k, v in msgspec.structs.asdict(change).items() if k != "skin")
+        if self.paths.settings.exists() and not only_skin:  # a skin is no change worth a backup
             backup(self.paths.settings)
+            self._prune_backups()
         save(updated, self.paths.settings)
         return self.view()
+
+    def _prune_backups(self) -> None:
+        """The latest BACKUPS_KEPT backups of the settings file (merge review 4)."""
+        name = self.paths.settings
+        kept = sorted(name.parent.glob(f"{name.stem}.*.bak{name.suffix}"))
+        for old in kept[:-BACKUPS_KEPT]:
+            old.unlink(missing_ok=True)
 
     async def share_check(self, share: str) -> c.ShareCheckView:
         return await asyncio.wait_for(in_daemon_thread(lambda: check_share(share)), SHARE_WAIT_S)
@@ -226,6 +280,11 @@ class TerminalConfig:
 
     def restart(self) -> c.Done:
         """Ask the engine to stop and start afresh (not marked as stopped by the owner)."""
+        if not self.restartable:  # merge review 2: nothing would start it again
+            return c.Done(
+                done=False,
+                detail="this engine runs in the foreground: stop it (Ctrl+C) and start it again",
+            )
         self.paths.data.mkdir(parents=True, exist_ok=True)
         (self.paths.data / RESTART).write_text("restart\n", encoding="utf-8")
         (self.paths.data / runmode.STOP).write_text("restart\n", encoding="utf-8")

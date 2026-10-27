@@ -7,6 +7,7 @@ import httpx
 import msgspec
 import pytest
 from ikars_engine import contracts as c
+from ikars_engine.autostart import MemoryRegistry
 from ikars_engine.paths import Paths
 from ikars_engine.settings import Settings, load, save
 from ikars_engine.settings_api import (
@@ -20,34 +21,12 @@ from ikars_engine.settings_api import (
 )
 
 
-class Registry:
-    """The Windows registry, in memory."""
-
-    def __init__(self) -> None:
-        self.values: dict[tuple[str, str], str] = {}
-
-    def set(self, key: str, name: str, value: str) -> None:
-        self.values[(key, name)] = value
-
-    def delete_value(self, key: str, name: str) -> bool:
-        return self.values.pop((key, name), None) is not None
-
-    def delete_key(self, key: str) -> bool:
-        gone = [k for k in self.values if k[0].startswith(key)]
-        for k in gone:
-            del self.values[k]
-        return bool(gone)
-
-    def get(self, key: str, name: str) -> str | None:
-        return self.values.get((key, name))
-
-
 def config(tmp_path: Path, *, saved: bool = True) -> TerminalConfig:
     paths = Paths(tmp_path).create()
     running = Settings()
     if saved:
         save(running, paths.settings)
-    return TerminalConfig(paths, running, None, Registry(), lambda argv: 0)
+    return TerminalConfig(paths, running, None, MemoryRegistry(), lambda argv: 0, restartable=True)
 
 
 def test_the_view_shows_the_saved_settings_and_the_first_run(tmp_path: Path) -> None:
@@ -70,7 +49,7 @@ def test_a_change_is_checked_backed_up_and_saved(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("change", "says"),
     [
-        (c.SettingsChange(skin="neon"), "skin must be one of"),
+        (c.SettingsChange(skin="neon"), "skin must be one of"),  # type: ignore[arg-type]
         (c.SettingsChange(port=80), "port must be a whole number from 1024"),
         (c.SettingsChange(session_days=0), "session_days"),
         (c.SettingsChange(quiet_start="late"), "quiet hours must be times"),
@@ -93,11 +72,11 @@ def test_the_key_status_is_yes_or_no_only(tmp_path: Path) -> None:
     key = tmp_path / "made-up.pem"
     key.write_text("not a real key", encoding="utf-8")
     env = {"IKARS_KALSHI_KEY_ID": "made-up-id", "IKARS_KALSHI_PRIVATE_KEY_PATH": str(key)}
-    status = key_status(Settings(), env)
+    status = key_status(Settings(), env, {})  # never this machine's real variables
     assert status.id_set and status.path_set and status.file_found
     text = msgspec.json.encode(status).decode()
     assert "made-up-id" not in text and str(key) not in text and "made-up.pem" not in text
-    missing = key_status(Settings(), {})
+    missing = key_status(Settings(), {}, {})
     assert not missing.id_set and not missing.path_set and not missing.file_found
     assert missing.owner_only is None
 
@@ -172,7 +151,7 @@ async def test_the_settings_routes(tmp_path: Path) -> None:
         changed = await http.put("/v1/settings", headers=auth, json={"skin": "paper"})
         assert changed.status_code == 200 and changed.json()["skin"] == "paper"
         refused = await http.put("/v1/settings", headers=auth, json={"skin": "neon"})
-        assert refused.status_code == 400 and "skin must be" in refused.json()["detail"]
+        assert refused.status_code == 400 and "neon" in refused.json()["detail"]  # not a skin
         unknown = await http.put("/v1/settings", headers=auth, json={"api_token": "x"})
         assert unknown.status_code == 400  # unknown fields refused
         share = tmp_path / "share"
@@ -228,3 +207,57 @@ def test_an_unreadable_settings_file_is_refused_in_words_and_kept(tmp_path: Path
     with pytest.raises(SettingsRefused, match="cannot be read"):
         cfg.change(c.SettingsChange(skin="dark"))
     assert cfg.paths.settings.read_text(encoding="utf-8") == "version = ["  # never overwritten
+
+
+# --- the M1.8b-1 merge review -------------------------------------------------------------------
+
+
+def test_a_share_must_be_a_full_path_and_a_blank_zone_means_the_workstation_s() -> None:
+    with pytest.raises(SettingsRefused, match="full path"):
+        checked(Settings(), c.SettingsChange(backup_share="Documents"))
+    assert checked(Settings(), c.SettingsChange(tax_time_zone="   ")).tax_time_zone == ""
+
+
+def test_a_skin_makes_no_backup_and_backups_are_kept_to_the_latest(tmp_path: Path) -> None:
+    cfg = config(tmp_path)
+    cfg.change(c.SettingsChange(skin="paper"))
+    assert not list(cfg.paths.root.glob("settings.*.bak.toml"))
+    for minutes in range(1, 26):
+        cfg.change(c.SettingsChange(throttle_minutes=minutes))
+    assert len(list(cfg.paths.root.glob("settings.*.bak.toml"))) == 20
+
+
+def test_a_bad_zone_in_the_file_is_refused_in_words(tmp_path: Path) -> None:
+    cfg = config(tmp_path)
+    text = cfg.paths.settings.read_text(encoding="utf-8").replace(
+        'tax_time_zone = ""', 'tax_time_zone = "Mountain"'
+    )
+    cfg.paths.settings.write_text(text, encoding="utf-8")
+    with pytest.raises(SettingsRefused, match="tax time zone"):
+        cfg.view()
+
+
+def test_a_key_set_in_windows_since_the_start_needs_a_restart(tmp_path: Path) -> None:
+    key = tmp_path / "made-up.pem"
+    key.write_text("x", encoding="utf-8")
+    now = {"IKARS_KALSHI_KEY_ID": "id", "IKARS_KALSHI_PRIVATE_KEY_PATH": str(key)}
+    status = key_status(Settings(), {}, now)
+    assert status.id_set and status.file_found and status.needs_restart
+    assert key_status(Settings(), now, {}).needs_restart is False
+
+
+def test_a_foreground_engine_refuses_a_restart_it_could_not_carry_out(tmp_path: Path) -> None:
+    cfg = config(tmp_path)
+    cfg.restartable = False
+    done = cfg.restart()
+    assert not done.done and "foreground" in done.detail
+    assert not (cfg.paths.data / RESTART).exists()
+
+
+def test_a_start_spends_a_stale_restart_request(tmp_path: Path) -> None:
+    from ikars_engine import runmode
+
+    cfg = config(tmp_path)
+    cfg.restart()
+    runmode.clear_stop(cfg.paths.data)  # what serve does when it starts
+    assert not (cfg.paths.data / RESTART).exists() and not restart_wanted(cfg.paths.data)

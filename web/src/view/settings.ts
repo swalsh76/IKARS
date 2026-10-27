@@ -73,6 +73,7 @@ export interface KeyLine {
 
 /** The Kalshi key as yes or no only (never a key, its id or its path). */
 export function keyLines(k: KeyStatus): KeyLine[] {
+  const restart = k.needs_restart ? " (set in Windows since the engine started: restart the engine to use it)" : "";
   const file = !k.path_set
     ? "the path's variable is not set"
     : !k.file_found
@@ -85,7 +86,7 @@ export function keyLines(k: KeyStatus): KeyLine[] {
   return [
     { label: "IKARS_KALSHI_KEY_ID", ok: k.id_set, text: k.id_set ? "set" : "not set" },
     { label: "IKARS_KALSHI_PRIVATE_KEY_PATH", ok: k.path_set && k.file_found && k.owner_only !== false, text: file },
-    { label: "Environment", ok: null, text: `${k.environment === "production" ? "Production" : "Demo"} (read-only key)` },
+    { label: "Environment", ok: null, text: `${k.environment === "production" ? "Production" : "Demo"} (read-only key)${restart}` },
   ];
 }
 

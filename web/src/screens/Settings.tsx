@@ -77,7 +77,12 @@ export function Settings() {
   };
   const restart = () => {
     change("/v1/engine/restart", "Done", {}, { method: "POST" })
-      .then((done) => setNote(`${done.detail}; this window reconnects by itself.`))
+      .then((done) => {
+        if (!done.done) return setNote(done.detail);
+        // a new port: the window stays on the old one, so it cannot reconnect (merge review 5)
+        const moved = view.restart_needed.includes("port");
+        setNote(moved ? `${done.detail}; it comes back on port ${view.port}: reopen the terminal with ikars open.` : `${done.detail}; this window reconnects by itself.`);
+      })
       .catch(failed);
   };
   const pending = changedCount(form, view);

@@ -45,12 +45,15 @@ export function Welcome() {
     change("/v1/settings/share-check", "ShareCheckView", { share }, { method: "POST" })
       .then((c) => setShareNote(shareLine(c)))
       .catch(failed);
+  // the share is set up first and saved only once IKARS's folder and marker are there, so a share
+  // that cannot be used is never left as the backup target (M1.8b-1 merge review 3)
   const saveShare = () =>
-    change("/v1/settings", "SettingsView", { backup_share: share.trim() })
-      .then(() => change("/v1/settings/share-init", "ShareCheckView", { share: share.trim() }, { method: "POST" }))
-      .then((c) => {
+    change("/v1/settings/share-init", "ShareCheckView", { share: share.trim() }, { method: "POST" })
+      .then(async (c) => {
         setShareNote(shareLine(c));
-        if (c.marker) next();
+        if (!c.marker) return;
+        await change("/v1/settings", "SettingsView", { backup_share: share.trim() });
+        next();
       })
       .catch(failed);
   const saveZone = () =>
