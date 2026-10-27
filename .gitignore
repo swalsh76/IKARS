@@ -14,12 +14,12 @@ dist/
 build/
 *.egg-info/
 
-# .NET
-bin/
-obj/
-TestResults/
-.vs/
-*.user
+# the web terminal (M1.8a-web)
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
 
 # market data, recordings, databases, ledger exports and logs: never commit
 data/
