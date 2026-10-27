@@ -15,6 +15,7 @@ function rig(subscribe: HubDeps["subscribe"] = vi.fn().mockResolvedValue(undefin
       timeouts.push(fn);
       return timeouts.length;
     },
+    clearTimeout: vi.fn(),
     subscribe,
   };
   return { hub: new Hub(deps), deps, timeouts };
@@ -135,6 +136,31 @@ describe("subscriptions", () => {
     finish();
     await settle();
     expect(subscribe).toHaveBeenLastCalledWith("s2", ["KXA"], []);
+  });
+
+  it("forgets a market's values when no screen shows it (merge review 7)", async () => {
+    const { hub } = rig();
+    const release = hub.want(["KXA"], ["KXA"]);
+    hub.handle({ event: "quote", data: { ticker: "KXA", yes_bid_e6: 1, yes_ask_e6: 2, last_price_e6: null, received_ns: 1 } });
+    hub.handle({ event: "book", data: { ticker: "KXA", ready: true, yes: [], no: [] } });
+    hub.flush();
+    expect(hub.get("quote:KXA")).toBeDefined();
+    release();
+    expect(hub.get("quote:KXA")).toBeUndefined();
+    expect(hub.get("book:KXA")).toBeUndefined();
+  });
+
+  it("keeps one retry waiting however often a change fails, and stop cancels it (merge review 9)", async () => {
+    const subscribe = vi.fn().mockRejectedValue(new Error("busy"));
+    const { hub, deps, timeouts } = rig(subscribe);
+    hub.handle({ event: "opened", data: { stream_id: "s1", coalesce_ms: 100 } });
+    hub.want(["KXA"]);
+    await settle();
+    hub.want(["KXB"]);
+    await settle();
+    expect(timeouts).toHaveLength(1);
+    hub.stop();
+    expect(deps.clearTimeout).toHaveBeenCalledWith(1);
   });
 
   it("retries a failed change, and sends again to a new stream", async () => {

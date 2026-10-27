@@ -1,7 +1,7 @@
 // React's view of the terminal: values from the hub and the route, each re-rendering only its own
 // screen part when it changes.
 
-import { createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import type { ContractName, Contracts } from "../api/contracts";
 import type { Values } from "../api/hub";
 import { ApiFailure, get } from "../api/client";
@@ -18,10 +18,10 @@ export function useTerminal(): Terminal {
 
 export function useValue<K extends keyof Values>(key: K): Values[K] {
   const { hub } = useTerminal();
-  return useSyncExternalStore(
-    (listener) => hub.listen(key, listener),
-    () => hub.get(key),
-  );
+  // the same function while hub and key stay the same: a re-render does not re-subscribe (merge review 8)
+  const subscribe = useCallback((listener: () => void) => hub.listen(key, listener), [hub, key]);
+  const read = useCallback(() => hub.get(key), [hub, key]);
+  return useSyncExternalStore(subscribe, read);
 }
 
 export function useRoute(): Route {
@@ -29,7 +29,8 @@ export function useRoute(): Route {
   return useSyncExternalStore(navigator.listen, navigator.current);
 }
 
-export type Loaded<T> = { state: "loading" } | { state: "ready"; value: T } | { state: "failed"; message: string };
+/** ``stale``: a refresh failed and ``value`` is the last one that loaded (it is kept, not blanked). */
+export type Loaded<T> = { state: "loading" } | { state: "ready"; value: T; stale?: string } | { state: "failed"; message: string };
 
 /** ``GET path`` while the screen shows it; leaving the screen cancels the request (behaviour 2). */
 export function useSnapshot<K extends ContractName>(path: string, name: K, refreshMs = 0): Loaded<Contracts[K]> {
@@ -42,7 +43,9 @@ export function useSnapshot<K extends ContractName>(path: string, name: K, refre
         setLoaded({ state: "ready", value: await get(path, name, { signal: controller.signal }) });
       } catch (error) {
         if (controller.signal.aborted) return;
-        setLoaded({ state: "failed", message: error instanceof ApiFailure ? error.message : "could not load" });
+        const message = error instanceof ApiFailure ? error.message : "could not load";
+        // a refresh that fails keeps the last good value, marked stale (merge review 9)
+        setLoaded((last) => (last.state === "ready" ? { state: "ready", value: last.value, stale: message } : { state: "failed", message }));
       }
       if (refreshMs > 0 && !controller.signal.aborted) timer = setTimeout(() => void load(), refreshMs);
     };

@@ -27,7 +27,12 @@ const TITLES: Record<Exclude<Route["screen"], "missing">, string> = {
 
 /** The route an address names. */
 export function parse(pathname: string, search = ""): Route {
-  const parts = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  let parts: string[];
+  try {
+    parts = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  } catch {
+    return { screen: "missing", path: pathname }; // a malformed %-escape: no screen (merge review 2)
+  }
   const [first, second] = parts;
   if (parts.length === 0 || (first === "overview" && parts.length === 1)) return { screen: "overview" };
   if (parts.length === 1 && (first === "health" || first === "ledger" || first === "alerts")) return { screen: first };

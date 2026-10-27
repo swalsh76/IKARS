@@ -24,6 +24,7 @@ const timers = {
   setInterval: (fn: () => void, ms: number) => setInterval(fn, ms),
   clearInterval: (handle: unknown) => clearInterval(handle as ReturnType<typeof setInterval>),
   setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+  clearTimeout: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
 /** Signs in (when the address carries a code), loads what the screens show first, then opens the
@@ -36,14 +37,13 @@ export async function startTerminal(deps: Partial<TerminalDeps> = {}): Promise<T
       change(`/v1/stream/${encodeURIComponent(id)}/subscriptions`, "Subscriptions", { quotes, books }),
     ...deps.hub,
   });
-  const stream = new EventStream(
-    { onMessage: (m) => hub.handle(m), onState: (s) => hub.connection(s) },
-    deps.stream,
-  );
-  const navigator = deps.navigator ?? browserNavigator();
-  hub.start();
-  try {
-    await (deps.signIn ?? signIn)();
+  let loaded = false;
+  let loading: Promise<void> | null = null; // at most one first load at a time
+  const loadFirst = (): Promise<void> =>
+    (loading ??= fetchFirst().finally(() => {
+      loading = null;
+    }));
+  const fetchFirst = async () => {
     const [health, portfolio, alerts] = await Promise.all([
       fetchJson("/v1/health", "HealthView"),
       fetchJson("/v1/portfolio", "PortfolioView"),
@@ -52,7 +52,27 @@ export async function startTerminal(deps: Partial<TerminalDeps> = {}): Promise<T
     hub.set("health", health);
     hub.set("portfolio", portfolio);
     hub.addAlerts(alerts.items);
-    stream.lastAlert = alerts.items.reduce((last, a) => Math.max(last, a.line), 0);
+    const last = alerts.items.reduce((most, a) => Math.max(most, a.line), 0);
+    stream.lastAlert = Math.max(stream.lastAlert ?? 0, last);
+    loaded = true;
+  };
+  const stream = new EventStream(
+    {
+      onMessage: (m) => {
+        hub.handle(m);
+        // the first load failed (the engine starting, or signed out): load it now the engine answers,
+        // so the alerts raised before this stream are not lost (M1.8a-web-1b merge review 4)
+        if (m.event === "opened" && !loaded) loadFirst().catch(() => undefined);
+      },
+      onState: (s) => hub.connection(s),
+    },
+    deps.stream,
+  );
+  const navigator = deps.navigator ?? browserNavigator();
+  hub.start();
+  try {
+    await (deps.signIn ?? signIn)();
+    await loadFirst();
   } catch (error) {
     // the stream reports the state from here (signed out, or the engine not answering yet)
     if (!(error instanceof ApiFailure)) throw error;

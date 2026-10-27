@@ -108,6 +108,15 @@ describe("the status strip", () => {
     expect(live[0]?.label).toBe("Feed live · –");
     expect(live[4]?.label).toBe("Backups off");
   });
+
+  it("colours each item as its Health card does (merge review 6)", () => {
+    const stale = strip({ ...HEALTH, backup: { configured: true, hours_since: 40, last_error: null }, clock_status: "warn" }, "open");
+    expect(stale[4]).toEqual({ label: "Backup 40 h ago", level: "problem" });
+    expect(stale[2]?.level).toBe("watch");
+    const starting = strip({ ...HEALTH, feed: { ...HEALTH.feed, connected: null } }, "open");
+    expect(starting[0]).toEqual({ label: "Feed starting", level: "unknown" });
+    expect(strip({ ...HEALTH, feed: { ...HEALTH.feed, connected: false } }, "open")[0]?.level).toBe("problem");
+  });
 });
 
 describe("gaps and times", () => {

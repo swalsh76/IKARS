@@ -47,7 +47,7 @@ h2 { margin: 0; font-size: 16px; }
 .loss { color: var(--neg); }
 
 .shell { min-height: 100vh; display: flex; flex-direction: column; }
-.top { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.top { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--accent); }
 .brand strong { color: var(--text); font-size: 16px; letter-spacing: 0.5px; }
 .crumbs { color: var(--sub); }
@@ -96,6 +96,7 @@ td { padding: 6px 8px; border-top: 1px solid var(--line); }
 details summary { cursor: pointer; color: var(--sub); }
 pre { margin: 8px 0 0; max-height: 480px; overflow: auto; font-size: 12px; color: var(--sub); }
 
-.strip { display: flex; flex-wrap: wrap; gap: 20px; padding: 8px 20px; background: var(--panel); border-top: 1px solid var(--line); color: var(--sub); font-size: 12px; font-variant-numeric: tabular-nums; }
+.strip { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; gap: 20px; padding: 8px 20px; background: var(--panel); border-top: 1px solid var(--line); color: var(--sub); font-size: 12px; font-variant-numeric: tabular-nums; }
 .strip .level-problem { color: var(--problem); }
 .strip .level-watch { color: var(--neg); }
+.fatal { margin: 3rem auto; max-width: 40rem; padding: 0 1rem; }

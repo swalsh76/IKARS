@@ -80,3 +80,12 @@ test("a spent code does not sign in", async ({ page, browser }) => {
   await expect(second.getByLabel("Engine status")).toContainText("Signed out");
   await other.close();
 });
+
+test("the status strip stays in view in a small window", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 600 });
+  await page.goto(await signInUrl());
+  await expect(page.getByTestId("cash")).toBeVisible();
+  await page.mouse.wheel(0, 2_000);
+  await expect(page.getByLabel("Engine status")).toBeInViewport();
+});
+

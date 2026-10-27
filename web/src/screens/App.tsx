@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useRoute } from "../app/hooks";
-import { title } from "../nav/route";
+import { href, title } from "../nav/route";
+import { Guarded } from "./Guarded";
 import { Health } from "./Health";
 import { Overview } from "./Overview";
 import { Later, Link, Shell } from "./Shell";
@@ -33,9 +34,13 @@ function Screen() {
 }
 
 export function App() {
+  const route = useRoute();
   return (
     <Shell>
-      <Screen />
+      {/* keyed by the address: a screen that failed does not keep the next one from drawing */}
+      <Guarded title="This screen" key={href(route)}>
+        <Screen />
+      </Guarded>
     </Shell>
   );
 }

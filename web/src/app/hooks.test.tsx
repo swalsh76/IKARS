@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hub } from "../api/hub";
 import type { Route } from "../nav/route";
 import { TerminalContext, useRoute, useSnapshot, useTerminal, useValue } from "./hooks";
+import { Guarded } from "../screens/Guarded";
 import type { Terminal } from "./terminal";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -13,7 +14,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 function fakeTerminal(): { terminal: Terminal; setRoute: (r: Route) => void } {
-  const hub = new Hub({ setInterval: () => 0, clearInterval: () => undefined, setTimeout: () => 0, subscribe: async () => undefined });
+  const hub = new Hub({ setInterval: () => 0, clearInterval: () => undefined, setTimeout: () => 0, clearTimeout: () => undefined, subscribe: async () => undefined });
   let route: Route = { screen: "overview" };
   const listeners = new Set<() => void>();
   const terminal = {
@@ -110,6 +111,26 @@ describe("useSnapshot", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps the last good value when a refresh fails, marked stale (merge review 9)", async () => {
+    vi.useFakeTimers();
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(page), { status: 200 }))
+      .mockResolvedValue(new Response(JSON.stringify({ error: "unavailable", detail: "busy" }), { status: 503 }));
+    vi.stubGlobal("fetch", fetch);
+    const { terminal } = fakeTerminal();
+    function View() {
+      const gaps = useSnapshot("/v1/gaps", "GapPage", 1_000);
+      return <p>{gaps.state === "ready" ? `${gaps.value.items.length} ${gaps.stale ?? "fresh"}` : gaps.state}</p>;
+    }
+    await show(terminal, <View />);
+    expect(container.textContent).toBe("0 fresh");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(container.textContent).toBe("0 busy");
+  });
+
   it("cancels its request when the screen is left", async () => {
     let signal: AbortSignal | undefined;
     vi.stubGlobal(
@@ -140,3 +161,26 @@ describe("useSnapshot", () => {
     expect(container.textContent).toBe("the engine cannot be reached");
   });
 });
+
+describe("a guarded part", () => {
+  it("says it could not be drawn and leaves the rest working (merge review 3)", async () => {
+    const { terminal } = fakeTerminal();
+    function Broken(): never {
+      throw new Error("not an exact integer amount");
+    }
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await show(
+      terminal,
+      <>
+        <Guarded title="Portfolio and exposure">
+          <Broken />
+        </Guarded>
+        <p>still here</p>
+      </>,
+    );
+    error.mockRestore();
+    expect(container.textContent).toContain("This could not be drawn: not an exact integer amount");
+    expect(container.textContent).toContain("still here");
+  });
+});
+

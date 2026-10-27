@@ -24,6 +24,7 @@ export interface HubDeps {
   setInterval: (fn: () => void, ms: number) => unknown;
   clearInterval: (handle: unknown) => void;
   setTimeout: (fn: () => void, ms: number) => unknown;
+  clearTimeout: (handle: unknown) => void;
   /** Sends the stream's subscriptions (PUT /v1/stream/{id}/subscriptions). */
   subscribe: (streamId: string, quotes: string[], books: string[]) => Promise<unknown>;
 }
@@ -57,6 +58,7 @@ export class Hub {
   private sent = "";
   private sending = false;
   private timer: unknown = null;
+  private retry: unknown = null; // at most one retry of a failed change waits (merge review 9)
   private streamId: string | null = null;
 
   constructor(private readonly deps: HubDeps) {}
@@ -67,7 +69,8 @@ export class Hub {
 
   stop(): void {
     if (this.timer !== null) this.deps.clearInterval(this.timer);
-    this.timer = null;
+    if (this.retry !== null) this.deps.clearTimeout(this.retry);
+    this.timer = this.retry = null;
   }
 
   // --- values ---------------------------------------------------------------------------------
@@ -142,22 +145,29 @@ export class Hub {
 
   /** A screen shows these markets' quotes and books until it calls the function returned. */
   want(quotes: readonly string[], books: readonly string[] = []): () => void {
-    const add = (map: Map<string, number>, tickers: readonly string[], by: number) => {
+    const add = (map: Map<string, number>, kind: "quote" | "book", tickers: readonly string[], by: number) => {
       for (const ticker of tickers) {
         const count = (map.get(ticker) ?? 0) + by;
-        if (count > 0) map.set(ticker, count);
-        else map.delete(ticker);
+        if (count > 0) {
+          map.set(ticker, count);
+        } else {
+          // no screen shows it now: its value goes too, so a later screen never sees it stale
+          // (merge review 7)
+          map.delete(ticker);
+          this.current.delete(`${kind}:${ticker}`);
+          this.pending.delete(`${kind}:${ticker}`);
+        }
       }
     };
-    add(this.wanted.quotes, quotes, 1);
-    add(this.wanted.books, books, 1);
+    add(this.wanted.quotes, "quote", quotes, 1);
+    add(this.wanted.books, "book", books, 1);
     void this.sync();
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      add(this.wanted.quotes, quotes, -1);
-      add(this.wanted.books, books, -1);
+      add(this.wanted.quotes, "quote", quotes, -1);
+      add(this.wanted.books, "book", books, -1);
       void this.sync();
     };
   }
@@ -181,7 +191,10 @@ export class Hub {
       if (this.streamId === stream) this.sent = key;
       sent = true;
     } catch {
-      this.deps.setTimeout(() => void this.sync(), RETRY_MS);
+      this.retry ??= this.deps.setTimeout(() => {
+        this.retry = null;
+        void this.sync();
+      }, RETRY_MS);
     } finally {
       this.sending = false;
     }

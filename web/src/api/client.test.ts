@@ -48,6 +48,19 @@ describe("get", () => {
     });
   });
 
+  it("turns a reply it cannot read into a failure it can show (merge review 1)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html>", { status: 200 })));
+    await expect(get("/v1/health", "HealthView")).rejects.toMatchObject({ kind: "contract" });
+    const slow = { ok: true, status: 200, json: () => Promise.reject(new DOMException("t", "TimeoutError")) } as unknown as Response;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(slow));
+    await expect(get("/v1/health", "HealthView")).rejects.toMatchObject({ kind: "timeout" });
+    const leaving = new AbortController();
+    leaving.abort();
+    const gone = { ok: true, status: 200, json: () => Promise.reject(new DOMException("a", "AbortError")) } as unknown as Response;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(gone));
+    await expect(get("/v1/health", "HealthView", { signal: leaving.signal })).rejects.not.toBeInstanceOf(ApiFailure);
+  });
+
   it("calls other failures refused, even without the engine's JSON", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("busy", { status: 503 })));
     await expect(get("/v1/health", "HealthView")).rejects.toMatchObject({ kind: "refused", status: 503 });

@@ -8,6 +8,7 @@ function Gaps() {
       <h2 id="gaps">Gap log (last 7 days)</h2>
       {gaps.state === "loading" && <p className="muted small">Loading…</p>}
       {gaps.state === "failed" && <p className="muted small">{gaps.message}</p>}
+      {gaps.state === "ready" && gaps.stale && <p className="muted small">Not refreshed: {gaps.stale}</p>}
       {gaps.state === "ready" && gaps.value.items.length === 0 && <p className="muted small">No gaps.</p>}
       {gaps.state === "ready" && gaps.value.items.length > 0 && (
         <div className="scroll">

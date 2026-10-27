@@ -85,21 +85,28 @@ export interface StripItem {
   level: Level;
 }
 
-/** The footer strip and the header pill's words. */
+/** The footer strip and the header pill's words, coloured by the same rules as the Health cards
+ * (one place decides a level: M1.8a-web-1b merge review 6). */
 export function strip(h: HealthView | null, connection: StreamState): StripItem[] {
   if (connection === "signed-out") return [{ label: "Signed out: run ikars open", level: "problem" }];
   if (h === null) return [{ label: connection === "open" ? "Engine connected" : "Connecting to the engine", level: "unknown" }];
-  const feed = h.feed.connected
-    ? { label: `Feed live · ${h.feed.seconds_since_last_frame === null ? "–" : `${h.feed.seconds_since_last_frame.toFixed(1)} s`}`, level: "ok" as Level }
-    : { label: "Feed down", level: "problem" as Level };
+  const levels = new Map(healthCards(h).map((c) => [c.title, c.level]));
+  const level = (title: string): Level => levels.get(title) ?? "unknown";
+  const since = h.feed.seconds_since_last_frame;
+  const feed: StripItem =
+    h.feed.connected === null
+      ? { label: "Feed starting", level: "unknown" }
+      : h.feed.connected
+        ? { label: `Feed live · ${since === null ? "–" : `${since.toFixed(1)} s`}`, level: level("Kalshi feed") }
+        : { label: "Feed down", level: level("Kalshi feed") };
   return [
     connection === "open" ? feed : { label: "Engine reconnecting", level: "watch" },
-    { label: `Books ${h.feed.books_ready ?? "?"} ready`, level: "ok" },
-    { label: h.clock_offset_ms === null ? "Clock not measured" : `Clock ${h.clock_offset_ms >= 0 ? "+" : ""}${h.clock_offset_ms.toFixed(0)} ms`, level: "ok" },
-    { label: h.ledger.reconciled_exact ? "Ledger reconciled" : "Ledger not reconciled", level: h.ledger.reconciled_exact ? "ok" : "watch" },
-    { label: !h.backup.configured ? "Backups off" : h.backup.last_error ? "Backup failing" : `Backup ${h.backup.hours_since ?? "–"} h ago`, level: h.backup.last_error ? "problem" : "ok" },
-    { label: `Storage ${h.storage_state ?? "–"}`, level: h.storage_state === "ok" ? "ok" : "watch" },
-    { label: `GPU: ${h.gpu ?? "none"}`, level: "ok" },
+    { label: `Books ${h.feed.books_ready ?? "?"} ready`, level: level("Order books") },
+    { label: h.clock_offset_ms === null ? "Clock not measured" : `Clock ${h.clock_offset_ms >= 0 ? "+" : ""}${h.clock_offset_ms.toFixed(0)} ms`, level: level("Clock") },
+    { label: h.ledger.reconciled_exact ? "Ledger reconciled" : "Ledger not reconciled", level: level("Ledger") },
+    { label: !h.backup.configured ? "Backups off" : h.backup.last_error ? "Backup failing" : `Backup ${h.backup.hours_since ?? "–"} h ago`, level: level("Backups") },
+    { label: `Storage ${h.storage_state ?? "–"}`, level: level("Storage") },
+    { label: `GPU: ${h.gpu ?? "none"}`, level: level("GPU") },
   ];
 }
 

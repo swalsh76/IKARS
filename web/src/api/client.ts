@@ -75,23 +75,39 @@ async function failure(response: Response): Promise<ApiFailure> {
   return new ApiFailure(kind, detail, response.status, code);
 }
 
+/** The reply's JSON as contract ``name``. Reading the body can fail too (a timeout part way, or not
+ * JSON): always an ApiFailure, never a raw error a screen cannot show (M1.8a-web-1b merge review). */
+async function body<K extends ContractName>(response: Response, name: K, options: RequestOptions): Promise<Contracts[K]> {
+  let value: unknown;
+  try {
+    value = await response.json();
+  } catch (error) {
+    if (options.signal?.aborted) throw error; // the screen let go
+    if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new ApiFailure("timeout", "the engine did not finish its answer in time");
+    }
+    throw new ApiFailure("contract", `${name}: the engine's answer is not JSON`);
+  }
+  return checked(name, value);
+}
+
 /** ``GET path`` as contract ``name``. */
 export async function get<K extends ContractName>(path: string, name: K, options: RequestOptions = {}): Promise<Contracts[K]> {
   const response = await send(path, options);
   if (!response.ok) throw await failure(response);
-  return checked(name, await response.json());
+  return body(response, name, options);
 }
 
 /** A change (``PUT``/``POST``) answered with contract ``name``. */
 export async function change<K extends ContractName>(
   path: string,
   name: K,
-  body: unknown,
+  content: unknown,
   options: RequestOptions = {},
 ): Promise<Contracts[K]> {
-  const response = await send(path, { ...options, method: options.method ?? "PUT", body });
+  const response = await send(path, { ...options, method: options.method ?? "PUT", body: content });
   if (!response.ok) throw await failure(response);
-  return checked(name, await response.json());
+  return body(response, name, options);
 }
 
 /** Trades the one-time code in the address's ``#code=`` for the session cookie, and removes the code

@@ -15,6 +15,7 @@ describe("addresses", () => {
     ["/market/A%2FB", "", { screen: "market", ticker: "A/B" }],
     ["/health/extra", "", { screen: "missing", path: "/health/extra" }],
     ["/nothing", "", { screen: "missing", path: "/nothing" }],
+    ["/market/%E0%A4%A", "", { screen: "missing", path: "/market/%E0%A4%A" }],
   ])("%s%s", (pathname, search, route) => {
     expect(parse(pathname, search)).toEqual(route);
   });

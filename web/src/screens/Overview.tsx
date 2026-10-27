@@ -1,5 +1,6 @@
 import { useValue } from "../app/hooks";
 import { latestAlerts, portfolioCard } from "../view/portfolio";
+import { Guarded } from "./Guarded";
 import { Later, Link } from "./Shell";
 
 function Portfolio() {
@@ -71,13 +72,17 @@ export function Overview() {
       <div className="span-2">
         <Later title="Top recommendations" slice="M1.12" note="Ranked by return per day of capital tied up, after fees, spread and slippage; recommend-only." />
       </div>
-      <Portfolio />
+      <Guarded title="Portfolio and exposure">
+        <Portfolio />
+      </Guarded>
       <Later title="Live movers (5 min)" slice="M1.12" />
       <Later title="Latest source items" slice="M2" />
       <Later title="Journal scorecard (30 days)" slice="M1.12" />
       <Later title="Perp funding" slice="M3" note="Research slice M1.10 first." />
       <Later title="Book signals" slice="M3" />
-      <Alerts />
+      <Guarded title="Alerts">
+        <Alerts />
+      </Guarded>
     </div>
   );
 }
