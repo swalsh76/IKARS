@@ -1,0 +1,19 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-27T00:35:00Z"},
+  "title": "IKARS Terminal Mock-ups",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1440, "h": 960, "title": "1 · Overview (main screen)", "expand": "fill", "is_interactive": true},
+    "Market.dc.html": {"x": 1520, "y": 0, "w": 1440, "h": 960, "title": "2 · Drill-down: market, with cross-reference panel", "expand": "fill", "is_interactive": true},
+    "Recommendation.dc.html": {"x": 3040, "y": 0, "w": 1440, "h": 960, "title": "3 · Drill-down: recommendation detail", "expand": "fill", "is_interactive": true},
+    "Health.dc.html": {"x": 0, "y": 1180, "w": 1440, "h": 900, "title": "4 · Health", "expand": "fill", "is_interactive": true},
+    "Alerts.dc.html": {"x": 1520, "y": 1180, "w": 1440, "h": 900, "title": "5 · Alerts by priority, and hotkeys", "expand": "fill", "is_interactive": true},
+    "Layout.dc.html": {"x": 3040, "y": 1180, "w": 1440, "h": 900, "title": "6 · Multi-monitor layout sketch"}
+  },
+  "order": ["Main.dc.html", "Market.dc.html", "Recommendation.dc.html", "Health.dc.html", "Alerts.dc.html", "Layout.dc.html"],
+  "notes": {
+    "title": {"x": 0, "y": -300, "text": "IKARS terminal · Overview → drill-down → cross-reference (sample data only)", "kind": "title1", "maxW": 4480}
+  }
+}

@@ -724,3 +724,92 @@ when the ask is paid. It now shows the spread separately and the figures follow 
 - `pyarrow` ships no type stubs: a mypy override, as in SPARQ.
 - Python on Windows writes CRLF and the shell mangled two large inline edit scripts; edits now go through script
   files or exact `Edit` calls.
+
+**M1.4a done:** PR #4 merged by the owner's instruction as `b29a86e` (2026-10-27).
+
+**M1.3 approved for now** by the owner (2026-10-27: "looks good for now"). The source is in
+`docs/design/mockups/` (made-up data; a privacy scan's only match was the variable name `navItems`), and stays
+revisable before M1.8.
+
+### 1.4b Kalshi feeds and recording (plan PROPOSED 2026-10-27; branch `m1/4b-feeds`)
+
+**Builds** (in `ikars-engine`; uses IKARS's own read-only key). The Kalshi feed is a built-in source on the
+M1.4a core. KAPS's production ingest is the design guide (read critically; its storage, PostgreSQL on the server
+host, does not carry over):
+
+1. **Discovery** (from KAPS `discovery.py`):
+   - a full cycle at start and daily, and an incremental one every minute (`min_updated_ts`);
+   - the bookmark advances only after a whole cycle succeeds, set two minutes back;
+   - combo markets are skipped and counted;
+   - a market that does not parse is set aside and counted, never failing the cycle.
+
+   It keeps an in-memory market index (series, event, category, status, close time, rules) with a daily Parquet
+   snapshot. It feeds the watched set, the drill-down tree and tradability (E).
+2. **Exchange status and schedule** (from KAPS `exchange.py`): status polled every minute and stored only on
+   change; the schedule daily. Used for tradability (E) and so that a pause is not mistaken for an outage.
+3. **The live feed:**
+   - ticker, trade and lifecycle for **all** markets;
+   - `orderbook_delta` for a **watched set** (open question 3), each with an `OrderBook` (M1.2): a `seq` gap or a
+     broken book asks for a fresh snapshot (`get_snapshot`);
+   - every frame stamped with its received time and handed to the engine as an `Item`.
+4. **The gap log** (from KAPS `gaps.py` and `pump.py`):
+   - a reconnect, restart, `seq` gap, queue overflow or drop-oldest is written at once, from the **last frame
+     actually received**, with a heartbeat saved every few seconds;
+   - what is recoverable: trades by backfill, lifecycle by discovery;
+   - what is not: ticker and books, marked `unrecoverable`.
+5. **Trade backfill** (from KAPS `backfill.py`): the missed window from REST (live or historical by the cutoff), in
+   one-hour slices, safe to repeat (de-duplicated by `trade_id`), never truncated; unfinished gaps are re-run at
+   start.
+6. **Recording** (D4 C):
+   - typed tables per channel (open question 2);
+   - the open hour in Arrow IPC, flushed every few seconds, then compacted to Parquet (zstd) at the hour;
+   - a hard crash loses at most the last unflushed seconds, and that loss is in the gap log.
+   - The replay source (M1.4a) gains readers for these tables, so a recorded hour replays through the same engine.
+7. **The operational state store:** a `state.sqlite` (WAL, `synchronous=FULL`) holding the gap log, the discovery
+   bookmark and the heartbeat, with the **versioned migration helper (backup first)** that M1.5's ledger reuses.
+8. **The storage governor (G11):** a budget (open question 5); a warning at 80%; at 95% the oldest raw recordings
+   are pruned first. The ledger and state are never pruned. It reports to health.
+9. **The request budget (D21-3):** one token bucket for all of IKARS's REST calls, sized as a share of the
+   account's read tier (open question 4), so IKARS backs off before it can crowd KAPS's ingest; 429s counted.
+   The WebSocket subscription limit is learned passively (M1.2 decision): a "limit reached" error is logged and
+   shrinks the watched set.
+10. **Clock and latency (G10, J):** HTTP `Date` samples from REST replies and `sending_ts_ms` from frames feed the
+    skew monitor; the signers use its offset. **Feed-to-alert latency** is stamped from frame receipt to the
+    engine's listeners, against the 250 ms target.
+11. `python -m ikars_engine run`: the live engine in the foreground, until Ctrl+C, printing health every minute.
+    The background run mode is M1.6.
+
+**Changes on this machine:**
+- Recordings, `state.sqlite` and logs under `%LOCALAPPDATA%\IKARS` (or the portable folder).
+- No other change; nothing installed, and no task scheduled (that is M1.6).
+
+**New packages:** none (the standard library's `sqlite3`; `pyarrow` and `msgspec` are already in).
+
+**Tests:** fakes for REST and the WebSocket; discovery's bookmark rules; changes-only status; gap-log rules for
+each kind of loss; backfill idempotence and slicing; book resync on a `seq` gap; recording, compaction and replay
+of a recorded hour; the governor's pruning order; the budget's share; migration with backup.
+
+**Live checks** (GET and subscribe only):
+- a **30-minute live run** on the watched set, measuring CPU, deltas a second, feed-to-alert p50/p99 against
+  250 ms, recording size per hour and REST tokens used;
+- a **forced reconnect**, giving gap rows and a backfill that matches Kalshi's trade count for the window;
+- a **restart in the middle of an hour**, with nothing lost beyond the logged gap.
+
+**Open questions.**
+1. **What to record locally?**
+   - *Recommended:* the **watched set only** (its books, trades and ticker), plus all-market trades. About a few
+     hundred MB a day. The full all-market history already lives in KAPS's database and SPARQ's Parquet copies.
+   - *Alternative:* everything KAPS records (all-market ticker and trades, about 3 GB a day) plus the books.
+2. **Recording format:** *recommended:* typed tables per channel (ticker, trade, lifecycle, book snapshot, book
+   delta), with real columns: smaller, faster to replay, and the same shape as SPARQ's live copies. *Alternative:*
+   the generic item table from M1.4a (JSON payloads), simpler but several times larger.
+3. **The watched set's size.** *Recommended:* up to **50 markets** and a budget of **3,000 deltas a second** in
+   total, chosen in this order: open positions, live recommendations, markets open in the terminal, then the most
+   active markets inside the human-paced filter (D17).
+   - The hyperactive 15-minute crypto markets (around 800 a second each) are included only when a position, a
+     recommendation or the owner asks for them.
+   - The slice measures the CPU cost per delta and reports whether the budget should change.
+4. **Request budget:** *recommended:* IKARS takes at most **25% of the account's read bucket** (50 of 200 tokens a
+   second).
+5. **Storage budget:** *recommended:* **200 GB** of the workstation's 2 TB for raw recordings (warn at 80%, prune
+   the oldest at 95%).

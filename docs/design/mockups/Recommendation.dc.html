@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IKARS Recommendation detail</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#60cdff;text-decoration:none}a:hover{color:#99ebff;text-decoration:underline}
+</style>
+</helmet>
+<div style="min-height: 960px; background: #1c1c1c; color: #f3f3f3; font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 10px 20px; background: #242424; border-bottom: 1px solid #3d3d3d">
+    <a href="Market.dc.html" aria-label="Back to the market" style="display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 34px; border-radius: 6px; border: 1px solid #3d3d3d; color: #f3f3f3">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <nav aria-label="Breadcrumb" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: #cfcfcf">
+      <a href="Main.dc.html">Overview</a><span aria-hidden="true">›</span>
+      <a href="Market.dc.html">NYC high Oct 28 above 61°F</a><span aria-hidden="true">›</span>
+      <span style="color: #f3f3f3; font-weight: 600">Recommendation R-0412</span>
+    </nav>
+    <span style="margin-left: auto; padding: 4px 10px; border-radius: 999px; border: 1px solid #3d3d3d; color: #cfcfcf; font-size: 12px">SAMPLE DATA</span>
+  </header>
+
+  <main style="padding: 20px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-content: start">
+
+    <section aria-labelledby="head" style="grid-column: span 3; background: #2c2c2c; border: 1px solid #3d3d3d; border-radius: 8px; padding: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 28px; font-variant-numeric: tabular-nums">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1 id="head" style="margin: 0; font-size: 22px">Buy YES 40 @ $0.42</h1>
+        <span style="color: #ababab; font-size: 12px">News/data · weather v0.3 · active · expires in 3 h 10 m</span>
+      </div>
+      <div><div style="color: #ababab; font-size: 12px">EV after costs</div><div style="font-size: 20px; font-weight: 600; color: #60cdff">+$3.71</div></div>
+      <div><div style="color: #ababab; font-size: 12px">Return per day</div><div style="font-size: 20px; font-weight: 600">+3.1%</div></div>
+      <div><div style="color: #ababab; font-size: 12px">Fill chance · move after fill</div><div style="font-size: 20px; font-weight: 600">0.92 · −0.4¢</div></div>
+      <div><div style="color: #ababab; font-size: 12px">Worst case</div><div style="font-size: 20px; font-weight: 600; color: #ffb27a">−$17.49</div></div>
+      <div style="display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap">
+        <button type="button" onClick="{{taken}}" style="{{btnTaken}}">Mark taken</button>
+        <button type="button" onClick="{{ignored}}" style="{{btnIgnored}}">Ignore</button>
+        <button type="button" onClick="{{dismissed}}" style="{{btnDismissed}}">Dismiss</button>
+      </div>
+    </section>
+
+    <section aria-labelledby="why" style="grid-column: span 2; background: #2c2c2c; border: 1px solid #3d3d3d; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+      <h2 id="why" style="margin: 0; font-size: 16px">Why: the evidence</h2>
+      <sc-for list="{{evidence}}" as="e" hint-placeholder-count="4">
+        <div style="display: grid; grid-template-columns: 180px minmax(0, 1fr) 150px; gap: 12px; padding: 8px 0; border-top: 1px solid #3d3d3d; font-size: 13px">
+          <span style="color: #cfcfcf">{{e.kind}}</span>
+          <span>{{e.text}}</span>
+          <span style="color: #ababab; text-align: right">{{e.when}}</span>
+        </div>
+      </sc-for>
+      <span style="color: #ababab; font-size: 12px">Times are when IKARS received each item, not when it was published.</span>
+    </section>
+
+    <section aria-labelledby="size" style="background: #2c2c2c; border: 1px solid #3d3d3d; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px; font-variant-numeric: tabular-nums">
+      <h2 id="size" style="margin: 0; font-size: 16px">Size and limits</h2>
+      <div style="font-size: 13px">Quarter-Kelly suggests 52 · capped at 40 by depth at $0.42</div>
+      <sc-for list="{{checks}}" as="c" hint-placeholder-count="5">
+        <div style="display: flex; gap: 8px; align-items: center; font-size: 13px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60cdff" stroke-width="3" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>
+          <span>{{c}}</span>
+        </div>
+      </sc-for>
+    </section>
+
+    <section aria-labelledby="exits" style="grid-column: span 2; background: #2c2c2c; border: 1px solid #3d3d3d; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+      <h2 id="exits" style="margin: 0; font-size: 16px">Optional bracket as a watch order</h2>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; font-size: 13px">
+        <div style="padding: 10px; border-radius: 6px; background: #242424"><strong>Take-profit $0.55</strong><div style="color: #ababab">Can rest on Kalshi as a GTC post-only limit: works while IKARS is off.</div></div>
+        <div style="padding: 10px; border-radius: 6px; background: #242424"><strong>Stop at $0.36 bid</strong><div style="color: #ffb27a">Watched by IKARS only: protects nothing while IKARS is off.</div></div>
+      </div>
+      <span style="color: #ababab; font-size: 12px">Recommend-only until M7: IKARS alerts you and paper-fills; you place the orders on Kalshi.</span>
+    </section>
+
+    <section aria-labelledby="prov" style="background: #2c2c2c; border: 1px solid #3d3d3d; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 6px; font-size: 13px">
+      <h2 id="prov" style="margin: 0; font-size: 16px">Provenance</h2>
+      <span><span style="color: #ababab">Code</span> 0.4.0 (3485b16)</span>
+      <span><span style="color: #ababab">Rule</span> weather-high v0.3, registered 9f2c…e1</span>
+      <span><span style="color: #ababab">Settings</span> a71d…40</span>
+      <span><span style="color: #ababab">LLM</span> not used</span>
+      <span><span style="color: #ababab">Inputs</span> 4 items, 1 book snapshot</span>
+      <a href="Main.dc.html">Replay this recommendation</a>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { status: null };
+  }
+  renderVals() {
+    const button = (on) => 'height: 36px; padding: 0 14px; border-radius: 6px; font: inherit; cursor: pointer; border: 1px solid ' + (on ? '#60cdff' : '#3d3d3d') + '; background: ' + (on ? '#60cdff' : '#242424') + '; color: ' + (on ? '#10202a' : '#f3f3f3');
+    const s = this.state.status;
+    return {
+      btnTaken: button(s === 'taken'),
+      btnIgnored: button(s === 'ignored'),
+      btnDismissed: button(s === 'dismissed'),
+      taken: () => this.setState({ status: 'taken' }),
+      ignored: () => this.setState({ status: 'ignored' }),
+      dismissed: () => this.setState({ status: 'dismissed' }),
+      evidence: [
+        { kind: 'Forecast (NWS)', text: 'Central Park high raised from 61°F to 64°F', when: 'received 13:42:07' },
+        { kind: 'Observation', text: 'Station reads 59°F at 1 pm, warming 1.5°F/h', when: 'received 13:58:31' },
+        { kind: 'Model', text: 'P(high > 61°F) = 0.53 (forecast σ 2.1°F, 2026 calibration)', when: 'computed 14:01:02' },
+        { kind: 'Market', text: 'YES ask $0.42 × 40 at the time; human-paced refills', when: 'book 14:01:02' }
+      ],
+      checks: [
+        'Within the per-market and per-event limits',
+        'Within the Weather category limit (38% of 40%)',
+        'Daily loss stop not reached ($18 of $50)',
+        'Exchange open; market not settling in the next hour',
+        'Account position limit not reached'
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IKARS multi-monitor layout</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; min-height: 900px; box-sizing: border-box; padding: 32px; background: #161616; color: #f3f3f3; font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif; display: flex; flex-direction: column; gap: 24px">
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h1 style="margin: 0; font-size: 20px">Layout: two monitors (saved as "Trading day")</h1>
+    <span style="color: #ababab; font-size: 13px">Panes dock, float and move between monitors; layouts are saved per name and restored at start (KalTerm3's layout service).</span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="color: #cfcfcf; font-size: 13px">Monitor 1 · 2560 × 1440</span>
+      <div style="aspect-ratio: 16 / 9; border: 2px solid #4a4a4a; border-radius: 10px; padding: 10px; background: #1c1c1c; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 8px">
+        <div style="grid-column: span 2; grid-row: span 2; border-radius: 6px; background: #2c2c2c; border: 1px solid #60cdff; padding: 10px; font-size: 13px">Overview: top recommendations</div>
+        <div style="border-radius: 6px; background: #2c2c2c; border: 1px solid #3d3d3d; padding: 10px; font-size: 13px">Portfolio and exposure</div>
+        <div style="border-radius: 6px; background: #2c2c2c; border: 1px solid #3d3d3d; padding: 10px; font-size: 13px">Alerts</div>
+        <div style="border-radius: 6px; background: #2c2c2c; border: 1px solid #3d3d3d; padding: 10px; font-size: 13px">Live movers</div>
+        <div style="border-radius: 6px; background: #2c2c2c; border: 1px solid #3d3d3d; padding: 10px; font-size: 13px">Source items</div>
+        <div style="border-radius: 6px; background: #2c2c2c; border: 1px solid #3d3d3d; padding: 10px; font-size: 13px">Health</div>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="color: #cfcfcf; font-size: 13px">Monitor 2 · 1920 × 1080</span>
+      <div style="aspect-ratio: 16 / 9; border: 2px solid #4a4a4a; border-radius: 10px; padding: 10px; background: #1c1c1c; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 8px">
+        <div style="grid-column: span 3; border-radius: 6px; background: #2c2c2c; border: 1px solid #3d3d3d; padding: 10px; font-size: 13px">Drill-down: market chart with news markers</div>
+        <div style="grid-row: span 2; border-radius: 6px; background: #242424; border: 1px solid #3d3d3d; padding: 10px; font-size: 13px">Cross-reference panel (follows the selection)</div>
+        <div style="border-radius: 6px; background: #2c2c2c; border: 1px solid #3d3d3d; padding: 10px; font-size: 13px">Order book</div>
+        <div style="grid-column: span 2; border-radius: 6px; background: #2c2c2c; border: 1px solid #3d3d3d; padding: 10px; font-size: 13px">P&amp;L scenarios</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px">
+    <span style="padding: 6px 12px; border-radius: 999px; background: #60cdff; color: #10202a; font-weight: 600">Trading day</span>
+    <span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #3d3d3d">Laptop (one screen)</span>
+    <span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #3d3d3d">Research (back-tests and journal)</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

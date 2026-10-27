@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IKARS Health</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#60cdff;text-decoration:none}a:hover{color:#99ebff;text-decoration:underline}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #1c1c1c; color: #f3f3f3; font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 10px 20px; background: #242424; border-bottom: 1px solid #3d3d3d">
+    <a href="Main.dc.html" aria-label="Back to Overview" style="display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 34px; border-radius: 6px; border: 1px solid #3d3d3d; color: #f3f3f3">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <nav aria-label="Breadcrumb" style="display: flex; gap: 8px; color: #cfcfcf"><a href="Main.dc.html">Overview</a><span aria-hidden="true">›</span><span style="color: #f3f3f3; font-weight: 600">Health</span></nav>
+    <span style="margin-left: auto; padding: 4px 10px; border-radius: 999px; border: 1px solid #3d3d3d; color: #cfcfcf; font-size: 12px">SAMPLE DATA</span>
+    <button type="button" style="height: 34px; padding: 0 14px; border-radius: 6px; border: 1px solid #3d3d3d; background: #2c2c2c; color: #f3f3f3; font: inherit; cursor: pointer">Save support bundle (redacted)</button>
+  </header>
+
+  <main style="padding: 20px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-content: start">
+    <sc-for list="{{cards}}" as="c" hint-placeholder-count="9">
+      <section style="background: #2c2c2c; border: 1px solid #3d3d3d; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="5" fill="{{c.dot}}"/></svg>
+          <h2 style="margin: 0; font-size: 15px">{{c.title}}</h2>
+          <span style="margin-left: auto; color: {{c.dot}}; font-size: 12px; font-weight: 600">{{c.state}}</span>
+        </div>
+        <div style="font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums">{{c.big}}</div>
+        <sc-for list="{{c.lines}}" as="l" hint-placeholder-count="3">
+          <div style="color: #cfcfcf; font-size: 13px; font-variant-numeric: tabular-nums">{{l}}</div>
+        </sc-for>
+      </section>
+    </sc-for>
+
+    <section aria-labelledby="gaps" style="grid-column: span 3; background: #2c2c2c; border: 1px solid #3d3d3d; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+      <h2 id="gaps" style="margin: 0; font-size: 15px">Gap log (last 7 days)</h2>
+      <div style="overflow-x: auto">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums">
+          <thead><tr style="text-align: left; color: #ababab; font-size: 12px"><th style="padding: 6px 8px; font-weight: 600">When</th><th style="padding: 6px 8px; font-weight: 600">What</th><th style="padding: 6px 8px; font-weight: 600">Length</th><th style="padding: 6px 8px; font-weight: 600">Recovered</th></tr></thead>
+          <tbody>
+            <tr style="border-top: 1px solid #3d3d3d"><td style="padding: 6px 8px">Oct 26 03:12</td><td style="padding: 6px 8px">Feed reconnect (connection lost)</td><td style="padding: 6px 8px">3.8 s</td><td style="padding: 6px 8px">Trades backfilled; tickers and books lost</td></tr>
+            <tr style="border-top: 1px solid #3d3d3d"><td style="padding: 6px 8px">Oct 25 22:40</td><td style="padding: 6px 8px">News plugin queue full: 12 oldest items dropped</td><td style="padding: 6px 8px">—</td><td style="padding: 6px 8px">Re-polled; 12 of 12 found again</td></tr>
+            <tr style="border-top: 1px solid #3d3d3d"><td style="padding: 6px 8px">Oct 24 07:05</td><td style="padding: 6px 8px">Workstation asleep (power plan)</td><td style="padding: 6px 8px">41 min</td><td style="padding: 6px 8px">Trades backfilled; keep-awake turned on</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const ok = '#60cdff', warn = '#ffb27a';
+    return {
+      cards: [
+        { title: 'Kalshi feed', state: 'LIVE', dot: ok, big: '46 ms behind Kalshi', lines: ['ticker, trade, lifecycle: all markets', 'last frame 0.2 s ago', 'reconnects today: 0'] },
+        { title: 'Order books', state: 'OK', dot: ok, big: '3 watched · 0 broken', lines: ['783 / 234 / 98 deltas a second', 'last resync 4 m ago', 'request budget: 6% of read tier'] },
+        { title: 'Feed to alert', state: 'OK', dot: ok, big: 'p50 38 ms · p99 141 ms', lines: ['target under 250 ms', 'stages: receive, signal, P&L, alert', 'terminal frame time p99 9 ms'] },
+        { title: 'Clock', state: 'OK', dot: ok, big: '+12 ms vs Kalshi', lines: ['measured every 10 min', 'signers corrected', 'NTP in sync'] },
+        { title: 'Ledger', state: 'OK', dot: ok, big: 'Reconciled 06:00', lines: ['balance and positions match Kalshi', 'chain verified on start', '1 unexplained change: interest?'] },
+        { title: 'Backups', state: 'OK', dot: ok, big: 'Last copy 01:30', lines: ['NAS share, ikars\\ folder, marker found', 'restore drill passed Oct 24', 'tax packages: 0 this year'] },
+        { title: 'Storage', state: 'OK', dot: ok, big: '41 of 250 GB', lines: ['recordings 36 GB · compaction nightly', 'about 3.1 GB a day', 'full in about 68 days at this rate'] },
+        { title: 'Costs this month', state: 'WATCH', dot: warn, big: '$3.20 of $40', lines: ['Claude API $2.70 · odds API $0.50', 'local model used for 94% of first passes', 'degrade at 80%, pause at 100%'] },
+        { title: 'Plugins', state: 'OK', dot: ok, big: '4 running · 0 paused', lines: ['NWS weather, RSS news, GDELT, momentum', 'restarts today: 1 (RSS timeout)', 'GPU: RTX 5070 Ti in use (embeddings)'] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
