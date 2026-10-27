@@ -50,6 +50,7 @@ from ikars_engine.metrics import Metrics
 from ikars_engine.paths import Paths
 from ikars_engine.portfolio import Held, Portfolio, holdings, portfolio
 from ikars_engine.recorder import Recorder
+from ikars_engine.runmode import at
 from ikars_engine.settings import Settings
 from ikars_engine.share import configured, migration_copier
 from ikars_engine.skew import SkewMonitor
@@ -269,33 +270,24 @@ def requests_used(
     }
 
 
-def _at(tree: object, *keys: str) -> object:
-    """``tree[k1][k2]...``, or None where a level is missing or not a mapping."""
-    for key in keys:
-        if not isinstance(tree, dict):
-            return None
-        tree = tree.get(key)
-    return tree
-
-
 def summary(health: dict[str, object]) -> str:
     """One line for the console: the numbers that say whether the feed is healthy."""
 
     def ms(percentile: str) -> float | None:
-        ns = _at(health, "metrics", "timings", "engine.feed_to_route_ns", f"{percentile}_ns")
+        ns = at(health, "metrics", "timings", "engine.feed_to_route_ns", f"{percentile}_ns")
         return round(ns / 1e6, 1) if isinstance(ns, int) else None
 
     return json.dumps(
         {
-            "frames": _at(health, "kalshi", "frames"),
-            "watched": _at(health, "kalshi", "watched"),
-            "books_ready": _at(health, "kalshi", "books_ready"),
-            "open_gaps": _at(health, "kalshi", "open_gaps"),
+            "frames": at(health, "kalshi", "frames"),
+            "watched": at(health, "kalshi", "watched"),
+            "books_ready": at(health, "kalshi", "books_ready"),
+            "open_gaps": at(health, "kalshi", "open_gaps"),
             "feed_to_route_p50_ms": ms("p50"),
             "feed_to_route_p99_ms": ms("p99"),
-            "rest_tokens_spent": _at(health, "request_budget", "tokens_spent"),
-            "ledger_records": _at(health, "ledger", "records"),
-            "ledger_exact": _at(health, "ledger", "reconciled_exact"),
+            "rest_tokens_spent": at(health, "request_budget", "tokens_spent"),
+            "ledger_records": at(health, "ledger", "records"),
+            "ledger_exact": at(health, "ledger", "reconciled_exact"),
             "clock": health.get("clock"),
         },
         default=str,

@@ -42,6 +42,17 @@ class Recorder(PluginBase):
         self.seen.append(item.ref.id)
 
 
+def test_the_host_keeps_only_the_latest_gaps_and_counts_them_all() -> None:
+    """M1.R 19: every dropped or skipped item added a Gap object, for ever."""
+    from ikars_engine.plugins import GAPS_KEPT
+
+    plugins, _, metrics = host()
+    for _ in range(GAPS_KEPT + 50):
+        plugins._gap("slow", "inbox full: item dropped", 1)
+    assert len(plugins.gaps) == GAPS_KEPT and plugins.gap_total == GAPS_KEPT + 50
+    assert metrics.counters["plugin.slow.gaps"] == GAPS_KEPT + 50
+
+
 def host(
     options: HostOptions | None = None, clock: Any = None
 ) -> tuple[PluginHost, list[Item], Metrics]:

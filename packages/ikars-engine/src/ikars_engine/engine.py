@@ -139,7 +139,7 @@ class Engine:
     def health(self) -> dict[str, object]:
         return {
             "plugins": {name: str(state) for name, state in self.host.states().items()},
-            "gaps": len(self.host.gaps),
+            "gaps": self.host.gap_total,
             "clock": self.skew.report(),
             "budget": None
             if self.costs is None

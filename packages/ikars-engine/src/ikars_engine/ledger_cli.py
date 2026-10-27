@@ -32,7 +32,7 @@ from ikars_core.auth import AccountSigner
 from ikars_core.config import Environment, KalshiConfig
 from ikars_core.endpoints import MarketData
 from ikars_core.fees import FeeSchedule, fee_schedule
-from ikars_core.fixedpoint import from_e2, from_e6, to_e6
+from ikars_core.fixedpoint import PrecisionError, from_e2, from_e6, to_e6
 from ikars_core.rest import KalshiAccountClient, KalshiAPIError, KalshiPublicClient
 
 from ikars_engine import taxzone
@@ -122,12 +122,15 @@ def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
             code = asyncio.run(_import(ledger, settings))
             ledger.checkpoint(checkpoints, time.time_ns())
             return code
-        moment = datetime.fromisoformat(args.time)
+        try:
+            moment = datetime.fromisoformat(args.time)
+            amount = to_e6(args.amount)
+        except (PrecisionError, ValueError) as exc:  # never a traceback (M1.R 23)
+            _print({"refused": "the amount or the time cannot be read", "problem": str(exc)})
+            return 2
         if moment.tzinfo is None:
             moment = moment.replace(tzinfo=zone.zone)
-        seq = annotate(
-            ledger, args.kind, to_e6(args.amount), ns_of(moment), args.note, args.corrects
-        )
+        seq = annotate(ledger, args.kind, amount, ns_of(moment), args.note, args.corrects)
         _print({"appended": seq})
         return 0
     finally:

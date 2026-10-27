@@ -47,6 +47,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from ikars_engine.ledger import Head, Ledger
+from ikars_engine.store import StoreError
 
 log = logging.getLogger("ikars_engine.backup")
 
@@ -334,6 +335,11 @@ def restore_drill(share: Share, local: Ledger, scratch: Path) -> Drill:
         return _drill(share, local, scratch)
     except OSError as exc:  # the share went away part-way
         return Drill(False, None, 0, f"the share could not be read ({type(exc).__name__})")
+    except (sqlite3.DatabaseError, StoreError, ValueError, KeyError) as exc:
+        # a copy that matches its checksums but is not a sound ledger (M1.R 22)
+        return Drill(
+            False, None, 0, f"the restored copy is not a sound ledger ({type(exc).__name__})"
+        )
 
 
 def _drill(share: Share, local: Ledger, scratch: Path) -> Drill:

@@ -5,6 +5,7 @@ else small that another process reads while it may be rewritten.
 """
 
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -17,3 +18,14 @@ def write_text_atomic(path: Path, text: str) -> None:
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(temporary, path)
+
+
+def backup_name(path: Path) -> Path:
+    """A name beside ``path`` for a copy of it that never overwrites an earlier copy."""
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    target = path.with_name(f"{path.stem}.{stamp}.bak{path.suffix}")
+    n = 1
+    while target.exists():
+        target = path.with_name(f"{path.stem}.{stamp}-{n}.bak{path.suffix}")
+        n += 1
+    return target

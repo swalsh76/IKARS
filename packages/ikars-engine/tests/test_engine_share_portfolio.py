@@ -180,6 +180,26 @@ def test_old_dailies_are_pruned_and_the_rest_kept(nas: Path, tmp_path: Path) -> 
 # --- the restore drill --------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize(
+    "error", [sqlite3.DatabaseError("file is not a database"), KeyError("seq")]
+)
+def test_a_restored_copy_that_is_not_a_sound_ledger_fails_the_drill(
+    nas: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    """M1.R 22: a damaged copy that matched its checksums crashed the drill with a traceback."""
+    share = Share(str(nas))
+    share.init(T0)
+
+    def damaged(*_: object) -> None:
+        raise error
+
+    monkeypatch.setattr("ikars_engine.share._drill", damaged)
+    local = Ledger(tmp_path / "local.sqlite", UTC)
+    drill = restore_drill(share, local, tmp_path / "drill")
+    local.close()
+    assert not drill.ok and drill.problem is not None and "not a sound ledger" in drill.problem
+
+
 def test_the_restore_drill_proves_the_newest_backup(nas: Path, tmp_path: Path) -> None:
     share = Share(str(nas))
     share.init(T0)

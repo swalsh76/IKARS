@@ -302,6 +302,26 @@ async def test_subscriptions_are_set_over_http(ctx: ApiContext) -> None:
 # --- the server ---------------------------------------------------------------------------------
 
 
+async def test_the_server_starts_where_no_acl_can_be_read(
+    ctx: ApiContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R 26: off Windows the ACL check raised and the API never started."""
+
+    def not_windows(path: Path) -> list[str]:
+        raise NotImplementedError("other_readers reads a Windows ACL")
+
+    monkeypatch.setattr("ikars_engine.api.other_readers", not_windows)
+
+    def context_for(token: str) -> ApiContext:
+        ctx.token = token
+        return ctx
+
+    server = ApiServer(context_for, tmp_path)
+    await server.start()
+    assert read_api_file(tmp_path) is not None
+    await server.stop()
+
+
 async def test_the_server_listens_on_loopback_and_cleans_up(
     ctx: ApiContext, tmp_path: Path
 ) -> None:

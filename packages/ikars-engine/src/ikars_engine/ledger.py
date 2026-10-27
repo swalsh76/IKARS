@@ -23,7 +23,6 @@ Nothing here logs a record's contents: they are account values (only counts and 
 
 import hashlib
 import json
-import os
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -31,6 +30,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from ikars_engine.files import write_text_atomic
 from ikars_engine.store import open_store
 
 GENESIS = "0" * 64
@@ -366,12 +366,7 @@ class Ledger:
             {"date_utc": day, "stream": stream, "seq": head.seq, "hash": head.hash,
              "written_utc": iso_utc(now_ns)}
         )  # fmt: skip
-        temporary = target.with_suffix(".json.tmp")
-        with open(temporary, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        temporary.replace(target)
+        write_text_atomic(target, text + "\n")
         return target
 
     # --- bookmarks (outside the chain) -------------------------------------------------------

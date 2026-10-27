@@ -6,12 +6,10 @@ before the new one replaces it, so an upgrade can always be undone. Writes go to
 first and are then renamed over the old one, so a crash never leaves half a file.
 """
 
-import os
 import re
 import shutil
 import tomllib
 from collections.abc import Callable
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,10 +17,14 @@ import msgspec
 import tomli_w
 from ikars_core.fixedpoint import PrecisionError, to_e6
 
+from ikars_engine.files import backup_name, write_text_atomic
+
 VERSION = 3
 
 
 class KalshiSettings(msgspec.Struct, frozen=True, kw_only=True):
+    # production by design: IKARS runs on its own read-only production key (PLAN D21); the core
+    # library's demo default is for code that does not say which (M1.R 27)
     environment: str = "production"
     key_id_variable: str = "IKARS_KALSHI_KEY_ID"
     key_path_variable: str = "IKARS_KALSHI_PRIVATE_KEY_PATH"
@@ -204,22 +206,10 @@ def load(path: Path) -> Settings:
 
 def backup(path: Path) -> Path:
     """Copy ``path`` beside itself under a name that never overwrites an earlier backup."""
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-    target = path.with_name(f"{path.stem}.{stamp}.bak{path.suffix}")
-    n = 1
-    while target.exists():
-        target = path.with_name(f"{path.stem}.{stamp}-{n}.bak{path.suffix}")
-        n += 1
+    target = backup_name(path)
     shutil.copy2(path, target)
     return target
 
 
 def save(settings: Settings, path: Path) -> None:
-    data = msgspec.to_builtins(settings)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    with temporary.open("w", encoding="utf-8") as file:
-        file.write(tomli_w.dumps(data))
-        file.flush()
-        os.fsync(file.fileno())  # on disk before the rename, so a power cut leaves old or new
-    os.replace(temporary, path)
+    write_text_atomic(path, tomli_w.dumps(msgspec.to_builtins(settings)))

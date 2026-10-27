@@ -486,6 +486,21 @@ def test_the_ledger_commands(tmp_path: Path, capsys: pytest.CaptureFixture[str])
     assert "broken" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    ("amount", "time"), [("0.4200001", "2026-01-01"), ("1e3", "2026-01-01"), ("0.42", "soon")]
+)
+def test_bad_annotate_input_is_refused_not_a_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], amount: str, time: str
+) -> None:
+    """M1.R 23: a bad amount or time printed a traceback."""
+    from ikars_engine.__main__ import main
+
+    root = ["python -m ikars_engine", "ledger", "--root", str(tmp_path)]
+    note = ["annotate", "--kind", "interest", "--amount", amount, "--time", time]
+    assert main([*root, *note, "--note", "made up"]) == 2
+    assert json.loads(capsys.readouterr().out)["refused"] == "the amount or the time cannot be read"
+
+
 def test_the_runner_describes_markets_and_digests_settings() -> None:
     from ikars_engine.kalshi.discovery import MarketIndex
     from ikars_engine.kalshi.runner import describer, settings_digest

@@ -188,6 +188,18 @@ def test_the_governor_warning_level(tmp_path: Path) -> None:
     assert os.path.exists(tmp_path / "trade/2026-01-01/00.parquet")
 
 
+def test_the_governor_skips_a_file_that_goes_while_it_looks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R 20: a file renamed by a compaction between the listing and the stat failed the check."""
+    kept = make_file(tmp_path / "trade/2026-01-01/00.parquet", 900)
+    gone = tmp_path / "trade/2026-01-01/01.arrow"  # listed, then renamed by a worker
+    governor = StorageGovernor(tmp_path, budget_bytes=1_000)
+    monkeypatch.setattr(governor, "_files", lambda: [kept, gone])
+    report = governor.check()
+    assert report.state is Storage.WARN and report.used_bytes == 900
+
+
 def test_the_first_row_of_a_new_hour_is_never_lost(tmp_path: Path) -> None:
     """Found by the first run of these tests: the hour's flush took the pending list away, and the
     new hour's first row was appended to the orphaned list and lost."""

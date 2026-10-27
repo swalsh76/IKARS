@@ -54,11 +54,11 @@ from ikars_core.account import (
     Transfer,
 )
 from ikars_core.endpoints import MarketData, TypedPage
+from ikars_core.markets import series_ticker_of
 from ikars_core.models import Market
 from ikars_core.rest import KalshiAPIError
 
 from ikars_engine.clocks import EventClock
-from ikars_engine.kalshi.discovery import series_of
 from ikars_engine.ledger import Entry, Ledger, LedgerError
 
 log = logging.getLogger("ikars_engine.ledger")
@@ -313,7 +313,7 @@ class AccountImporter:
                 else {
                     "title": market.title or "",
                     "event_ticker": event,
-                    "series_ticker": series_of(event),
+                    "series_ticker": series_ticker_of(event) or "",
                 }  # fmt: skip
             )
 

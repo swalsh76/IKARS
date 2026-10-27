@@ -11,18 +11,20 @@ import httpx
 import pytest
 from ikars_core.config import Environment, KalshiConfig
 from ikars_core.endpoints import MarketData
+from ikars_core.markets import series_ticker_of
 from ikars_core.ratelimit import TokenBucket
 from ikars_core.rest import KalshiPublicClient
 from ikars_core.ws import Data, FeedError, Reconnected, ResubscribeFailed, SequenceGap
 from ikars_core.ws_models import parse_frame
 from ikars_engine.clocks import VirtualClock
-from ikars_engine.kalshi.discovery import BOOKMARK, Discovery, MarketIndex, series_of
+from ikars_engine.kalshi.discovery import BOOKMARK, Discovery, MarketIndex
 from ikars_engine.kalshi.exchange import ExchangeWatch
-from ikars_engine.kalshi.runner import _at, clock_observer, requests_used, summary
+from ikars_engine.kalshi.runner import clock_observer, requests_used, summary
 from ikars_engine.kalshi.source import Intervals, KalshiSource
 from ikars_engine.kalshi.watched import WatchedSet
 from ikars_engine.metrics import Metrics
 from ikars_engine.recorder import Recorder, hours, read_rows
+from ikars_engine.runmode import at
 from ikars_engine.skew import SkewMonitor
 from ikars_engine.store import StateStore
 
@@ -292,7 +294,7 @@ async def test_incremental_discovery_uses_the_bookmark_and_runs_full_without_one
     query = rig.kalshi.requests[-1].url.params
     assert query["min_updated_ts"] == str(T0 // 10**9 - 120) and "status" not in query
     assert rig.discovery.index.markets["A"].status == "closed"
-    assert series_of("KXHIGHNY-26OCT28") == "KXHIGHNY"
+    assert series_ticker_of("KXHIGHNY-26OCT28") == "KXHIGHNY"
 
 
 async def test_the_exchange_status_is_stored_only_when_it_changes(tmp_path: Path) -> None:
@@ -523,7 +525,7 @@ def test_the_summary_line_reads_nested_health() -> None:
     line = json.loads(summary(health))
     assert line["frames"] == {"trade": 3} and line["feed_to_route_p99_ms"] == 50.0
     assert line["feed_to_route_p50_ms"] == 2.5 and line["rest_tokens_spent"] == 120
-    assert _at(health, "kalshi", "missing", "x") is None
+    assert at(health, "kalshi", "missing", "x") is None
 
 
 CUTOFF_S = 1_787_356_800  # the fixture's trades cutoff, 2026-08-22 00:00 UTC

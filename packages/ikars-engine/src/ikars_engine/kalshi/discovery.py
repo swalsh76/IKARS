@@ -22,6 +22,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from ikars_core.endpoints import MarketData
 from ikars_core.fees import FeeSchedule, fee_schedule
+from ikars_core.markets import is_combo, series_ticker_of
 from ikars_core.models import Market
 
 from ikars_engine.clocks import EventClock
@@ -29,7 +30,6 @@ from ikars_engine.store import StateStore
 
 BOOKMARK = "discovery.updated_s"
 OVERLAP_SECONDS = 120
-COMBO_PREFIX = "KXMVE"
 OPEN_STATUSES = frozenset({"active", "open"})  # Kalshi's REST and WebSocket names for trading
 log = logging.getLogger("ikars_engine.kalshi.discovery")
 
@@ -47,11 +47,6 @@ class MarketInfo:
     volume_24h_e2: int  # contracts traded in the last day, in hundredths
 
 
-def series_of(event_ticker: str) -> str:
-    """A series ticker is the event ticker up to its first dash (``KXHIGHNY-26OCT28``)."""
-    return event_ticker.split("-", 1)[0]
-
-
 class MarketIndex:
     def __init__(self) -> None:
         self.markets: dict[str, MarketInfo] = {}
@@ -61,11 +56,11 @@ class MarketIndex:
         self.combos_skipped = 0
 
     def put(self, market: Market) -> None:
-        if market.ticker.startswith(COMBO_PREFIX):
+        if is_combo(market.ticker):
             self.combos_skipped += 1
             return
         event = market.event_ticker or ""
-        series = series_of(event)
+        series = series_ticker_of(event) or ""
         self.markets[market.ticker] = MarketInfo(
             ticker=market.ticker,
             event_ticker=event,

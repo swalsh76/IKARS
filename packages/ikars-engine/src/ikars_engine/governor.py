@@ -52,12 +52,23 @@ class StorageGovernor:
     def _files(self) -> list[Path]:
         return [p for p in self.root.glob("*/*/*") if p.suffix in (".parquet", ".arrow")]
 
+    def _sizes(self) -> dict[Path, int]:
+        """Each file's size; one renamed or removed since the listing (a compaction running in a
+        worker thread) is left out (M1.R 20)."""
+        sizes: dict[Path, int] = {}
+        for path in self._files():
+            try:
+                sizes[path] = path.stat().st_size
+            except FileNotFoundError:
+                continue
+        return sizes
+
     def used_bytes(self) -> int:
-        return sum(p.stat().st_size for p in self._files())
+        return sum(self._sizes().values())
 
     def check(self) -> StorageReport:
-        files = self._files()
-        sizes = {p: p.stat().st_size for p in files}
+        sizes = self._sizes()
+        files = list(sizes)
         used = sum(sizes.values())
         if used * 100 < self.budget_bytes * self._warn:
             return StorageReport(Storage.OK, used, self.budget_bytes)
@@ -72,7 +83,12 @@ class StorageGovernor:
         for path in compacted:
             if used * 100 < self.budget_bytes * self._target:
                 break
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass  # gone already
+            except PermissionError:
+                continue  # held by a reader: pruned next time
             used -= sizes[path]
-            path.unlink()
             pruned.append(path)
         return StorageReport(Storage.PRUNED, used, self.budget_bytes, pruned)

@@ -657,7 +657,7 @@ class ApiServer:
         write_text_atomic(self._file, json.dumps(record))
         try:
             readers = other_readers(self._file)
-        except OSError:
+        except (OSError, NotImplementedError):  # off Windows there is no ACL to read (M1.R 26)
             readers = []
         if readers:  # the token would be readable by someone else: say so (never the token)
             log.warning("api.json is readable by other accounts", extra={"readers": len(readers)})
