@@ -1110,3 +1110,80 @@ minute; unexplained money labelled by the owner; FIFO.
   written with the file tool, or direct edits.
 
 **M1.5b done**, subject to the owner's merge. **M1.5 complete** with it.
+
+**M1.5 done:** PR #8 merged as `5b6f702` (2026-10-27).
+
+### 1.6 Run mode and alerts (plan PROPOSED 2026-10-27; branch `m1/6-run-mode`)
+
+**Builds** (in `ikars-engine`; no new packages):
+1. **Background run mode (G5):**
+   - `python -m ikars_engine serve`: the engine without a console (`pythonw`), until asked to stop.
+   - **One instance only:** a lock file in the data folder, so the auto-start and the watchdog never run two
+     engines.
+   - **Stop:** `python -m ikars_engine stop` writes a stop request; the engine shuts down cleanly within seconds.
+   - `python -m ikars_engine status` reads the engine's heartbeat and health snapshot (counts only).
+   - The engine writes a small health snapshot file every minute, for the watchdog and `status`. M1.7's API
+     replaces this.
+2. **Auto-start at login:** a per-user entry under `HKCU\...\Run` (no admin rights). This shell has no admin
+   token, and a logon-triggered scheduled task usually needs one. `install-autostart` and
+   `remove-autostart` commands manage it.
+3. **Keep awake while running:** Windows' `SetThreadExecutionState`, so the system doesn't sleep while the
+   engine runs. The display may still turn off. It's released when the engine stops.
+4. **The watchdog (from KAPS's `watchdog.py`, adapted to Windows):** a separate short-lived process, run every
+   5 minutes by a per-user scheduled task (time-triggered, no admin rights needed; checked live).
+   - It reads the heartbeat and health snapshot.
+   - If the engine has died and wasn't asked to stop, it restarts it, at most 3 times an hour (more is reported,
+     not retried).
+   - It alerts on: engine down; feed stale (no frame for 10 minutes while the exchange is open); backup failed or
+     over 36 hours old; ledger chain broken; reconciliation not exact; storage over its warning level.
+   - **Kept from KAPS:** a problem must hold for 2 checks in a row before it alerts; a reminder every 6 hours
+     while it lasts; one message when it clears; its own small state file, so it never repeats itself; a message
+     that fails to send is retried at the next check.
+5. **The alert framework (H):**
+   - priority levels: urgent, high, normal, low;
+   - de-duplication by key, and a minimum interval per key (throttling);
+   - **quiet hours** (a setting), during which only urgent alerts are pushed;
+   - lower priorities held for an **hourly digest**.
+   - It is one module, used by the watchdog now and by the engine's recommendations in M4.
+6. **ntfy push (G6):** a private topic, **stored with DPAPI** (D8) under the user's profile, entered once with
+   `alerts set-topic`, which reads it without echoing it. The topic never appears in a log, an error or a reply,
+   and messages carry status text only. `alerts test` sends one test message.
+7. **GPU detection (D15, moved here):** at start, `nvidia-smi` (shipped with the driver) reports the GPU's name,
+   memory, driver and CUDA version into health; without an NVIDIA GPU, health says "CPU only". There is no new
+   package. NVML through `nvidia-ml-py` is the alternative, if more is needed later.
+
+**Changes on this machine:**
+- A `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value, `IKARS Engine`.
+- A per-user scheduled task, `IKARS Watchdog`, every 5 minutes.
+- The DPAPI-protected topic file under `%LOCALAPPDATA%\IKARS`.
+- Test pushes to your private topic.
+- All of it is user space, no admin rights; the `remove-autostart` command undoes the first two.
+
+**Tests:**
+- the watchdog's rules: confirmation, reminders, clearing, restart limits, a failed send retried;
+- the alert framework: priority, de-duplication, throttling, quiet hours, the digest;
+- the lock file, and the stop request;
+- the DPAPI round trip, and the topic never in a log or an error;
+- GPU parsing, from captured `nvidia-smi` text;
+- the Run-key and task commands, with fakes.
+
+**Live checks:**
+- `serve` starts in the background and `stop` stops it cleanly;
+- a second `serve` is refused;
+- after a killed engine, the watchdog restarts it within one check and sends one "engine down" then one
+  "recovered" push;
+- auto-start works after you sign out and back in (you do that step);
+- `alerts test` reaches your phone;
+- GPU detection reports the RTX 5070 Ti.
+
+**Open questions.**
+1. **The ntfy topic:** *recommended:* a **new private topic for IKARS** on `ntfy.sh` (KAPS's server). It is
+   separate from KAPS's topic, so the two can be muted or revoked on their own. You subscribe on your phone and
+   give me the topic once, through `alerts set-topic`.
+2. **Quiet hours:** *recommended:* **22:00 to 07:00** workstation time, during which only urgent alerts push.
+   Urgent means engine down, ledger chain broken or backup failed. Is that the window you want?
+3. **Keep awake:** *recommended:* keep the **system** awake while the engine runs, and let the display sleep.
+   *Alternative:* no keep-awake, so the PC sleeps as usual and the engine records the gap.
+4. **Watchdog interval:** *recommended:* **every 5 minutes**, with the 2-check confirmation, so an alert comes
+   about 10 minutes after a failure. *Alternative:* every minute, like KAPS, for faster alerts at a little more
+   noise.

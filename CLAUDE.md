@@ -98,10 +98,9 @@ slice still needs its own approved plan before code.
   **M1.5 plan APPROVED** (owner 2026-10-27: all 6 as recommended: split a/b, NAS go-ahead for M1.5b, tax zone =
   workstation's (America/Denver), REST import each minute, owner labels unexplained money, FIFO).
   **M1.5a done** (PR #7 merged as `087b819`): reconciles **exactly** with Kalshi.
-  **M1.5b built and verified live** on `m1/5b-share-portfolio` (BUILD-LOG 1.5b; commits `682b581`, `9ff0be2`): the
-  real ledger lives in `%LOCALAPPDATA%\IKARS\ledger`; `ikars\` and its marker are on the share (path in local settings
-  only); backups and the restore drill pass; portfolio model (0 positions now). PR open, waiting for the owner's
-  merge. **Next after the merge:** the M1.6 slice plan (run mode and alerts, plus GPU detection). The owner allows
+  **M1.5 done** (PR #8 merged as `5b6f702`): the real ledger lives in `%LOCALAPPDATA%\IKARS\ledger`; share backups
+  and the restore drill pass. **M1.6 plan PROPOSED** (BUILD-LOG 1.6, branch `m1/6-run-mode`): waiting for the
+  owner's answers (ntfy topic, quiet hours, keep-awake, watchdog interval). No code before approval. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
