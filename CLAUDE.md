@@ -124,7 +124,8 @@ slice still needs its own approved plan before code.
   30-day session, `vite build --watch`, validate every reply. **M1.8a-web-1a done** (PR #16 merged as
   `d70cb83`). **M1.8a-web-1b done** (PR #17 merged as `0fe5415`, CI green on `main`;
   BUILD-LOG 1.8a-web-1b; Node 24.22.1 and pnpm 12.14.0 per user; `web/` with Overview and Health). The ruleset now
-  requires `python`, `hygiene`, `CodeQL` and **`web`** (owner, 2026-10-27). **Next:** 2a on branch `m1/8a-web-2a` (Markets, Market), 2b (Ledger, Alerts, meter), then M1.8b. The owner allows `gh pr merge`
+  requires `python`, `hygiene`, `CodeQL` and **`web`** (owner, 2026-10-27). **M1.8a-web-2a built** on `m1/8a-web-2a` (BUILD-LOG 1.8a-web-2a; Markets grid, Market screen; the CSP's only
+  exception `font-src data:`; merge review 10 itemized): PR open, waiting for the owner's merge. **Next:** 2b (Markets, Market), 2b (Ledger, Alerts, meter), then M1.8b. The owner allows `gh pr merge`
   by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

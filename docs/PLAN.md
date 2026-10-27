@@ -143,6 +143,8 @@ and approved in M1 before any screen is built:
       script, no `eval`), no frames or plugins, `connect-src 'self'`, `frame-ancestors 'none'`; any style
       exception a library needs (AG Grid's inline styles, if so) is named in the slice's BUILD-LOG. Also
       `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `Cache-Control: no-store` on API replies.
+      *M1.8a-web-2a:* the one exception is `font-src 'self' data:`, for AG Grid's icon font (a font runs no code);
+      scripts and styles stay `'self'` only, by AG Grid's CSS-file theme and Lightweight Charts' logo turned off.
     - The sign-in code is **single-use and expires in seconds**. A request that changes anything must carry the
       engine's own `Origin` and `Sec-Fetch-Site: same-origin`.
     - The IKARS Edge profile runs with **extensions off** (they can read the page).
@@ -716,6 +718,7 @@ M1.11. M1.10 can run any time after M1.2; M1.13 any time after M1.12 and before 
 | M1.7 Loopback API and contracts | **done** (BUILD-LOG 1.7; PR #10 merged as `0ba5d83`) |
 | M1.R Base hardening (owner, 2026-10-27) | **built** on `m1/r-hardening` (BUILD-LOG 1.R): a whole-code-base review's items 1 to 26 fixed, plus 10 merge-review findings; **done** (PR #14, `fca7941`) |
 | M1.8a-web-1a Engine side of the web terminal | **done** (PR #16, `d70cb83`; BUILD-LOG 1.8a-web-1a): file serving with the browser hardening, cookie sign-in that survives restarts, `ikars open`, contracts 2.0, `demo-api`; security review (1 finding, fixed) and merge review (8, fixed) |
+| M1.8a-web-2a Markets and Market | **built** on `m1/8a-web-2a` (BUILD-LOG 1.8a-web-2a): the Markets grid and the Market screen (quote, chart, book, linked items); the CSP's font exception; merge review (10, fixed); PR pending |
 | M1.8a-web-1b Web foundation, Overview and Health | **done**, built on `m1/8a-web-1b` (BUILD-LOG 1.8a-web-1b): `web/` (types and validators from the contracts, client, stream, hub, money, navigator, Overview, Health), the `web` CI job, CodeQL for TypeScript, Dependabot npm; security review clean, merge review (10: 9 fixed, 1 no change); **done** (PR #17, `0fe5415`) |
 | M1.8 Terminal shell | M1.8a (WPF) done and merged as `77849e3`, then **retired by the D1 amendment** (2026-10-27; BUILD-LOG 1.8w; tag `wpf-terminal-final`). **WPF pruned** (PR #13 merged as `1b92d49`). Next: the **M1.8a-web** plan, for approval; then M1.8b |
 
