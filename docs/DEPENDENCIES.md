@@ -29,6 +29,8 @@ replaced) in its slice plan, with its licence checked then.
 | `pyarrow` | Arrow IPC and Parquet recordings | Apache-2.0 |
 | `tomli-w` | writing the TOML settings | MIT |
 | `tzdata` | the time-zone database `zoneinfo` needs on Windows (the tax zone, M1.5a) | Apache-2.0 |
+| `starlette` | the loopback API (M1.7, D3) | BSD-3-Clause |
+| `uvicorn` | the API's server, inside the engine's event loop (M1.7); with `h11` (MIT), `click` (BSD-3-Clause) | BSD-3-Clause |
 
 Development only: `ruff`, `mypy`, `pytest` (with `pytest-asyncio`, `pytest-cov`, `hypothesis`), `pip-audit`; the
 exact set and versions are in `uv.lock`.

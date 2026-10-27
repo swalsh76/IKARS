@@ -1,0 +1,14 @@
+{
+  "category": "Demo",
+  "close_time_utc": "2026-01-01T12:00:00Z",
+  "event_ticker": "KXDEMO-26JAN01",
+  "last_price_e6": 420000,
+  "series_ticker": "KXDEMO",
+  "status": "active",
+  "ticker": "KXDEMO-26JAN01-T50",
+  "title": "Made-up market",
+  "volume_24h_e2": 100000,
+  "watched": true,
+  "yes_ask_e6": 430000,
+  "yes_bid_e6": 410000
+}

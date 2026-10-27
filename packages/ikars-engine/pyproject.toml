@@ -13,8 +13,10 @@ dependencies = [
     "ikars-core",
     "msgspec>=0.22",
     "pyarrow>=26",
+    "starlette>=0.48",
     "tomli-w>=1.2",
     "tzdata>=2025.2",
+    "uvicorn>=0.37",
 ]
 
 [tool.uv.sources]

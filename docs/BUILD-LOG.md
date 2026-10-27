@@ -1276,7 +1276,7 @@ PLAN G6, the M1 and M4 outlines, the M1.6 row and DEPENDENCIES were amended to m
 **Owner (2026-10-27):** saw the test notification. **M1.6 done:** PR #9 merged as `2efc95f`. The sign-out check of
 auto-start is still the owner's to do.
 
-### 1.7 Loopback API and contracts (plan PROPOSED 2026-10-27; branch `m1/7-api`)
+### 1.7 Loopback API and contracts (plan APPROVED 2026-10-27, all four answers as recommended; branch `m1/7-api`)
 
 **Builds** (in `ikars-engine`, plus a C# contracts project for the terminal):
 1. **The API server in the engine's own process:** Starlette on uvicorn, started inside the engine's event loop,
@@ -1355,3 +1355,9 @@ runs, and a loopback port while it listens. Nothing else, and no firewall change
      catches every drift.
    - *Alternative:* generate them from the JSON Schema, with a code generator such as NJsonSchema (a new NuGet
      package and build step).
+
+**Owner's answers (2026-10-27):** all four as recommended:
+1. Server-Sent Events, with subscriptions over HTTP (D3 amended);
+2. a free port at each start, recorded in `api.json`;
+3. ledger records over the API, paged;
+4. hand-written C# records, checked by golden examples.

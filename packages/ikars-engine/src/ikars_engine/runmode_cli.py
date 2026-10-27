@@ -27,6 +27,7 @@ from ikars_engine.alerts import (
     QuietHours,
     ToastNotifier,
 )
+from ikars_engine.api import read_api_file
 from ikars_engine.logs import Redactor, configure
 from ikars_engine.paths import Paths
 from ikars_engine.settings import Settings
@@ -170,8 +171,10 @@ def stop(paths: Paths) -> int:
 def status(paths: Paths) -> dict[str, object]:
     snap = runmode.read_snapshot(paths.data)
     written = runmode.at(snap, "written_ns")
+    api = read_api_file(paths.data)
     return {
         "running": runmode.engine_running(paths.data),
+        "api_port": None if api is None else api.get("port"),  # never the token
         "stopped_by_owner": runmode.stopped_by_owner(paths.data),
         "snapshot_age_s": (
             None if not isinstance(written, int) else (time.time_ns() - written) // 1_000_000_000

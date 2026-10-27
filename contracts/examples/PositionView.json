@@ -1,0 +1,13 @@
+{
+  "category": "Demo",
+  "cost_e6": 1518000,
+  "count_e2": 300,
+  "event_ticker": "KXDEMO-26JAN01",
+  "exit_fee_e6": 60000,
+  "exit_price_e6": 550000,
+  "series_ticker": "KXDEMO",
+  "side": "yes",
+  "ticker": "KXDEMO-26JAN01-T50",
+  "title": "Made-up market",
+  "unrealised_e6": 72000
+}

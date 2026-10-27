@@ -100,8 +100,8 @@ slice still needs its own approved plan before code.
   **M1.5a done** (PR #7 merged as `087b819`): reconciles **exactly** with Kalshi.
   **M1.5 done** (PR #8 merged as `5b6f702`): the real ledger lives in `%LOCALAPPDATA%\IKARS\ledger`; share backups
   and the restore drill pass. **M1.6 done** (PR #9 merged as `2efc95f`): the engine runs in the background with the watchdog task and
-  auto-start (the owner's sign-out check pending). **M1.7 plan PROPOSED** (BUILD-LOG 1.7, branch `m1/7-api`): waiting for
-  the owner's answers (SSE or WebSocket, port, ledger records over the API, C# contracts). No code before approval. The owner allows
+  auto-start (the owner's sign-out check pending). **M1.7 plan APPROVED** (BUILD-LOG 1.7: SSE stream, free port in `api.json`, ledger records over the API,
+  hand-written C# records + golden examples); **in progress** on `m1/7-api`. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

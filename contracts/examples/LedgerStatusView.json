@@ -1,0 +1,9 @@
+{
+  "head_seq": 1,
+  "reconciled_exact": true,
+  "records": {
+    "deposit": 1
+  },
+  "tax_zone": "America/Denver",
+  "verified": true
+}
