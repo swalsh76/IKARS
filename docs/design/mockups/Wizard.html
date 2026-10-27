@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IKARS first-run wizard (mock-up, M1.8b)</title>
+<style>
+:root { --bg:#1c1c1c; --panel:#242424; --card:#2c2c2c; --line:#3d3d3d; --text:#f3f3f3; --sub:#cfcfcf; --muted:#ababab; --accent:#60cdff; --pos:#60cdff; --neg:#ffb27a; --navOn:#383838; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:14px/1.4 "Segoe UI Variable","Segoe UI",system-ui,sans-serif; }
+a { color:var(--accent); text-decoration:none; }
+header { display:flex; align-items:center; gap:16px; padding:10px 20px; background:var(--panel); border-bottom:1px solid var(--line); }
+.brand { display:flex; align-items:center; gap:10px; color:var(--accent); } .brand strong { color:var(--text); font-size:16px; }
+.tag { margin-left:auto; padding:4px 10px; border-radius:999px; border:1px solid var(--line); color:var(--sub); font-size:12px; }
+main { max-width:980px; margin:24px auto; padding:0 20px; display:flex; flex-direction:column; gap:16px; }
+h1 { margin:0; font-size:22px; } h2 { margin:0; font-size:16px; }
+.steps { display:flex; gap:8px; flex-wrap:wrap; }
+.step { padding:6px 12px; border-radius:999px; border:1px solid var(--line); color:var(--muted); font-size:13px; }
+.step.done { color:var(--pos); border-color:var(--pos); } .step.now { color:var(--text); background:var(--navOn); font-weight:600; }
+section { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:20px; display:flex; flex-direction:column; gap:12px; }
+.check { display:grid; grid-template-columns:24px minmax(0,1fr) auto; gap:10px; align-items:start; padding:8px 0; border-top:1px solid var(--line); }
+.check:first-of-type { border-top:none; }
+.ok { color:var(--pos); } .watch { color:var(--neg); } .muted { color:var(--muted); } .small { font-size:12px; }
+code { font-family:"Cascadia Mono",Consolas,monospace; font-size:12px; background:var(--panel); padding:2px 6px; border-radius:4px; }
+input, select { height:32px; padding:0 10px; border-radius:6px; border:1px solid var(--line); background:var(--panel); color:var(--text); font:inherit; }
+.bar { display:flex; gap:12px; align-items:center; }
+button { height:34px; padding:0 16px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--text); font:inherit; }
+button.primary { background:var(--accent); color:#002a3d; border-color:var(--accent); font-weight:600; }
+.grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.mini { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; font-size:13px; }
+.mini b { display:block; margin-bottom:4px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-6 4 4 8-10"/><path d="M15 5h5v5"/></svg><strong>IKARS</strong></div>
+  <span>First run</span>
+  <span class="tag">MOCK-UP · MADE-UP VALUES</span>
+</header>
+<main>
+  <h1>Set up IKARS</h1>
+  <p class="muted" style="margin:0">IKARS opens this once, when it finds no settings. Each step checks what it can and says what to do; nothing is sent anywhere, and IKARS never shows a key.</p>
+  <div class="steps">
+    <span class="step done">1 · Kalshi key ✓</span>
+    <span class="step done">2 · Engine and feed ✓</span>
+    <span class="step now">3 · Backups</span>
+    <span class="step">4 · Tax zone and quiet hours</span>
+    <span class="step">5 · Done</span>
+  </div>
+
+  <section>
+    <h2>3 · Backups to the NAS share</h2>
+    <div class="muted">The ledger and the tax packages are copied each night to a share, in its own <code>ikars\</code> folder with an IKARS marker. You can skip this and set it later in Settings.</div>
+    <div style="display:flex; gap:8px; align-items:center"><span style="width:120px">Share</span><input style="flex:1" value="\\[SHARE]\ikars-backups"><button>Test</button></div>
+    <div class="check"><span class="ok">●</span><span>The share answers</span><span class="small muted">0.2 s</span></div>
+    <div class="check"><span class="ok">●</span><span>IKARS can write there (a test file, removed)</span><span></span></div>
+    <div class="check"><span class="watch">●</span><span>No IKARS marker yet: IKARS will create its own <code>ikars\</code> folder and marker</span><span class="small muted">first use</span></div>
+    <div class="bar">
+      <button>Back</button>
+      <button>Skip for now</button>
+      <button class="primary" style="margin-left:auto">Save and continue</button>
+    </div>
+  </section>
+
+  <h2 style="margin-top:8px">The other steps, in short</h2>
+  <div class="grid">
+    <div class="mini"><b>1 · Kalshi key</b>The two variables <code>IKARS_KALSHI_KEY_ID</code> and <code>IKARS_KALSHI_PRIVATE_KEY_PATH</code>: set or not, the key file found and readable by you only. If missing: how to set them, then "Check again". Never the values.</div>
+    <div class="mini"><b>2 · Engine and feed</b>The engine runs, its feed is connected, the clock is in step with Kalshi, the ledger verified. If not: what failed, and "Start the engine".</div>
+    <div class="mini"><b>4 · Tax zone and quiet hours</b>The tax time zone (the workstation's, America/Denver, unless you choose another) and the quiet hours (22:00 to 07:00).</div>
+    <div class="mini"><b>5 · Done</b>A summary of what is set and what was skipped; "Start at sign-in" (the background engine and its watchdog) if not installed; then the Overview.</div>
+    <div class="mini"><b>Later</b>Every choice can be changed in Settings. The wizard does not come back once the settings file exists.</div>
+  </div>
+</main>
+</body>
+</html>

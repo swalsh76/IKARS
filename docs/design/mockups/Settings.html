@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IKARS Settings (mock-up, M1.8b)</title>
+<style>
+:root { --bg:#1c1c1c; --panel:#242424; --card:#2c2c2c; --line:#3d3d3d; --text:#f3f3f3; --sub:#cfcfcf; --muted:#ababab; --accent:#60cdff; --pos:#60cdff; --neg:#ffb27a; --navOn:#383838; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:14px/1.4 "Segoe UI Variable","Segoe UI",system-ui,sans-serif; }
+a { color:var(--accent); text-decoration:none; }
+header { display:flex; flex-wrap:wrap; align-items:center; gap:16px; padding:10px 20px; background:var(--panel); border-bottom:1px solid var(--line); }
+.brand { display:flex; align-items:center; gap:10px; color:var(--accent); } .brand strong { color:var(--text); font-size:16px; }
+.crumbs { color:var(--sub); }
+.tag { margin-left:auto; padding:4px 10px; border-radius:999px; border:1px solid var(--line); color:var(--sub); font-size:12px; }
+.body { display:flex; }
+nav.side { flex:0 0 196px; padding:16px 12px; background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; gap:4px; min-height:820px; }
+nav.side a { display:block; padding:8px 12px; border-radius:6px; color:var(--text); } nav.side a.on { background:var(--navOn); font-weight:600; }
+main { flex:1; padding:20px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; align-content:start; }
+section { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; display:flex; flex-direction:column; gap:12px; }
+h1 { margin:0; font-size:20px; grid-column:span 2; } h2 { margin:0; font-size:16px; }
+.row { display:grid; grid-template-columns:180px minmax(0,1fr); gap:12px; align-items:center; }
+label { color:var(--sub); }
+input, select { height:32px; padding:0 10px; border-radius:6px; border:1px solid var(--line); background:var(--panel); color:var(--text); font:inherit; width:100%; }
+.seg { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; } .seg span { padding:6px 14px; } .seg .on { background:var(--navOn); font-weight:600; }
+.note { color:var(--muted); font-size:12px; }
+.ok { color:var(--pos); } .watch { color:var(--neg); }
+.chip { padding:2px 8px; border-radius:999px; border:1px solid var(--line); font-size:12px; }
+.restart { color:var(--neg); font-size:12px; }
+.bar { grid-column:span 2; display:flex; gap:12px; align-items:center; }
+button { height:34px; padding:0 16px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--text); font:inherit; }
+button.primary { background:var(--accent); color:#002a3d; border-color:var(--accent); font-weight:600; }
+table { width:100%; border-collapse:collapse; font-size:13px; } td, th { text-align:left; padding:6px 8px; border-top:1px solid var(--line); } th { color:var(--muted); font-size:12px; border-top:none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-6 4 4 8-10"/><path d="M15 5h5v5"/></svg><strong>IKARS</strong></div>
+  <nav class="crumbs"><a href="#">Overview</a> › Settings</nav>
+  <span class="tag">MOCK-UP · MADE-UP VALUES</span>
+</header>
+<div class="body">
+  <nav class="side">
+    <a href="#">Overview</a><a href="#">Markets</a><a href="#">Ledger</a><a href="#">Alerts</a><a href="#">Health</a><a class="on" href="#">Settings</a>
+  </nav>
+  <main>
+    <h1>Settings</h1>
+
+    <section>
+      <h2>Appearance</h2>
+      <div class="row"><label>Theme</label><div class="seg"><span class="on">Follow Windows</span><span>Dark</span><span>Light</span></div></div>
+      <div class="note">Ctrl+Shift+L switches the theme anywhere. Saved with the engine's settings, so it survives a new browser profile.</div>
+    </section>
+
+    <section>
+      <h2>Kalshi key <span class="chip">read only</span></h2>
+      <div class="row"><label>IKARS_KALSHI_KEY_ID</label><span class="ok">● set</span></div>
+      <div class="row"><label>IKARS_KALSHI_PRIVATE_KEY_PATH</label><span class="ok">● set · file found · owner only</span></div>
+      <div class="row"><label>Environment</label><span>Production (read-only key)</span></div>
+      <div class="note">IKARS never shows a key, its id or its path. Change them in Windows' user environment variables, then restart the engine.</div>
+    </section>
+
+    <section>
+      <h2>Alerts</h2>
+      <div class="row"><label>Quiet hours</label><div style="display:flex; gap:8px"><input value="22:00"><input value="07:00"></div></div>
+      <div class="row"><label>Same alert again after</label><input value="10 minutes"></div>
+      <div class="row"><label>Digest every</label><input value="60 minutes"></div>
+      <div class="note">In quiet hours only urgent alerts pop up; the rest wait for the digest.</div>
+    </section>
+
+    <section>
+      <h2>Ledger and backups</h2>
+      <div class="row"><label>Tax time zone</label><select><option>Workstation's zone (America/Denver)</option></select></div>
+      <div class="row"><label>Backup share</label><input value="\\[SHARE]\ikars-backups"></div>
+      <div class="row"><label></label><span><span class="ok">● reachable · IKARS marker found</span> · <a href="#">Test the share</a></span></div>
+      <div class="restart">Changing the tax zone or the share applies after an engine restart.</div>
+    </section>
+
+    <section>
+      <h2>Feed and storage</h2>
+      <div class="row"><label>Watched markets (books)</label><input value="100"></div>
+      <div class="row"><label>Share of Kalshi's read budget</label><input value="25 %"></div>
+      <div class="row"><label>Storage budget for recordings</label><input value="200 GB"></div>
+      <div class="restart">These apply after an engine restart.</div>
+    </section>
+
+    <section>
+      <h2>Terminal</h2>
+      <div class="row"><label>Port</label><input value="47821"></div>
+      <div class="row"><label>Stay signed in for</label><input value="30 days"></div>
+      <div class="row"><label>Layouts</label><span class="note">Saved window layouts appear here (M1.8b-2).</span></div>
+      <div class="restart">A new port applies after an engine restart; reopen the terminal with ikars open.</div>
+    </section>
+
+    <div class="bar">
+      <button class="primary">Save</button>
+      <button>Discard changes</button>
+      <span class="note">The settings file is backed up before every save. 2 changes wait for an engine restart.</span>
+      <button style="margin-left:auto">Restart the engine</button>
+    </div>
+  </main>
+</div>
+</body>
+</html>
