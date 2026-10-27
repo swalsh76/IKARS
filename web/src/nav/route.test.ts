@@ -9,6 +9,8 @@ describe("addresses", () => {
     ["/health", "", { screen: "health" }],
     ["/ledger", "", { screen: "ledger" }],
     ["/alerts", "", { screen: "alerts" }],
+    ["/settings", "", { screen: "settings" }],
+    ["/welcome", "", { screen: "welcome" }],
     ["/markets", "?q=rain%20nyc", { screen: "markets", query: "rain nyc" }],
     ["/markets", "", { screen: "markets", query: "" }],
     ["/markets", "?q=rain&category=Climate", { screen: "markets", query: "rain", category: "Climate" }],

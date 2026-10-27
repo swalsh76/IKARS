@@ -21,6 +21,7 @@ from ikars_engine.alerts import (
     QuietHours,
     ToastNotifier,
 )
+from ikars_engine.autostart import MemoryRegistry
 from ikars_engine.watchdog import (
     Observation,
     Problem,
@@ -346,24 +347,7 @@ def test_the_engine_command_is_windowless_and_rooted(tmp_path: Path) -> None:
 # --- auto-start ---------------------------------------------------------------------------------
 
 
-class FakeRegistry:
-    def __init__(self) -> None:
-        self.values: dict[tuple[str, str], str] = {}
-
-    def set(self, key: str, name: str, value: str) -> None:
-        self.values[(key, name)] = value
-
-    def delete_value(self, key: str, name: str) -> bool:
-        return self.values.pop((key, name), None) is not None
-
-    def delete_key(self, key: str) -> bool:
-        found = [k for k in self.values if k[0] == key]
-        for k in found:
-            del self.values[k]
-        return bool(found)
-
-    def get(self, key: str, name: str) -> str | None:
-        return self.values.get((key, name))
+FakeRegistry = MemoryRegistry  # one in-memory registry (autostart.MemoryRegistry)
 
 
 def test_install_and_remove_are_user_space_and_symmetric() -> None:

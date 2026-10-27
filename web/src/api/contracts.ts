@@ -10,11 +10,13 @@ BackupHealth: BackupHealth
 BookView: BookView
 Candle: Candle
 CandlePage: CandlePage
+Done: Done
 FeedHealth: FeedHealth
 GapPage: GapPage
 GapView: GapView
 HealthView: HealthView
 Hello: Hello
+KeyStatus: KeyStatus
 LedgerHealth: LedgerHealth
 LedgerPage: LedgerPage
 LedgerRecordView: LedgerRecordView
@@ -29,6 +31,10 @@ RecommendationPage: RecommendationPage
 RecommendationView: RecommendationView
 SessionCode: SessionCode
 SessionCodeIssued: SessionCodeIssued
+SettingsChange: SettingsChange
+SettingsView: SettingsView
+ShareCheck: ShareCheck
+ShareCheckView: ShareCheckView
 StreamOpened: StreamOpened
 Subscriptions: Subscriptions
 }
@@ -87,6 +93,13 @@ export interface CandlePage {
 interval_minutes: number
 items: Candle[]
 ticker: string
+}
+/**
+ * An action's answer (restart the engine, start at sign-in).
+ */
+export interface Done {
+detail: string
+done: boolean
 }
 export interface FeedHealth {
 books_ready: (number | null)
@@ -151,6 +164,17 @@ export interface Hello {
 api_version: string
 engine_version: string
 schema_sha256: string
+}
+/**
+ * IKARS's Kalshi key, as yes or no only: never a key, its id or its path (PLAN D8).
+ */
+export interface KeyStatus {
+environment: string
+file_found: boolean
+id_set: boolean
+needs_restart: boolean
+owner_only: (boolean | null)
+path_set: boolean
 }
 export interface LedgerPage {
 before: (number | null)
@@ -259,6 +283,57 @@ code: string
 export interface SessionCodeIssued {
 code: string
 url: string
+}
+/**
+ * ``PUT /v1/settings``: the settings to change (any left out stay as they are).
+ */
+export interface SettingsChange {
+backup_share?: (string | null)
+digest_minutes?: (number | null)
+port?: (number | null)
+quiet_end?: (string | null)
+quiet_start?: (string | null)
+read_share_percent?: (number | null)
+session_days?: (number | null)
+skin?: (("contrast" | "dark" | "light" | "midnight" | "paper" | "system") | null)
+storage_budget_gb?: (number | null)
+tax_time_zone?: (string | null)
+throttle_minutes?: (number | null)
+watched_max_markets?: (number | null)
+}
+/**
+ * ``GET /v1/settings`` (M1.8b-1): what the Settings screen and the first-run wizard show.
+ */
+export interface SettingsView {
+autostart_installed: boolean
+backup_share: string
+digest_minutes: number
+first_run: boolean
+key: KeyStatus
+port: number
+quiet_end: string
+quiet_start: string
+read_share_percent: number
+restart_needed: string[]
+session_days: number
+skin: ("contrast" | "dark" | "light" | "midnight" | "paper" | "system")
+storage_budget_gb: number
+tax_time_zone: string
+tax_zone_effective: string
+throttle_minutes: number
+watched_max_markets: number
+}
+/**
+ * ``POST /v1/settings/share-check`` and ``/share-init``: the share to check or set up.
+ */
+export interface ShareCheck {
+share: string
+}
+export interface ShareCheckView {
+marker: boolean
+problem: (string | null)
+reachable: boolean
+writable: (boolean | null)
 }
 /**
  * The first event of every stream: its id, for ``PUT .../subscriptions``.

@@ -12,6 +12,8 @@ of a Design canvas; `canvas.json` lays them out. All data in them is made up (`K
 | `Health.dc.html` | Health |
 | `Alerts.dc.html` | Alerts by priority, and hotkeys |
 | `Layout.dc.html` | A two-monitor layout sketch |
+| `Settings.html` | Settings (M1.8b-1; static HTML, made-up values; for approval) |
+| `Wizard.html` | The first-run wizard (M1.8b-1; static HTML, made-up values; for approval) |
 
 **Status:** approved for now by the owner (2026-10-27), and revisable before M1.8 builds the screens. Since the
 D1 amendment (2026-10-27) the terminal is a web app, so these HTML and CSS mock-ups are its starting point.

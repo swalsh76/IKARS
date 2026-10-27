@@ -149,3 +149,27 @@ test("the meter measures update to screen while markets stream", async ({ page }
   await expect(page.getByRole("region", { name: "Update to screen" })).toContainText(/p99 \d+ ms/);
 });
 
+test("hotkeys: the screens, the list, the theme and the Linked panel", async ({ page }) => {
+  const refused = watchPolicy(page);
+  await page.goto(await signInUrl());
+  await expect(page.getByTestId("cash")).toBeVisible();
+  await page.keyboard.press("Control+2");
+  await expect(page).toHaveURL(/\/markets$/);
+  await page.locator("body").click({ position: { x: 5, y: 5 } }); // out of the search box
+  await page.keyboard.press("Shift+Slash"); // ?
+  await expect(page.getByRole("dialog", { name: "Hotkeys" })).toContainText("arrives in M1.12");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Hotkeys" })).toHaveCount(0);
+  const theme = () => page.evaluate(() => document.documentElement.getAttribute("data-theme"));
+  await page.keyboard.press("Control+Shift+L");
+  const first = await theme();
+  expect(["light", "dark"]).toContain(first);
+  await page.keyboard.press("Control+Shift+L");
+  expect(await theme()).toBe(first === "light" ? "dark" : "light");
+  await page.goto(`${base()}/market/KXDEMO-26JAN00-T0`);
+  await expect(page.getByRole("region", { name: "Linked" })).toBeVisible();
+  await page.keyboard.press("x");
+  await expect(page.getByRole("region", { name: "Linked" })).toBeHidden();
+  expect(refused).toEqual([]);
+});
+

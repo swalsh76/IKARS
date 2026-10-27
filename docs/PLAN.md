@@ -589,7 +589,7 @@ the interface and the generic replay; real Kalshi recordings replay from M1.13. 
 | G13 | **Interest and other income in the ledger** as their own record kinds (likely 1099-INT), if Kalshi pays them. | M1.5 (amends D18) |
 | G14 | **Ledger restore drill:** `ledger restore-drill` restores from the share into a scratch file and checks the hash chain. | M1.5 |
 | G15 | **Settings and a first-run wizard:** key environment variables (checked, never shown), the share path, LLM choice, GPU extras, quiet hours, tax time zone. | M1.8, M1.9 |
-| G16 | **Speed in the UI:** hotkeys (alert → market in one key), multi-monitor layouts (KalTerm3's), dark and light themes. | M1.3 (mock-ups), M1.8 |
+| G16 | **Speed in the UI:** hotkeys (alert → market in one key), multi-monitor layouts (KalTerm3's), dark and light themes. *Amended 2026-10-27 (owner):* skins, built-in colour palettes (Dark, Light, High contrast, Midnight, Paper) chosen in Settings; own skins not chosen. | M1.3 (mock-ups), M1.8 |
 | G17 | **Compliance review:** before M7, review Kalshi's rulebook on manipulation (iceberg, peg, fast cancel/replace), its rule against trading on material non-public information (sources must be public), and the Developer Agreement's §6.4 with a public repository that names Kalshi. Also check **each news source's terms of use** when its adapter is planned. | M2 (per source), M7 (first slice) |
 | G18 | Fault and soak testing: **dropped** (owner: proved in SPARQ). Ordinary reconnect and error tests stay in each slice. | — |
 | G19 | **Automatic strategy demotion with its own review page:** a strategy, pattern, custom type or LLM provider whose journal turns negative after costs stops producing recommendations. A separate **Strategy review** page in the terminal lists each one's record, demotions and reasons, with promote and demote by the owner. | M5 |
@@ -718,7 +718,8 @@ M1.11. M1.10 can run any time after M1.2; M1.13 any time after M1.12 and before 
 | M1.7 Loopback API and contracts | **done** (BUILD-LOG 1.7; PR #10 merged as `0ba5d83`) |
 | M1.R Base hardening (owner, 2026-10-27) | **built** on `m1/r-hardening` (BUILD-LOG 1.R): a whole-code-base review's items 1 to 26 fixed, plus 10 merge-review findings; **done** (PR #14, `fca7941`) |
 | M1.8a-web-1a Engine side of the web terminal | **done** (PR #16, `d70cb83`; BUILD-LOG 1.8a-web-1a): file serving with the browser hardening, cookie sign-in that survives restarts, `ikars open`, contracts 2.0, `demo-api`; security review (1 finding, fixed) and merge review (8, fixed) |
-| M1.8a-web-2b Ledger, Alerts and the meter | **built** on `m1/8a-web-2b` (BUILD-LOG 1.8a-web-2b): Ledger and Alerts screens, the update-to-screen meter on Health, `pnpm load` (100 markets at 10 Hz); merge review (10, fixed); the owner's console check **passed** (p99 19 ms, after the Markets grid was made faster); PR #20 pending |
+| M1.8b-1 Hotkeys, skins, Settings and the wizard | **built** on `m1/8b` (BUILD-LOG 1.8b-1): the hotkeys, the built-in skins, the Settings screen and the first-run wizard (approved mock-ups), the engine's settings routes; merge review (10, fixed); PR pending |
+| M1.8a-web-2b Ledger, Alerts and the meter | **done**, built on `m1/8a-web-2b` (BUILD-LOG 1.8a-web-2b): Ledger and Alerts screens, the update-to-screen meter on Health, `pnpm load` (100 markets at 10 Hz); merge review (10, fixed); the owner's console check **passed** (p99 19 ms, after the Markets grid was made faster); **done** (PR #20, `1aeb2bf`) |
 | M1.8a-web-2a Markets and Market | **done** (PR #19, `94dbcaa`), built on `m1/8a-web-2a` (BUILD-LOG 1.8a-web-2a): the Markets grid and the Market screen (quote, chart, book, linked items); the CSP's font exception; merge review (10, fixed) |
 | M1.8a-web-1b Web foundation, Overview and Health | **done**, built on `m1/8a-web-1b` (BUILD-LOG 1.8a-web-1b): `web/` (types and validators from the contracts, client, stream, hub, money, navigator, Overview, Health), the `web` CI job, CodeQL for TypeScript, Dependabot npm; security review clean, merge review (10: 9 fixed, 1 no change); **done** (PR #17, `0fe5415`) |
 | M1.8 Terminal shell | M1.8a (WPF) done and merged as `77849e3`, then **retired by the D1 amendment** (2026-10-27; BUILD-LOG 1.8w; tag `wpf-terminal-final`). **WPF pruned** (PR #13 merged as `1b92d49`). Next: the **M1.8a-web** plan, for approval; then M1.8b |
@@ -735,5 +736,7 @@ M1.11. M1.10 can run any time after M1.2; M1.13 any time after M1.12 and before 
   when the ledger reaches tens of thousands.
 - One `times` module for the duplicated time helpers (`api.utc_text` and `ledger.iso_utc`; `alerts._ns` and
   `ledger_import.ns_of`): with the next slice that touches those files (2026-10-27 platform review, item 10).
+- Panes docked, floated and moved within an IKARS window (the Layout mock-up's caption): M1.8b's layouts are
+  sets of windows instead (owner, 2026-10-27); a docking library would come back through a proposal.
 - Readable screen-reader names for list items: the terminal's lists expose each record's raw text to UI Automation
   (M1.8a live check). Natural with M1.8b's hotkeys and themes, or later.

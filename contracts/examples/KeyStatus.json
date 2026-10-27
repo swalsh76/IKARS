@@ -1,0 +1,8 @@
+{
+  "environment": "production",
+  "file_found": true,
+  "id_set": true,
+  "needs_restart": false,
+  "owner_only": true,
+  "path_set": true
+}

@@ -11,7 +11,7 @@ import shutil
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import msgspec
 import tomli_w
@@ -20,6 +20,10 @@ from ikars_core.fixedpoint import PrecisionError, to_e6
 from ikars_engine.files import backup_name, write_text_atomic
 
 VERSION = 4
+
+# the terminal's built-in skins (PLAN G16 as amended): one list, here, for the settings, the API's
+# contracts and (generated from them) the terminal
+Skin = Literal["system", "dark", "light", "contrast", "midnight", "paper"]
 
 
 class KalshiSettings(msgspec.Struct, frozen=True, kw_only=True):
@@ -69,6 +73,9 @@ class TerminalSettings(msgspec.Struct, frozen=True, kw_only=True):
     # reconnects after a restart (review 1.R2 item 1); when it is taken, a free one and an alert
     port: int = 47821
     session_days: int = 30  # a terminal signs in again after this many days unused (owner)
+    skin: Skin = (
+        "system"  # the terminal's colours: system (follow Windows) or a built-in skin (G16)
+    )
 
 
 class PluginDefaults(msgspec.Struct, frozen=True, kw_only=True):

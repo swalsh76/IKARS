@@ -76,6 +76,28 @@ class UserRegistry:
 Run = Callable[[list[str]], int]  # runs a command, returns its exit code
 
 
+class MemoryRegistry:
+    """The registry in memory: for tests and the made-up-data server, never the real one."""
+
+    def __init__(self) -> None:
+        self.values: dict[tuple[str, str], str] = {}
+
+    def set(self, key: str, name: str, value: str) -> None:
+        self.values[(key, name)] = value
+
+    def delete_value(self, key: str, name: str) -> bool:
+        return self.values.pop((key, name), None) is not None
+
+    def delete_key(self, key: str) -> bool:
+        found = [k for k in self.values if k[0] == key]
+        for k in found:
+            del self.values[k]
+        return bool(found)
+
+    def get(self, key: str, name: str) -> str | None:
+        return self.values.get((key, name))
+
+
 def run_quietly(argv: list[str]) -> int:
     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     done = subprocess.run(  # noqa: S603 - fixed arguments (schtasks), no shell

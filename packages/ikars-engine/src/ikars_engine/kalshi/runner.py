@@ -53,6 +53,7 @@ from ikars_engine.recorder import Recorder
 from ikars_engine.runmode import at
 from ikars_engine.session import Sessions
 from ikars_engine.settings import Settings
+from ikars_engine.settings_api import TerminalConfig
 from ikars_engine.share import configured, migration_copier
 from ikars_engine.skew import SkewMonitor
 from ikars_engine.store import StateStore
@@ -129,7 +130,9 @@ def settings_digest(settings: Settings) -> str:
     return hashlib.sha256(msgspec.json.encode(settings)).hexdigest()
 
 
-async def build(paths: Paths, settings: Settings) -> Live:
+async def build(
+    paths: Paths, settings: Settings, root: Path | None = None, restartable: bool = False
+) -> Live:
     config = KalshiConfig(environment=Environment(settings.kalshi.environment))
     zone = taxzone.resolve(settings.tax_time_zone)  # a bad setting fails before anything opens
     clock = WallClock()
@@ -223,6 +226,7 @@ async def build(paths: Paths, settings: Settings) -> Live:
             ),
             sessions=sessions,
             web_root=web_root,
+            config=TerminalConfig(paths, settings, root, restartable=restartable),
         )
 
     api = ApiServer(api_context, paths.data, port=settings.terminal.port)
@@ -308,6 +312,7 @@ async def run(
     out: Callable[[str], None] = print,
     should_stop: Callable[[], bool] | None = None,
     on_minute: Callable[[dict[str, object]], None] | None = None,
+    root: Path | None = None,
 ) -> dict[str, object]:
     """The live engine until ``minutes`` pass or ``should_stop`` says so (checked every two
     seconds); each minute, a summary line to ``out`` and the health to ``on_minute`` (and once at
@@ -323,7 +328,7 @@ async def run(
         max_bytes=settings.logs.max_bytes,
         files_kept=settings.logs.files_kept,
     )
-    live = await build(paths, settings)
+    live = await build(paths, settings, root, restartable=should_stop is not None)
     engine = live.engine
     health: dict[str, object] = {}
     running: list[asyncio.Task[object]] = []

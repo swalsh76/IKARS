@@ -111,6 +111,7 @@ def main(argv: list[str]) -> int:
     demo.add_argument("--hz", type=_positive, default=10.0, help="quote changes a second")
     demo.add_argument("--port", type=int, default=0, help="0: any free port")
     demo.add_argument("--seconds", type=float, default=None, help="stop after this long")
+    demo.add_argument("--first-run", action="store_true", help="no settings yet: the wizard opens")
     try:
         args = parser.parse_args(argv[1:])
     except SystemExit as exc:
@@ -134,7 +135,7 @@ def main(argv: list[str]) -> int:
     if args.command == "demo-api":
         from ikars_engine import demo_api
 
-        return demo_api.main(args.markets, args.hz, args.port, args.seconds)
+        return demo_api.main(args.markets, args.hz, args.port, args.seconds, args.first_run)
     if args.command == "contracts":
         from ikars_engine.contracts import export
 

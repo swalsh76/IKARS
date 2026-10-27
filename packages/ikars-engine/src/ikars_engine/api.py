@@ -54,7 +54,9 @@ from ikars_engine.metrics import Metrics
 from ikars_engine.portfolio import Portfolio
 from ikars_engine.runmode import at
 from ikars_engine.session import COOKIE, Sessions
+from ikars_engine.settings_api import SettingsRefused, TerminalConfig
 from ikars_engine.store import Gap
+from ikars_engine.threads import in_daemon_thread
 from ikars_engine.webserve import SECURITY_HEADERS, files_route
 
 log = logging.getLogger("ikars_engine.api")
@@ -121,6 +123,7 @@ class ApiContext:
     port: int = 0  # set by the server once it listens: the engine's own origin
     sessions: Sessions | None = None  # the terminal's sign-in; None: the bearer token only
     web_root: Path | None = None  # the terminal's files; None: none served
+    config: TerminalConfig | None = None  # the settings and their actions (M1.8b-1); None: none
 
 
 @dataclass
@@ -254,6 +257,10 @@ def _int(request: Request, name: str, default: int | None, low: int, high: int) 
 
 class _BadRequest(Exception):
     pass
+
+
+class _NoConfig(Exception):
+    """This engine has no settings to show (tests and the made-up-data server without them)."""
 
 
 # --- views --------------------------------------------------------------------------------------
@@ -629,6 +636,46 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         url = f"http://127.0.0.1:{ctx.port}/#code={code}"
         return _json(c.SessionCodeIssued(code=code, url=url))
 
+    def configured() -> TerminalConfig:
+        if ctx.config is None:
+            raise _NoConfig
+        return ctx.config
+
+    async def settings_view(request: Request) -> Response:
+        try:  # a thread: the view queries the task scheduler and reads files (merge review 1)
+            return _json(await in_daemon_thread(configured().view))
+        except SettingsRefused as exc:  # the file cannot be read: said, never a 500
+            return _error(503, "unavailable", str(exc))
+
+    async def settings_change(request: Request) -> Response:
+        config = configured()
+        try:
+            wanted = msgspec.json.decode(await request.body(), type=c.SettingsChange)
+            return _json(await in_daemon_thread(config.change, wanted))
+        except msgspec.DecodeError as exc:
+            return _error(400, "bad_request", str(exc))
+        except SettingsRefused as exc:
+            return _error(400, "bad_request", str(exc))
+
+    async def share(request: Request) -> Response:
+        config = configured()
+        try:
+            wanted = msgspec.json.decode(await request.body(), type=c.ShareCheck)
+        except msgspec.DecodeError as exc:
+            return _error(400, "bad_request", str(exc))
+        try:
+            if request.url.path.endswith("init"):
+                return _json(await config.share_init(wanted.share, ctx.now_ns()))
+            return _json(await config.share_check(wanted.share))
+        except TimeoutError:
+            return _error(503, "unavailable", "the share did not answer in time")
+
+    async def autostart_install(request: Request) -> Response:
+        return _json(await in_daemon_thread(configured().install_autostart))
+
+    async def restart(request: Request) -> Response:
+        return _json(configured().restart())
+
     async def subscribe(request: Request) -> Response:
         state = ctx.streams.get(request.path_params["stream_id"])
         if state is None:
@@ -656,6 +703,12 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         Route("/v1/stream/{stream_id}/subscriptions", subscribe, methods=["PUT"]),
         Route(SESSION_PATH, signin, methods=["POST"]),
         Route("/v1/session/code", session_code, methods=["POST"]),
+        Route("/v1/settings", settings_view),
+        Route("/v1/settings", settings_change, methods=["PUT"]),
+        Route("/v1/settings/share-check", share, methods=["POST"]),
+        Route("/v1/settings/share-init", share, methods=["POST"]),
+        Route("/v1/engine/autostart", autostart_install, methods=["POST"]),
+        Route("/v1/engine/restart", restart, methods=["POST"]),
     ]  # fmt: skip
     if ctx.web_root is not None:  # last: every other path is the terminal's
         routes.append(Route("/{path:path}", files_route(ctx.web_root), methods=["GET", "HEAD"]))
@@ -669,7 +722,10 @@ def create_app(ctx: ApiContext) -> ASGIApp:
     async def wrong_method(request: Request, exc: Exception) -> Response:
         return _error(405, "bad_request", "this route does not take that method")
 
-    handlers = {_BadRequest: bad_request, 404: not_found, 405: wrong_method}
+    async def no_config(request: Request, exc: Exception) -> Response:
+        return _error(404, "not_found", "this engine has no settings to show")
+
+    handlers = {_BadRequest: bad_request, _NoConfig: no_config, 404: not_found, 405: wrong_method}
     app = Starlette(routes=routes, exception_handlers=handlers)
     return Guard(app, ctx)
 

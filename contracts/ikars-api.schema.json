@@ -253,6 +253,23 @@
       "title": "CandlePage",
       "type": "object"
     },
+    "Done": {
+      "description": "An action's answer (restart the engine, start at sign-in).",
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "done": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "done",
+        "detail"
+      ],
+      "title": "Done",
+      "type": "object"
+    },
     "FeedHealth": {
       "properties": {
         "books_ready": {
@@ -505,6 +522,46 @@
         "schema_sha256"
       ],
       "title": "Hello",
+      "type": "object"
+    },
+    "KeyStatus": {
+      "description": "IKARS's Kalshi key, as yes or no only: never a key, its id or its path (PLAN D8).",
+      "properties": {
+        "environment": {
+          "type": "string"
+        },
+        "file_found": {
+          "type": "boolean"
+        },
+        "id_set": {
+          "type": "boolean"
+        },
+        "needs_restart": {
+          "type": "boolean"
+        },
+        "owner_only": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path_set": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id_set",
+        "path_set",
+        "file_found",
+        "owner_only",
+        "environment",
+        "needs_restart"
+      ],
+      "title": "KeyStatus",
       "type": "object"
     },
     "LedgerHealth": {
@@ -1076,6 +1133,293 @@
         "url"
       ],
       "title": "SessionCodeIssued",
+      "type": "object"
+    },
+    "SettingsChange": {
+      "additionalProperties": false,
+      "description": "``PUT /v1/settings``: the settings to change (any left out stay as they are).",
+      "properties": {
+        "backup_share": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "digest_minutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "port": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "quiet_end": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "quiet_start": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "read_share_percent": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "skin": {
+          "anyOf": [
+            {
+              "enum": [
+                "contrast",
+                "dark",
+                "light",
+                "midnight",
+                "paper",
+                "system"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "storage_budget_gb": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tax_time_zone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "throttle_minutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "watched_max_markets": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [],
+      "title": "SettingsChange",
+      "type": "object"
+    },
+    "SettingsView": {
+      "description": "``GET /v1/settings`` (M1.8b-1): what the Settings screen and the first-run wizard show.",
+      "properties": {
+        "autostart_installed": {
+          "type": "boolean"
+        },
+        "backup_share": {
+          "type": "string"
+        },
+        "digest_minutes": {
+          "type": "integer"
+        },
+        "first_run": {
+          "type": "boolean"
+        },
+        "key": {
+          "$ref": "#/$defs/KeyStatus"
+        },
+        "port": {
+          "type": "integer"
+        },
+        "quiet_end": {
+          "type": "string"
+        },
+        "quiet_start": {
+          "type": "string"
+        },
+        "read_share_percent": {
+          "type": "integer"
+        },
+        "restart_needed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "session_days": {
+          "type": "integer"
+        },
+        "skin": {
+          "enum": [
+            "contrast",
+            "dark",
+            "light",
+            "midnight",
+            "paper",
+            "system"
+          ]
+        },
+        "storage_budget_gb": {
+          "type": "integer"
+        },
+        "tax_time_zone": {
+          "type": "string"
+        },
+        "tax_zone_effective": {
+          "type": "string"
+        },
+        "throttle_minutes": {
+          "type": "integer"
+        },
+        "watched_max_markets": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "first_run",
+        "skin",
+        "quiet_start",
+        "quiet_end",
+        "throttle_minutes",
+        "digest_minutes",
+        "tax_time_zone",
+        "tax_zone_effective",
+        "backup_share",
+        "watched_max_markets",
+        "read_share_percent",
+        "storage_budget_gb",
+        "port",
+        "session_days",
+        "restart_needed",
+        "key",
+        "autostart_installed"
+      ],
+      "title": "SettingsView",
+      "type": "object"
+    },
+    "ShareCheck": {
+      "additionalProperties": false,
+      "description": "``POST /v1/settings/share-check`` and ``/share-init``: the share to check or set up.",
+      "properties": {
+        "share": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "share"
+      ],
+      "title": "ShareCheck",
+      "type": "object"
+    },
+    "ShareCheckView": {
+      "properties": {
+        "marker": {
+          "type": "boolean"
+        },
+        "problem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reachable": {
+          "type": "boolean"
+        },
+        "writable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "reachable",
+        "marker",
+        "writable",
+        "problem"
+      ],
+      "title": "ShareCheckView",
       "type": "object"
     },
     "StreamOpened": {

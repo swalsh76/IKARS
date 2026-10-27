@@ -26,11 +26,15 @@ from ikars_core.models import Candlestick
 from ikars_core.ws_models import parse_frame
 
 from ikars_engine.api import ApiContext, ApiServer
+from ikars_engine.autostart import MemoryRegistry
 from ikars_engine.kalshi.discovery import MarketIndex, MarketInfo
 from ikars_engine.ledger import Entry, Ledger
 from ikars_engine.metrics import Metrics
+from ikars_engine.paths import Paths
 from ikars_engine.portfolio import Held, portfolio
 from ikars_engine.session import Sessions
+from ikars_engine.settings import Settings, save
+from ikars_engine.settings_api import TerminalConfig
 from ikars_engine.webserve import terminal_root
 
 BOOKS = 20  # markets with an order book
@@ -128,7 +132,13 @@ def demo_health(market: Market) -> dict[str, Any]:
 
 
 async def serve(
-    folder: Path, markets: int, hz: float, port: int, seconds: float | None, out: Any = print
+    folder: Path,
+    markets: int,
+    hz: float,
+    port: int,
+    seconds: float | None,
+    out: Any = print,
+    first_run: bool = False,
 ) -> None:
     market = Market(markets)
     ledger = Ledger(folder / "ledger.sqlite", ZoneInfo("America/Denver"))
@@ -140,6 +150,10 @@ async def serve(
                                   "text": "a made-up alert", "at": "2026-01-01T05:00:00-07:00",
                                   "outcome": "shown"}) + "\n", encoding="utf-8")  # fmt: skip
     sessions = Sessions(folder / "session", 1)
+    engine = Paths(folder / "engine").create()  # its own settings file, never the real one
+    if not first_run:
+        save(Settings(), engine.settings)
+    config = TerminalConfig(engine, Settings(), None, MemoryRegistry(), lambda argv: 0)
 
     async def candles(
         series: str, ticker: str, start: int, end: int, minutes: int
@@ -157,7 +171,7 @@ async def serve(
             ledger_health=lambda: {"verified": True, "reconciled_exact": True},
             portfolio=lambda: portfolio(market.quotes, lambda s: None, lambda s: None, held),
             alert_log=alerts, metrics=Metrics(), now_ns=time.time_ns, sessions=sessions,
-            web_root=terminal_root(), candles=candles,
+            web_root=terminal_root(), candles=candles, config=config,
         )  # fmt: skip
         return api
 
@@ -176,10 +190,10 @@ async def serve(
         ledger.close()
 
 
-def main(markets: int, hz: float, port: int, seconds: float | None) -> int:
+def main(markets: int, hz: float, port: int, seconds: float | None, first_run: bool = False) -> int:
     with (
         tempfile.TemporaryDirectory(prefix="ikars-demo-") as folder,
         contextlib.suppress(KeyboardInterrupt),
     ):
-        asyncio.run(serve(Path(folder), markets, hz, port, seconds))
+        asyncio.run(serve(Path(folder), markets, hz, port, seconds, first_run=first_run))
     return 0
