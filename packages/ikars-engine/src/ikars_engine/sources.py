@@ -125,6 +125,16 @@ class LiveSource:
     async def close(self) -> None:
         await self._queue.put(self._END)
 
+    def end_now(self) -> None:
+        """End the stream at once, even when the queue is full (at shutdown: what was not read is
+        dropped, never waited for)."""
+        while True:
+            try:
+                self._queue.put_nowait(self._END)
+                return
+            except asyncio.QueueFull:
+                self._queue.get_nowait()
+
     async def items(self) -> AsyncIterator[Item]:
         while True:
             entry = await self._queue.get()

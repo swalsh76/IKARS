@@ -230,6 +230,21 @@ async def test_positions_gather_every_page() -> None:
     assert seen[0].url.params["settlement_status"] == "all"
 
 
+async def test_resting_orders_are_read_in_fixed_point() -> None:
+    """M1.R 8: the reconciliation needs the cost of resting buys (made-up order)."""
+    order = {"order_id": "o-1", "ticker": "KXT-26JAN01-A", "status": "resting", "action": "buy",
+             "outcome_side": "no", "yes_price_dollars": "0.3000", "no_price_dollars": "0.7000",
+             "remaining_count_fp": "12.50", "client_order_id": "x"}  # fmt: skip
+    account, seen = reader(lambda _: {"orders": [order], "cursor": ""})
+    pages = [p async for p in account.orders()]
+    read = pages[0].items[0]
+    assert (read.no_price_e6, read.remaining_e2, read.outcome_side) == (700_000, 1_250, "no")
+    assert seen[0].url.path == "/trade-api/v2/portfolio/orders"
+    assert seen[0].url.params["status"] == "resting"
+    with pytest.raises(ValueError):
+        account.orders(status="open")
+
+
 async def test_historical_positions_use_the_archive_route_without_a_status() -> None:
     account, seen = reader(lambda _: {"market_positions": [], "event_positions": []})
     await account.positions(historical=True)

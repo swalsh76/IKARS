@@ -54,6 +54,7 @@ ACCOUNT_READS = frozenset(
         "/portfolio/balance",
         "/portfolio/positions",
         "/portfolio/fills",
+        "/portfolio/orders",  # read only: what resting buys hold back from the balance (M1.R 8)
         "/portfolio/settlements",
         "/portfolio/deposits",
         "/portfolio/withdrawals",

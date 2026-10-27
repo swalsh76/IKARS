@@ -15,6 +15,7 @@ from ikars_core.account import (
     Fill,
     InstanceTransfer,
     MarketPosition,
+    Order,
     Positions,
     Settlement,
     Transfer,
@@ -199,6 +200,7 @@ class FakeAccount:
         self.balance_cents = 0
         self.held: list[dict[str, Any]] = []
         self.archived: list[dict[str, Any]] = []
+        self.resting: list[dict[str, Any]] = []
         self.calls: list[tuple[str, Any]] = []
 
     def fills_(self, rows: list[dict[str, Any]]) -> AsyncIterator[TypedPage[Fill]]:
@@ -228,7 +230,12 @@ class FakeAccount:
         return Balance.model_validate({"balance": cents, "balance_dollars": f"{cents / 100:.2f}",
                                        "portfolio_value": 0, "updated_ts": 1})  # fmt: skip
 
+    def orders(self, *, status: str = "resting") -> AsyncIterator[TypedPage[Order]]:
+        self.calls.append(("orders", status))
+        return page([Order.model_validate(r) for r in self.resting], self.resting)
+
     async def positions(self, *, historical: bool = False) -> Positions:
+        self.calls.append(("archived" if historical else "positions", None))
         rows = self.archived if historical else self.held
         return Positions(
             market_positions=[MarketPosition.model_validate(p) for p in rows], event_positions=[]
@@ -289,7 +296,8 @@ async def test_the_first_import_takes_the_whole_history_once_and_reconciles(tmp_
     again = await importer.run_once()
     assert again.added == {} and ledger.count(kind="reconciliation") == 1
     since = 1_767_175_200 - 86_400  # a day before 2025-12-31 10:00 UTC
-    assert account.calls[-3:] == [("fills", since), ("historical", since), ("settlements", None)]
+    reads = [c for c in account.calls if c[0] != "positions"]
+    assert reads[-3:] == [("fills", since), ("historical", since), ("settlements", None)]
     assert ledger.verify().ok
     ledger.close()
 
@@ -549,6 +557,72 @@ async def test_an_unconfirmed_archived_settlement_stays_a_difference(
     assert "settlement" not in report.added
     assert report.reconciliation is not None and not report.reconciliation.exact
     assert report.reconciliation.positions == {"KXT-26JAN01-A": (600, 0)}
+    ledger.close()
+
+
+async def test_money_held_by_resting_buys_is_not_a_difference(tmp_path: Path) -> None:
+    """M1.R 8: Kalshi's balance is what is available; a resting buy holds its cost back."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    account.balance_cents -= 300  # a resting buy of 10 NO at 30c holds $3.00
+    account.resting = [{"order_id": "o", "ticker": "KXT-26JAN01-B", "status": "resting",
+                        "action": "buy", "outcome_side": "no", "yes_price_dollars": "0.7000",
+                        "no_price_dollars": "0.3000", "remaining_count_fp": "10.00"},
+                       {"order_id": "s", "ticker": "KXT-26JAN01-A", "status": "resting",
+                        "action": "sell", "outcome_side": "no", "yes_price_dollars": "0.9000",
+                        "no_price_dollars": "0.1000", "remaining_count_fp": "6.00"}]  # fmt: skip
+    report = await AccountImporter(ledger, account, VirtualClock(T0)).run_once()  # type: ignore[arg-type]
+    result = report.reconciliation
+    assert result is not None and result.exact and result.reserved_e6 == 3_000_000
+    assert ledger.last("reconciliation")["fields"]["reserved_e6"] == 3_000_000  # type: ignore[index]
+    account.balance_cents -= 1  # a cent more is still a difference
+    assert not (await AccountImporter(ledger, account, VirtualClock(T0)).reconcile()).exact  # type: ignore[arg-type]
+    ledger.close()
+
+
+async def test_a_fill_listed_after_a_later_one_is_flagged(tmp_path: Path) -> None:
+    """M1.R 9: a late-listed fill was costed against today's position, silently."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    importer = AccountImporter(ledger, account, VirtualClock(T0))  # type: ignore[arg-type]
+    await importer.run_once()
+    account.live.append(raw_fill("late", "yes", "1.00", "0.5000", "2025-12-30T12:00:00Z"))
+    await importer.run_once()
+    late = next(b for b in ledger.records(kind="fill") if b["source_id"] == "late")
+    assert late["fields"]["out_of_order"] is True and "label it" in late["note"]
+    first = next(b for b in ledger.records(kind="fill") if b["source_id"] == "h1")
+    assert "out_of_order" not in first["fields"]
+    ledger.close()
+
+
+async def test_the_importer_keeps_its_book_instead_of_replaying(tmp_path: Path) -> None:
+    """M1.R 15: every one-minute import replayed the whole ledger; the kept book must match one."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    importer = AccountImporter(ledger, account, VirtualClock(T0))  # type: ignore[arg-type]
+    await importer.run_once()
+    annotate(ledger, "interest", 420_000, T0, "made-up interest")  # another writer
+    account.balance_cents += 42
+    report = await importer.run_once()
+    assert report.reconciliation is not None and report.reconciliation.exact
+    kept, fresh = importer._current_book(), replay(ledger)
+    assert (kept.cash_e6, kept.positions, kept.traded_e6) == (
+        fresh.cash_e6, fresh.positions, fresh.traded_e6,
+    )  # fmt: skip
+    ledger.close()
+
+
+async def test_an_archived_market_that_does_not_check_out_is_rechecked_hourly(
+    tmp_path: Path,
+) -> None:
+    """M1.R 18: an unconfirmed archived market cost a full archive read every minute."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    account.held, account.archived = [], [archived("4.19")]  # does not check out
+    clock = VirtualClock(T0)
+    importer = AccountImporter(ledger, account, clock, markets=FakeMarkets("yes"))  # type: ignore[arg-type]
+    await importer.run_once()
+    await importer.run_once()
+    assert account.calls.count(("archived", None)) == 1  # not again within the hour
+    clock.advance_to(T0 + 3_601 * 10**9)
+    await importer.run_once()
+    assert account.calls.count(("archived", None)) == 2
     ledger.close()
 
 

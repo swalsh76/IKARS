@@ -256,11 +256,13 @@ class Ledger:
             query, args = query + " AND kind = ?", [stream, kind]
         return int(self._db.execute(query, args).fetchone()[0])
 
-    def records(self, stream: str = "real", kind: str | None = None) -> Iterator[dict[str, Any]]:
-        """Each record's body, in sequence order."""
-        query, args = "SELECT body FROM record WHERE stream = ?", [stream]
+    def records(
+        self, stream: str = "real", kind: str | None = None, after: int = 0
+    ) -> Iterator[dict[str, Any]]:
+        """Each record's body with a sequence number above ``after``, in sequence order."""
+        query, args = "SELECT body FROM record WHERE stream = ? AND seq > ?", [stream, after]
         if kind is not None:
-            query, args = query + " AND kind = ?", [stream, kind]
+            query, args = query + " AND kind = ?", [*args, kind]
         for (body,) in self._db.execute(query + " ORDER BY seq", args):
             yield json.loads(body)
 

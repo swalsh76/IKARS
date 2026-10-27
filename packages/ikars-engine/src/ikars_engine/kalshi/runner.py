@@ -60,6 +60,7 @@ log = logging.getLogger("ikars_engine.kalshi.runner")
 SAMPLE_EVERY_S = 60.0
 TICK_S = 2.0  # how often the run loop looks for a stop request
 MINUTE_S = 60.0
+FINISH_S = 10.0  # how long the engine may take to drain at shutdown before it is cancelled
 
 
 def clock_observer(skew: SkewMonitor) -> Callable[[float, float, Mapping[str, str]], None]:
@@ -105,6 +106,7 @@ class Live:
     account_client: KalshiAccountClient
     gpu_task: asyncio.Task[None]
     api: ApiServer
+    public_client: KalshiPublicClient
 
 
 def describer(index: MarketIndex) -> Describe:
@@ -218,7 +220,9 @@ async def build(paths: Paths, settings: Settings) -> Live:
     api = ApiServer(api_context, paths.data)
     engine.health_parts["api"] = api.health
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
-    return Live(engine, source, state, ledger, service, backups, account_client, gpu_task, api)
+    return Live(
+        engine, source, state, ledger, service, backups, account_client, gpu_task, api, client
+    )
 
 
 class PortfolioHealth:
@@ -327,6 +331,7 @@ async def run(
     # every step of the shutdown runs even when one before it fails, in the reverse of this order
     async with contextlib.AsyncExitStack() as stack:
         stack.push_async_callback(live.account_client.aclose)
+        stack.push_async_callback(live.public_client.aclose)  # M1.R 24
         stack.callback(live.state.close)
         stack.callback(live.ledger.close)
         stack.callback(lambda: health.update(engine.health()))
@@ -348,6 +353,8 @@ async def run(
             await asyncio.sleep(TICK_S)
             if running[0].done():  # the engine ended by itself: say so, so serve exits and the
                 raise EngineStopped(_ended(running[0]))  # watchdog sees it and restarts it
+            if (lost := live.source.failed()) is not None:  # a dead pump is no engine (M1.R 6)
+                raise EngineStopped(f"the Kalshi source stopped: {lost}")
             now = time.monotonic()
             if now - last >= MINUTE_S:
                 last = now
@@ -376,6 +383,12 @@ def _ended(task: asyncio.Task[object]) -> str:
 
 
 async def _finish(tasks: list[asyncio.Task[object]]) -> None:
+    """Wait for the engine to drain, but never for ever: a shutdown always finishes (M1.R 4)."""
+    if not tasks:
+        return
+    _, pending = await asyncio.wait(tasks, timeout=FINISH_S)
+    for task in pending:
+        task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
 
 

@@ -87,6 +87,9 @@ SUBSCRIPTION_CHANNELS = {
 }
 
 
+OUT_QUEUE_ITEMS = 50_000  # items waiting for the engine; about 15 s of a busy feed
+
+
 class Feed(Protocol):
     async def start(self) -> None: ...
     async def close(self) -> None: ...
@@ -152,7 +155,9 @@ class KalshiSource:
         self._governor = governor
         self._signer = signer
         self._every = intervals
-        self._out = LiveSource()
+        # bounded: when the engine falls behind, the pump waits, the feed's own queue fills, and its
+        # designed overflow (drop the link, reconnect, log the gap) takes over (M1.R 7)
+        self._out = LiveSource(maxsize=OUT_QUEUE_ITEMS)
         self._tasks: list[asyncio.Task[None]] = []
         self.books: dict[str, OrderBook] = {}
         self.last_received: dict[str, int] = {}
@@ -171,6 +176,7 @@ class KalshiSource:
         self._error_gap_at: dict[str, int] = {}
         self._side_tasks: set[asyncio.Task[None]] = set()
         self._link = 1  # the feed link events belong to; a reconnect moves it on
+        self._started = False
         self._attempts: Counter[int] = Counter()
         self.counts: Counter[str] = Counter()
         self.storage: dict[str, object] = {}
@@ -214,17 +220,33 @@ class KalshiSource:
             asyncio.create_task(self._every_so_often(name, step, seconds), name=f"kalshi.{name}")
             for name, step, seconds in loops
         ]
+        self._started = True
 
     async def stop(self) -> None:
         tasks = [*self._tasks, *self._side_tasks]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        await self._feed.close()
-        self._heartbeat_now()
-        self.recorder.close()
-        self._state.mark_clean_shutdown(self._clock.now_ns())
-        await self._out.close()
+        try:
+            await self._feed.close()
+            self._heartbeat_now()
+            self.recorder.close()
+            if self._started:  # a start that failed part-way is not a clean shutdown (M1.R 21)
+                self._state.mark_clean_shutdown(self._clock.now_ns())
+        finally:
+            # whatever failed above (a full disk), the engine's input ends, so the engine ends and
+            # the shutdown finishes (M1.R 4)
+            self._out.end_now()
+
+    def failed(self) -> str | None:
+        """Why the source can no longer deliver (its pump or a background loop ended), or None.
+        The runner stops the engine on it, so the watchdog restarts it (M1.R 6)."""
+        for task in self._tasks:
+            if task.done():
+                error = None if task.cancelled() else task.exception()
+                detail = "" if error is None else f": {type(error).__name__}"
+                return f"{task.get_name()} ended{detail}"
+        return None
 
     def items(self) -> AsyncIterator[Item]:
         return self._out.items()

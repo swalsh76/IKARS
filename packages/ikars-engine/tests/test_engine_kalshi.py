@@ -797,6 +797,82 @@ async def test_a_delta_without_a_book_asks_for_a_snapshot_and_only_changes_are_n
     await rig.source.stop()
 
 
+async def test_a_failing_stop_still_ends_the_engines_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R 4: a recorder that failed at stop (a full disk) left the engine waiting for ever."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+
+    def full(*_: Any) -> None:
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(rig.recorder, "close", full)
+    with pytest.raises(OSError, match="no space"):
+        await rig.source.stop()
+    remaining = [item async for item in rig.source.items()]  # ends instead of waiting for ever
+    assert remaining == [] and not rig.state.shut_down_cleanly()
+
+
+async def test_a_start_that_fails_is_not_a_clean_shutdown(tmp_path: Path) -> None:
+    """M1.R 21: a start that failed part-way was then recorded as a clean shutdown."""
+    rig = Rig(tmp_path, [market("M1")])
+
+    async def down() -> int:
+        raise httpx.ConnectError("Kalshi unreachable")
+
+    rig.discovery.full = down  # type: ignore[method-assign]
+    with pytest.raises(httpx.ConnectError):
+        await rig.source.start()
+    await rig.source.stop()
+    assert not rig.state.shut_down_cleanly()
+
+
+async def test_a_dead_pump_is_reported(tmp_path: Path) -> None:
+    """M1.R 6: the pump could end (an error escaping the feed) and nothing noticed."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    assert rig.source.failed() is None
+
+    async def broken() -> AsyncIterator[Any]:
+        raise FeedError("lost for good")
+        yield
+
+    rig.source._tasks[0].cancel()
+    rig.feed.events = broken  # type: ignore[method-assign]
+    rig.source._tasks[0] = asyncio.create_task(rig.source._pump(), name="kalshi.pump")
+    await asyncio.sleep(0.01)
+    assert rig.source.failed() == "kalshi.pump ended: FeedError"
+    await rig.source.stop()
+
+
+def test_the_engines_input_is_bounded_and_ends_even_when_full() -> None:
+    """M1.R 7: an unbounded queue meant the feed's overflow handling never ran."""
+    from ikars_engine.kalshi.source import OUT_QUEUE_ITEMS
+    from ikars_engine.sources import LiveSource
+
+    live = LiveSource(maxsize=2)
+    live._queue.put_nowait(object())
+    live._queue.put_nowait(object())
+    live.end_now()  # full: an unread item makes room
+    assert live._queue.qsize() == 2 and OUT_QUEUE_ITEMS > 0
+
+
+async def test_the_shutdown_waits_for_the_engine_only_so_long() -> None:
+    """M1.R 4: the shutdown waited on the engine with no limit."""
+    from ikars_engine.kalshi import runner
+
+    stuck = asyncio.create_task(asyncio.Event().wait())
+    original = runner.FINISH_S
+    runner.FINISH_S = 0.01
+    try:
+        await runner._finish([stuck])
+    finally:
+        runner.FINISH_S = original
+    assert stuck.cancelled()
+    await runner._finish([])
+
+
 async def test_the_rebalance_removes_before_it_adds_and_trusts_the_exchange(
     tmp_path: Path,
 ) -> None:

@@ -109,7 +109,7 @@ def holdings(ledger: Ledger) -> Held:
     book = Book()
     for body in ledger.records():
         ticker, fields = body.get("ticker"), body.get("fields", {})
-        book.apply(body["kind"], ticker, fields, body.get("cash_e6"))
+        book.apply_body(body)
         if not ticker:
             continue
         if body["kind"] == "settlement":

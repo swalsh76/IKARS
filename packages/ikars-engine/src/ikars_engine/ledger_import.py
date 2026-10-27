@@ -40,7 +40,7 @@ counts only; amounts, tickers and ids stay in the ledger.
 import logging
 from collections import Counter
 from collections.abc import AsyncIterator, Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -112,11 +112,15 @@ def fill_cash(fill: Fill, position_e2: int) -> tuple[int, int, int]:
     return cash - fill.fee_e6, closed, count - closed
 
 
+ARCHIVE_RECHECK_NS = 3_600 * NS  # an archived market that did not check out
+
+
 @dataclass(frozen=True, slots=True)
 class Reconciliation:
     balance_e6: int
     explained_e6: int
     positions: dict[str, tuple[int, int]]  # ticker -> (ledger, Kalshi), only where they differ
+    reserved_e6: int = 0  # the cost of resting buy orders, read only when the balance falls short
 
     @property
     def difference_e6(self) -> int:
@@ -124,7 +128,9 @@ class Reconciliation:
 
     @property
     def exact(self) -> bool:
-        return self.difference_e6 == 0 and not self.positions
+        # Kalshi's balance is what is available for trading: a resting buy holds its cost back
+        # (M1.R 8). Either reading is exact; the record keeps both numbers.
+        return not self.positions and self.difference_e6 in (0, -self.reserved_e6)
 
 
 @dataclass(slots=True)
@@ -142,15 +148,23 @@ class Book:
     cash_e6: int = 0
     traded_e6: dict[str, int] = field(default_factory=dict)
     settled: set[str] = field(default_factory=set)
+    last_fill_ns: dict[str, int] = field(default_factory=dict)  # each market's newest fill time
 
     def apply(
-        self, kind: str, ticker: str | None, fields: Mapping[str, Any], cash: int | None
+        self,
+        kind: str,
+        ticker: str | None,
+        fields: Mapping[str, Any],
+        cash: int | None,
+        at_ns: int | None = None,
     ) -> None:
         if cash is not None:
             self.cash_e6 += cash
         if not ticker:
             return
         if kind == "fill":
+            if at_ns is not None:
+                self.last_fill_ns[ticker] = max(self.last_fill_ns.get(ticker, at_ns), at_ns)
             self.positions[ticker] = self.positions.get(ticker, 0) + int(fields["delta_e2"])
             before_fees = int(cash or 0) + int(fields["fee_e6"])
             self.traded_e6[ticker] = self.traded_e6.get(ticker, 0) + before_fees
@@ -159,7 +173,13 @@ class Book:
             self.settled.add(ticker)
 
     def add(self, entry: Entry) -> None:
-        self.apply(entry.kind, entry.ticker, entry.fields, entry.cash_e6)
+        self.apply(entry.kind, entry.ticker, entry.fields, entry.cash_e6, entry.at_ns)
+
+    def apply_body(self, body: Mapping[str, Any]) -> None:
+        self.apply(
+            body["kind"], body.get("ticker"), body.get("fields", {}), body.get("cash_e6"),
+            body.get("at_ns"),
+        )  # fmt: skip
 
     def held(self) -> dict[str, int]:
         """The markets that are not flat."""
@@ -169,7 +189,7 @@ class Book:
 def replay(ledger: Ledger) -> Book:
     book = Book()
     for body in ledger.records():
-        book.apply(body["kind"], body.get("ticker"), body.get("fields", {}), body.get("cash_e6"))
+        book.apply_body(body)
     return book
 
 
@@ -188,13 +208,35 @@ class AccountImporter:
         self._describe = describe
         self._markets = markets  # market results and titles; None: neither is looked up
         self._looked_up: dict[str, dict[str, str]] = {}
+        # the book, kept current from the records added since it was built, instead of a replay of
+        # the whole ledger every minute (M1.R 15)
+        self._book: Book | None = None
+        self._book_seq = 0
+        self._archive_checked: dict[str, int] = {}  # ticker -> when it last failed to check out
+
+    def _current_book(self) -> Book:
+        if self._book is None:
+            self._book, self._book_seq = Book(), 0
+        for body in self._ledger.records(after=self._book_seq):  # annotations, other writers
+            self._book.apply_body(body)
+            self._book_seq = body["seq"]
+        return self._book
 
     async def run_once(self) -> ImportReport:
+        try:
+            return await self._run_once()
+        except BaseException:
+            self._book = (
+                None  # it may hold entries that never reached the ledger: rebuilt next time
+            )
+            raise
+
+    async def _run_once(self) -> ImportReport:
         first = self._ledger.bookmark(FIRST_DONE) is None
         found = await self._read(first)
         found.sort(key=lambda item: (item[0], item[1]))
         await self._look_up({m.ticker for _, _, m, _ in found if isinstance(m, (Fill, Settlement))})
-        book = replay(self._ledger)
+        book = self._current_book()
         entries: list[Entry] = []
         seen: set[tuple[str, str]] = set()
         for at_ns, _, model, raw in found:
@@ -208,6 +250,7 @@ class AccountImporter:
             book.add(entry)
             entries.append(entry)
         self._ledger.append_all(entries)
+        self._book_seq = self._ledger.head().seq  # the book already holds what was just appended
         if first:  # the history is in: never read it all again, whatever fails below
             self._ledger.set_bookmark(FIRST_DONE, str(self._clock.now_ns()))
         held = await self._account.positions()
@@ -216,6 +259,7 @@ class AccountImporter:
         for entry in derived:
             book.add(entry)
         reconciliation = await self.reconcile(held, book)
+        self._book_seq = self._ledger.head().seq
         log.info(
             "ledger import",
             extra={
@@ -294,7 +338,13 @@ class AccountImporter:
         if self._markets is None:
             return []
         held_live = {p.ticker for p in live.market_positions if p.position_e2}
-        candidates = {t for t in book.held() if t not in held_live}
+        now = self._clock.now_ns()
+        candidates = {
+            t
+            for t in book.held()
+            if t not in held_live
+            and now - self._archive_checked.get(t, -ARCHIVE_RECHECK_NS) >= ARCHIVE_RECHECK_NS
+        }  # one that did not check out is looked at again hourly, not every minute (M1.R 18)
         if not candidates:
             return []
         archived = await self._account.positions(historical=True)
@@ -305,6 +355,7 @@ class AccountImporter:
             market = await self.market_of(self._markets, position.ticker)
             entry = None if market is None else self._settle(position, market, book)
             if entry is None:
+                self._archive_checked[position.ticker] = now
                 log.warning("ledger: an archived settlement does not check out; left a difference")
             else:
                 derived.append(entry)
@@ -350,7 +401,18 @@ class AccountImporter:
 
     def _entry(self, at_ns: int, model: Any, raw: Mapping[str, Any], book: Book) -> Entry | None:
         if isinstance(model, Fill):
-            return self._fill(at_ns, model, raw, book.positions.get(model.ticker, 0))
+            entry = self._fill(at_ns, model, raw, book.positions.get(model.ticker, 0))
+            if at_ns < book.last_fill_ns.get(model.ticker, at_ns):
+                # listed after a later fill of the same market was recorded: it is costed against
+                # the position as it is now, which may differ from the position at its own time.
+                # An append-only ledger cannot re-cost the later fills; the owner labels it (M1.R 9)
+                log.warning("ledger: a fill arrived after a later one; flagged for the owner")
+                return replace(
+                    entry,
+                    fields={**entry.fields, "out_of_order": True},
+                    note="listed after a later fill of this market: check its cash and label it",
+                )
+            return entry
         if isinstance(model, Settlement):
             if self._ledger.has(ARCHIVED, model.ticker):
                 return None  # already settled from Kalshi's archive: never paid twice
@@ -461,10 +523,14 @@ class AccountImporter:
             if ours.get(t, 0) != kalshi.get(t, 0)
         }
         result = Reconciliation(balance.balance_dollars_e6, book.cash_e6, differ)
+        if result.difference_e6 < 0:  # less available than explained: resting buys hold some back
+            reserved = await self._reserved_e6()
+            result = Reconciliation(result.balance_e6, result.explained_e6, differ, reserved)
         fields = {
             "balance_e6": result.balance_e6,
             "explained_e6": result.explained_e6,
             "difference_e6": result.difference_e6,
+            "reserved_e6": result.reserved_e6,
             "positions": {t: list(pair) for t, pair in differ.items()},
             "exact": result.exact,
         }
@@ -474,3 +540,14 @@ class AccountImporter:
                 Entry("reconciliation", self._clock.now_ns(), "reconciliation", fields=fields)
             )
         return result
+
+    async def _reserved_e6(self) -> int:
+        """The cost of the owner's resting buy orders (rounded up to the millionth)."""
+        total = 0
+        async for page in self._account.orders(status="resting"):
+            for order in page.items:
+                if order.action != "buy":
+                    continue
+                price = order.yes_price_e6 if order.outcome_side == "yes" else order.no_price_e6
+                total += -(-price * order.remaining_e2 // 100)
+        return total
