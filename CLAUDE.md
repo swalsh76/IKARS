@@ -124,8 +124,10 @@ slice still needs its own approved plan before code.
   30-day session, `vite build --watch`, validate every reply. **M1.8a-web-1a done** (PR #16 merged as
   `d70cb83`). **M1.8a-web-1b done** (PR #17 merged as `0fe5415`, CI green on `main`;
   BUILD-LOG 1.8a-web-1b; Node 24.22.1 and pnpm 12.14.0 per user; `web/` with Overview and Health). The ruleset now
-  requires `python`, `hygiene`, `CodeQL` and **`web`** (owner, 2026-10-27). **M1.8a-web-2a built** on `m1/8a-web-2a` (BUILD-LOG 1.8a-web-2a; Markets grid, Market screen; the CSP's only
-  exception `font-src data:`; merge review 10 itemized): PR open, waiting for the owner's merge. **Next:** 2b (Markets, Market), 2b (Ledger, Alerts, meter), then M1.8b. The owner allows `gh pr merge`
+  requires `python`, `hygiene`, `CodeQL` and **`web`** (owner, 2026-10-27). **M1.8a-web-2a done** (PR #19 merged as `94dbcaa`). **M1.8a-web-2b built** on `m1/8a-web-2b`
+  (BUILD-LOG 1.8a-web-2b; Ledger, Alerts, the update-to-screen meter, `pnpm load`; merge review 10 itemized): PR
+  open; **pending: the owner runs `pnpm load` at the console** (target p99 <= 33 ms; headless it read p99 19 ms).
+  That completes M1.8a-web. **Next:** M1.8b (Markets, Market), 2b (Ledger, Alerts, meter), then M1.8b. The owner allows `gh pr merge`
   by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
@@ -187,6 +189,7 @@ pnpm lint; pnpm typecheck
 pnpm test           # Vitest, 90% coverage
 pnpm dev            # vite build --watch: the engine serves web/dist (restart it once after the first build)
 pnpm build; pnpm e2e   # Playwright in Edge against demo-api (python -m ikars_engine demo-api)
+pnpm load          # at the console: 100 markets at 10 Hz in a visible Edge window, update to screen p99 <= 33 ms
 pnpm audit
 
 python tools/ci/data_guard.py          # no data, databases or keys tracked

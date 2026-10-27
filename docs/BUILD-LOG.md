@@ -2088,3 +2088,53 @@ or CSP refusal; lint, types and audit clean; Python 1,383 tests.
   | 10 | Duplicated CSS; the chart kept its colours after a theme change | Removed; the chart follows the theme |
 
 **M1.8a-web-2a built**, subject to the owner's merge.
+
+#### 1.8a-web-2b built (2026-10-27)
+
+**Built** on `m1/8a-web-2b`: `5c16da6` (the screens, the meter, the load test), `6667308` (the merge-review fixes).
+After 2a merged as PR #19 (`94dbcaa`).
+
+- **Ledger** (`/ledger`): its state (chain, reconciliation, records by kind, tax zone) and your records, 100 a page
+  with Older and Newer, a ticker filter, each market linked; times in the ledger's tax zone; refreshed each minute.
+- **Alerts** (`/alerts`): the alert log by priority (urgent, then high, then the rest), newest first, live from
+  the stream; a heading says when a priority shows only its latest 200.
+- **The update-to-screen meter** (D20 J, behaviour 6), on Health: **from the hub applying a change to the frame after
+  the one that shows it** (two animation frames), with the page's own work per update, over the last 1,000 screen
+  updates; one measurement at a time, only for quotes a screen shows, and none while the window is hidden or across
+  a hide. For information, the time from the engine receiving the change (its `received_ns`, the same machine's
+  clock) is shown too: it adds the engine's and the hub's 10 Hz batching (up to 100 ms each, by design, D3), so it
+  is not held to the target.
+- **`pnpm load`** (`playwright.load.config.ts`): `demo-api` with 100 made-up markets moving at 10 Hz, the Markets
+  screen in a **visible** Edge window for 40 s, then the meter's level read from Health; it passes only when the
+  card says OK (exact p99 <= 33 ms). Kept out of CI and the normal screen tests: it is a console check.
+- Dependabot skips major `@types/node` updates (they follow the Node we run); its PR #18 (to 26) is closed.
+
+**A correction on the way.** The meter first measured from the engine receiving each change, and read p50 132 ms
+and p99 188 ms headless with the page's own work at 1.5 ms: the time was the two 10 Hz batching steps, not drawing.
+D20 J as the owner amended it measures **from the terminal applying a change**; the meter was corrected to that and
+the engine-to-screen time kept beside it for information.
+
+**Verified.** Vitest 154 tests (98% lines, 90% functions); Playwright 10 screen tests in Edge, no console error or
+CSP refusal; lint, types, audit clean. **Headless sanity run** of `pnpm load` (not the measurement; no real
+drawing): update to screen p50 9 ms, p99 19 ms; the page's own work p99 1.4 ms; engine to screen p50 69 ms, p99
+126 ms. **Pending: the owner's run at the console** (`pnpm load`, a visible window; not over Remote Desktop).
+
+**Review.**
+- **Per commit:** `5c16da6` none; `6667308` 1 fixed before committing (a window hidden and shown again between a
+  measurement's start and its first frame still recorded the hidden time: any visibility change now drops it).
+- **Merge review (medium), 10 findings, all fixed in `6667308`:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | With the window minimised, held frames piled up and then recorded huge times at once | One measurement at a time, none while hidden or across a hide; tested |
+  | 2 | Quotes no screen showed were measured (cheap samples pulling p99 down) | Only quotes a screen listens to; tested |
+  | 3 | The load test checked the rounded p99 text, so 33.4 ms passed | It checks the card's level, which uses the exact p99 |
+  | 4 | The ledger's ticker filter was case-sensitive | Upper-cased (Kalshi's tickers are upper case) |
+  | 5 | Record times were in the browser's zone beside the tax zone shown | In the ledger's tax zone |
+  | 6 | The records did not refresh while the status beside them did | Refreshed each minute too |
+  | 7 | Each reading sorted every window twice | One sort per window per reading; tested |
+  | 8 | One window size for two very different sample rates | 1,000 screen updates (about 100 s) and 10,000 quotes (about 15 s); tested |
+  | 9 | The load test repeated the sign-in helper and did not check the answer | One shared helper (`e2e/demo.ts`) that checks it |
+  | 10 | An alert heading showed the kept 200 as if it were the total | It says "the latest 200" |
+
+**M1.8a-web-2b built**, subject to the owner's console check and merge.
