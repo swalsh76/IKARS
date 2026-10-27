@@ -1,0 +1,6 @@
+# pnpm's settings for the web terminal (PLAN D11, owner 2026-10-27)
+# A release is used only once it is 7 days old (in minutes): a compromised version is usually found
+# and pulled within days.
+minimumReleaseAge: 10080
+# Install scripts run only for the packages named here (none needed so far).
+onlyBuiltDependencies: []

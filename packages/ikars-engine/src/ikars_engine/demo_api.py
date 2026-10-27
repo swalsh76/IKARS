@@ -47,8 +47,14 @@ def made_up_market(n: int) -> MarketInfo:
 
 def made_up_book(ticker: str, bid_e6: int, sid: int, seq: int) -> OrderBook:
     """A small book around ``bid_e6`` (Kalshi's books are bids on both sides)."""
-    yes = [[f"{(bid_e6 - k * CENT) / 1e6:.4f}", f"{10 + k}.00"] for k in range(5)]
-    no = [[f"{(1_000_000 - bid_e6 - (k + 2) * CENT) / 1e6:.4f}", f"{8 + k}.00"] for k in range(5)]
+
+    def levels(top: int, size: int) -> list[list[str]]:  # prices stay within 1c..99c
+        prices = (top - k * CENT for k in range(5))
+        return [[f"0.{p // CENT:02d}00", f"{size + k}.00"]
+                for k, p in enumerate(prices) if CENT <= p <= 99 * CENT]  # fmt: skip
+
+    yes = levels(bid_e6, 10)
+    no = levels(1_000_000 - bid_e6 - 2 * CENT, 8)
     raw = {"type": "orderbook_snapshot", "sid": sid, "seq": seq,
            "msg": {"market_ticker": ticker, "yes_dollars_fp": yes,
                    "no_dollars_fp": no}}  # fmt: skip

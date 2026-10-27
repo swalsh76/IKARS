@@ -175,3 +175,14 @@ def test_demo_api_refuses_a_rate_of_zero(capsys: pytest.CaptureFixture[str]) -> 
 
     assert main(["ikars", "demo-api", "--hz", "0"]) == 2
     assert "must be above 0" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("bid", [10_000, 970_000, 500_000])
+def test_made_up_books_stay_valid_at_the_price_limits(bid: int) -> None:
+    """Found by the M1.8a-web-1b screen tests: a level below 1 cent made the snapshot unreadable."""
+    from ikars_engine.demo_api import made_up_book
+
+    book = made_up_book("KXDEMO", bid, 1, 1)
+    assert book.ready
+    for side in ("yes", "no"):
+        assert all(10_000 <= price <= 990_000 for price, _ in book.bids(side))
