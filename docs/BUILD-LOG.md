@@ -1696,3 +1696,28 @@ watchdog and auto-start are untouched; the local build folders went with the pro
   | 8 | The resume point still said the prune was to do and kept stale M1.8a text | Rewritten to the current state |
   | 9 | No terminal gate exists between the prune and M1.8a-web | No change: there is no terminal code in that gap; M1.8a-web adds the `web` job and makes it a required check (recorded in D11) |
 
+### 1.R Base hardening (plan APPROVED 2026-10-27: items 1 to 26; branch `m1/r-hardening`)
+
+Before the web terminal, the owner asked for a review of the whole code base "to have a solid base". `/code-review`
+at high effort over all 10,900 source lines gave 31 candidate findings; each was checked against the code (one
+disproved by a test: `append_all` does skip a duplicate within one batch). The owner approved fixing items 1 to 26,
+each with a test:
+
+- **A. Data loss, a stuck engine, a silent wrong state:** (1) a refused resubscribe keeps a stale sid; (2) a gap on a
+  command reply is dropped; (3) one damaged hour file stops every start; (4) shutdown can hang; (5) a failed fold-in
+  truncates the hour; (6) a dead pump goes unnoticed; (7) the engine's queue is unbounded; (8) reconciliation
+  ignores money held by resting orders; (9) a fill listed late is costed against today's position.
+- **B. What the screens show:** (10) a dropped book is never announced; (11) a book with no snapshot never asks for
+  one; (12) a gap from before a reconnect is resolved through the new link; (13) unchanged books are re-sent;
+  (14) the guard lets WebSocket scopes through.
+- **C. Long runs:** (15) the import replays the whole ledger every minute; (16) per-market state and the index are
+  never pruned, and every markets request sorts the index; (17) long backfills hold every trade id and restart from
+  zero; (18) an unconfirmed archived market is re-read every minute; (19) the plugin gap list grows without bound;
+  (20) the governor fails on a file renamed under it.
+- **D. Smaller:** (21) a failed start is recorded as a clean shutdown; (22) the restore drill crashes on a damaged
+  copy; (23) `ledger annotate` prints tracebacks; (24) the public REST client is never closed; (25) duplicated
+  helpers (`series_of`, the nested lookup, the atomic write, backup naming); (26) the ACL check raises off Windows.
+
+Not changed (owner): (27) production as the default environment (D21; a comment added); (28) the data guard's
+strict suffix rule; (29) the disproved `append_all` claim.
+

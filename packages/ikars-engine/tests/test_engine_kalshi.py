@@ -728,6 +728,75 @@ async def test_a_refused_subscription_is_sent_again_until_it_holds(tmp_path: Pat
     await rig.source.stop()
 
 
+async def test_a_gap_from_a_lost_link_is_not_read_through_the_new_one(tmp_path: Path) -> None:
+    """M1.R 12: a gap queued before a reconnect was named through the new link's sids."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    await rig.feed.queue.put(Reconnected(2, "connection_lost", 1.0))
+    await rig.feed.queue.put(SequenceGap(rig.feed.book_sid(), 5, 9, 1))  # from link 1
+    await rig.feed.queue.put(frame("ticker", TICKER_MSG, T0 + 3, sid=1))
+    await rig.items(1)
+    assert not [g for g in rig.state.gaps() if g.reason == "sequence"]
+    assert rig.metrics.counters["kalshi.gaps.stale"] == 1 and rig.feed.snapshots == []
+    await rig.feed.queue.put(SequenceGap(rig.feed.book_sid(), 5, 9, 2))  # from the live link
+    await rig.feed.queue.put(frame("ticker", TICKER_MSG, T0 + 4, sid=1))
+    await rig.items(1)
+    assert [g.channel for g in rig.state.gaps() if g.reason == "sequence"] == ["book"]
+    await rig.source.stop()
+
+
+async def test_a_refused_book_subscription_is_not_opened_twice_by_the_rebalance(
+    tmp_path: Path,
+) -> None:
+    """M1.R 1: while a refused subscription is being sent again, its sid is unknown; the rebalance
+    must not open a second one beside it."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    book = rig.feed.book_sid()
+    rig.feed.subscriptions.pop(book)  # refused after a reconnect: no sid on the new link
+    rig.source._retrying.add("orderbook_delta")
+    await rig.source._rebalance()
+    assert rig.feed.sid_of("orderbook_delta") is None  # nothing opened beside the retry
+    rig.source._retrying.discard("orderbook_delta")
+    await rig.source._rebalance()
+    assert rig.feed.sid_of("orderbook_delta") is not None  # no retry running: it is opened
+    await rig.source.stop()
+
+
+async def test_a_delta_without_a_book_asks_for_a_snapshot_and_only_changes_are_news(
+    tmp_path: Path,
+) -> None:
+    """M1.R 11, 13 and 16: a delta before any snapshot made an empty book and never asked for one;
+    every delta, even one that changed nothing, bumped the book's version."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    sid = rig.feed.book_sid()
+    await rig.feed.queue.put(frame("orderbook_delta", DELTA_MSG, T0 + 1, seq=1, sid=sid))
+    await rig.feed.queue.put(
+        frame("orderbook_delta", {**DELTA_MSG, "market_ticker": "GONE"}, T0 + 2, seq=2, sid=sid)
+    )
+    await rig.items(2)
+    await asyncio.sleep(0)
+    assert "M1" not in rig.source.books and "GONE" not in rig.source.books
+    assert rig.feed.snapshots == [["M1"]]  # asked for the watched market only
+    assert rig.source.book_version == {}
+    await rig.feed.queue.put(frame("orderbook_snapshot", SNAPSHOT_MSG, T0 + 3, seq=3, sid=sid))
+    await rig.feed.queue.put(
+        frame("orderbook_delta", {**DELTA_MSG, "ts_ms": 0}, T0 + 4, seq=4, sid=sid)
+    )
+    await rig.items(2)
+    version = rig.source.book_version["M1"]
+    for n, delta in enumerate(("-99.00", "-1.00")):  # breaks the book, then a delta while broken
+        await rig.feed.queue.put(
+            frame(
+                "orderbook_delta", {**DELTA_MSG, "delta_fp": delta}, T0 + 5 + n, seq=5 + n, sid=sid
+            )
+        )
+    await rig.items(2)
+    assert rig.source.book_version["M1"] == version + 1  # the change to broken only
+    await rig.source.stop()
+
+
 async def test_the_rebalance_removes_before_it_adds_and_trusts_the_exchange(
     tmp_path: Path,
 ) -> None:

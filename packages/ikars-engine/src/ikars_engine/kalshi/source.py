@@ -170,6 +170,7 @@ class KalshiSource:
         self._retrying: set[str] = set()  # subscriptions being sent again
         self._error_gap_at: dict[str, int] = {}
         self._side_tasks: set[asyncio.Task[None]] = set()
+        self._link = 1  # the feed link events belong to; a reconnect moves it on
         self._attempts: Counter[int] = Counter()
         self.counts: Counter[str] = Counter()
         self.storage: dict[str, object] = {}
@@ -328,12 +329,20 @@ class KalshiSource:
             ticker = message.market_ticker
             published = message.ts_ms
             self.watched.note_delta(ticker)
-            book = self.books.setdefault(ticker, OrderBook(ticker))
-            applied = book.apply_delta(message)
-            self._book_changed(ticker, at)
+            kept = self.books.get(ticker)  # only a snapshot makes a book (M1.R 11, 16)
+            if kept is None:
+                applied = Applied.NO_SNAPSHOT
+            else:
+                was_broken = kept.broken
+                applied = kept.apply_delta(message)
+                if applied is Applied.APPLIED or (applied is Applied.BROKEN and not was_broken):
+                    self._book_changed(ticker, at)  # only a real change is news (M1.R 13)
             if applied is Applied.BROKEN:
                 self._metrics.count("kalshi.book.broken")
                 self._request_snapshots([ticker])
+            elif applied is Applied.NO_SNAPSHOT and ticker in self.watched.current:
+                self._metrics.count("kalshi.book.no_snapshot")
+                self._request_snapshots([ticker])  # a lost snapshot is asked for again
             self.recorder.write(
                 "book_delta",
                 {"received_ns": at, "ts_ms": message.ts_ms, "ticker": ticker, "seq": frame.seq,
@@ -406,6 +415,7 @@ class KalshiSource:
         return self.last_received.get(channel, self._live_since)
 
     def _lost_link(self, event: Reconnected) -> None:
+        self._link = event.generation
         down_from = self._clock.now_ns() - int(event.downtime * NS)
         for channel in ("trade", "ticker", "lifecycle", "book"):
             self._gap(
@@ -418,6 +428,11 @@ class KalshiSource:
         self._snapshot_wanted.clear()
 
     def _sequence_gap(self, event: SequenceGap) -> None:
+        if event.generation < self._link:
+            # from a link already lost: the reconnect logged every channel's loss and rebuilds the
+            # books, and its sid means nothing (or another channel) on the new link
+            self._metrics.count("kalshi.gaps.stale")
+            return
         name = self._feed.channel_of(event.sid) or ""
         channel = SUBSCRIPTION_CHANNELS.get(name, name)
         self._gap(
@@ -543,6 +558,8 @@ class KalshiSource:
         )
         sid = self._feed.sid_of(ORDERBOOK_CHANNEL)
         if sid is None:
+            if ORDERBOOK_CHANNEL in self._retrying:
+                return  # refused after a reconnect and being sent again: not a second subscription
             if wanted:
                 await self._feed.subscribe(ORDERBOOK_CHANNEL, sorted(wanted))
                 self.watched.current = wanted

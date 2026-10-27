@@ -57,6 +57,7 @@ MAX_SUBSCRIPTIONS = 200
 HEALTH_EVERY_S = 5.0  # also keeps an idle stream alive
 PORTFOLIO_EVERY_S = 1.0
 MAX_STREAMS = 8  # a terminal needs one or two
+DROPPED = -1  # a stream's sent book version for a book the engine no longer keeps
 MAX_CANDLE_HOURS = 24 * 7
 CANDLE_CACHE_S = 60.0  # a chart reopened within a minute costs no request
 MAX_CANDLE_CACHE = 256
@@ -128,7 +129,10 @@ class Guard:
         self._expected = f"Bearer {token}".encode()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        if scope["type"] == "websocket":  # no route speaks it: refused, never let through (M1.R 14)
+            await send({"type": "websocket.close", "code": 1008})
+            return
+        if scope["type"] != "http":  # the server's own lifespan events
             await self._app(scope, receive, send)
             return
         headers = dict(scope["headers"])
@@ -557,7 +561,16 @@ def changes(ctx: ApiContext, state: Stream) -> list[bytes]:
     for ticker in sorted(state.books):
         seen = ctx.book_version.get(ticker)
         kept = ctx.books.get(ticker)
-        if seen is not None and kept is not None and state.sent_book.get(ticker) != seen:
+        if kept is None:
+            # dropped (a reconnect rebuilds every book; a market left the watched set): say so once,
+            # so a screen never keeps showing the old book as ready (M1.R 10)
+            if state.sent_book.get(ticker, DROPPED) != DROPPED:
+                state.sent_book[ticker] = DROPPED
+                out.append(
+                    _event(state, "book", c.BookView(ticker=ticker, ready=False, yes=[], no=[]))
+                )
+            continue
+        if seen is not None and state.sent_book.get(ticker) != seen:
             received = ctx.book_changed_ns.get(ticker)
             if ticker in state.sent_book and received is not None:
                 ctx.metrics.observe("api.feed_to_stream_ns", max(0, now - received))

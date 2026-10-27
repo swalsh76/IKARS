@@ -401,6 +401,44 @@ async def test_stopping_the_server_ends_an_open_stream(ctx: ApiContext, tmp_path
     await asyncio.wait_for(asyncio.gather(reader, return_exceptions=True), 5)
 
 
+def test_a_dropped_book_is_announced_once_as_not_ready(ctx: ApiContext) -> None:
+    """M1.R 10: a book the engine dropped (a reconnect, a market leaving the watched set) was never
+    announced, so a screen kept showing it as ready."""
+    state = Stream(id="s", books={"KXA"})
+    first = changes(ctx, state)
+    assert b'"ready":true' in first[0]
+    ctx.books.pop("KXA")  # type: ignore[attr-defined]
+    dropped = changes(ctx, state)
+    assert len(dropped) == 1 and b'"ready":false' in dropped[0] and b'"yes":[]' in dropped[0]
+    assert changes(ctx, state) == []  # said once
+    ctx.books["KXA"] = snapshot_book("KXA")  # type: ignore[index]
+    ctx.book_version["KXA"] = 2  # type: ignore[index]
+    assert b'"ready":true' in changes(ctx, state)[0]  # rebuilt: sent again
+
+
+async def test_a_websocket_is_refused_before_anything_runs() -> None:
+    """M1.R 14: the guard let every non-HTTP scope through unchecked."""
+    from ikars_engine.api import Guard
+
+    reached: list[str] = []
+    sent: list[dict[str, Any]] = []
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        reached.append(scope["type"])
+
+    async def send(message: Any) -> None:
+        sent.append(message)
+
+    async def receive() -> Any:
+        return {}
+
+    guard = Guard(app, TOKEN)
+    await guard({"type": "websocket", "headers": []}, receive, send)
+    assert reached == [] and sent == [{"type": "websocket.close", "code": 1008}]
+    await guard({"type": "lifespan"}, receive, send)
+    assert reached == ["lifespan"]
+
+
 async def test_malformed_subscriptions_and_re_subscribing(ctx: ApiContext) -> None:
     """Review 2: malformed JSON was a bare 500. Review 3: a market dropped and added back got no
     current state, and was timed as an update."""

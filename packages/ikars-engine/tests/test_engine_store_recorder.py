@@ -240,6 +240,47 @@ def test_a_compaction_that_fails_leaves_the_hour_for_the_next_start(
     assert read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist() == ["a"]
 
 
+def test_a_damaged_hour_never_stops_a_start_and_is_kept_aside(tmp_path: Path) -> None:
+    """M1.R 3: a truncated Parquet hour (a power cut) made every start fail."""
+    first = Recorder(tmp_path)
+    first.write("trade", trade(T0 + 1, "a"))
+    first.close()
+    target = next(tmp_path.glob("trade/*/*.parquet"))
+    target.write_bytes(b"PAR1 not really")  # damaged
+    crashed = Recorder(tmp_path, flush_seconds=0)
+    crashed.write("trade", trade(T0 + 2, "b"))
+    next(iter(crashed._open.values()))[1].close()  # a crash leaves the hour open
+    assert Recorder(tmp_path).recover() == 1  # no exception: the start goes on
+    assert read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist() == ["b"]
+    assert [p.name for p in target.parent.glob("*.damaged")] == ["00.parquet.damaged"]
+
+
+def test_an_hour_that_cannot_be_folded_in_is_never_overwritten(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R 5: after a failed fold-in, the hour's earlier file was reopened and emptied."""
+    first = Recorder(tmp_path, flush_seconds=0)
+    first.write("trade", trade(T0 + 1, "a"))
+    next(iter(first._open.values()))[1].close()  # left open by a crash
+
+    def held(path: Path, channel: str) -> Path:
+        raise PermissionError("in use")
+
+    monkeypatch.setattr("ikars_engine.recorder.compact", held)
+    second = Recorder(tmp_path, flush_seconds=0)
+    second.write("trade", trade(T0 + 2, "b"))
+    folder = next(tmp_path.glob("trade/*"))
+    assert sorted(p.name for p in folder.glob("*.arrow")) == ["00.1.arrow", "00.arrow"]
+    assert second.known_trade_ids(T0, T0 + 10) == {"a", "b"}  # both parts are read
+    for _, sink, _ in second._open.values():
+        sink.close()
+    second._open.clear()
+    monkeypatch.undo()
+    assert Recorder(tmp_path).recover() == 2
+    ids = read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist()
+    assert sorted(ids) == ["a", "b"]
+
+
 def test_an_hour_closes_only_after_its_grace_period(tmp_path: Path) -> None:
     recorder = Recorder(tmp_path, flush_seconds=3600)
     recorder.write("trade", trade(T0 + 1, "a"))
