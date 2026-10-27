@@ -122,10 +122,9 @@ slice still needs its own approved plan before code.
   mode), **1b** web foundation (Node 24, `web/`, types, client, hub, money, navigator, CI `web` job, Overview and
   Health), **2a** Markets and Market, **2b** Ledger, Alerts, meter and load test. Answers: fixed port in settings,
   30-day session, `vite build --watch`, validate every reply. **M1.8a-web-1a done** (PR #16 merged as
-  `d70cb83`). **M1.8a-web-1b built** on branch `m1/8a-web-1b` (BUILD-LOG 1.8a-web-1b; Node 24.22.1 and pnpm 12.14.0
-  per user; `web/` with Overview and Health; CI `web` job green; security review clean; merge review 10 itemized;
-  the owner saw the real Overview): PR #17, waiting for the owner's merge, **then the owner adds `web` to the
-  ruleset's required checks**. Then 2a (Markets, Market), 2b (Ledger, Alerts, meter), then M1.8b. The owner allows `gh pr merge`
+  `d70cb83`). **M1.8a-web-1b done** (PR #17 merged as `0fe5415`, CI green on `main`;
+  BUILD-LOG 1.8a-web-1b; Node 24.22.1 and pnpm 12.14.0 per user; `web/` with Overview and Health). The ruleset now
+  requires `python`, `hygiene`, `CodeQL` and **`web`** (owner, 2026-10-27). **Next:** 2a on branch `m1/8a-web-2a` (Markets, Market), 2b (Ledger, Alerts, meter), then M1.8b. The owner allows `gh pr merge`
   by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
