@@ -132,7 +132,7 @@ slice still needs its own approved plan before code.
   (sets of windows) and the support bundle. Mock-ups approved; skins added by the owner (built-in palettes
   only). **M1.8b-1 done** (PR #21 merged as `db0bf9a`; the settings race fix PR #22 as `e6a29f3`).
   **M1.8b-2 built** on `m1/8b-2` (BUILD-LOG 1.8b-2; layouts and the support bundle; merge review 10
-  itemized): PR open, waiting for the owner's merge and the two-monitor layout check. That completes M1.8.
+  itemized): **PR #23** open, waiting for the owner's merge and the two-monitor layout check. That completes M1.8.
   **Next:** M1.9 (packaging), then M1.12, M1.13, M1.11. The owner allows `gh pr merge` by a local
   permission rule; merge only when asked.
 
