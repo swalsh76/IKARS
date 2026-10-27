@@ -2237,3 +2237,61 @@ the owner only), the share set, start at sign-in installed, the tax zone America
   | 10 | The skin's values were listed by hand in Python and TypeScript | One `Skin` Literal; the TypeScript type is generated from it |
 
 **M1.8b-1 built**, subject to the owner's merge.
+
+#### 1.8b-2 built (2026-10-27)
+
+**Built** on `m1/8b-2`: `a7a6f58` (the engine: layouts and the bundle), `8109c7e` (the terminal: Settings' layouts
+and Health's bundle), `24a19cd` (the merge-review fixes), `9ba176a` (the bundle closes its database connections).
+After M1.8b-1 (PR #21, `db0bf9a`) and the settings race fix (PR #22, `e6a29f3`). **No new packages.**
+
+- **Layouts** (G16): a layout is a named set of IKARS windows, each a screen (an address in the terminal) and a place
+  and size in Windows' screen coordinates, so any monitor. They live in the engine's settings (**version 5**; the
+  version 4 file is kept as a backup on first load), at most 20 of 8 windows each. `GET`/`PUT /v1/layouts`,
+  `PUT /v1/layouts/start`, `DELETE /v1/layouts/{name}`, each checked (a screen is a path of the terminal's own
+  characters: no host, no `#`, nothing that could reach Edge's command line) and backed up first. In the terminal,
+  every window answers "where are you?" on a `BroadcastChannel` (the engine's own pages only); Settings' Terminal
+  section saves the open windows (the saving window counted once), chooses the one `ikars open` restores (or one
+  window) and deletes one. `ikars open --layout NAME` opens each window with a sign-in code of its own; since Edge
+  applies its window switches to its first process only, each window also carries its place (`#...&at=x,y,w,h`) and
+  moves itself there when it loads; saving asks Edge once for its window-management permission so a window may sit
+  on another monitor. Panes docked within a window stay parked (PLAN section 9).
+- **Support bundle** (D20 I): `ikars support` (through the running engine, else made by the command) and **Make a
+  support bundle** on Health. One zip in `<data root>\support\` (the latest 10 kept): the newest logs (up to 50 MB),
+  the health report, the versions, the settings with the share's path left out, the gap log (the newest 1,000), and
+  a README. Redacted as it is written: the key's id and path (either slash, the file's name alone, and as JSON spells
+  them), the API token (even when the engine is stopped), the share's path, PEM blocks and bearer tokens, and the
+  account's balance and position amounts (from the engine's portfolio, else the cash the ledger file explains: as
+  dollars, millionths, and cents from $1,000); the user's folder and the computer's name become placeholders. Then
+  the zip is read back and searched for the same: anything found and it is deleted, the answer naming the file, never
+  the value. One bundle at a time; settings read, never rewritten; never sent anywhere.
+
+**Verified.** Python 1,441 tests (94% coverage); Vitest 200 (98% lines, 91% functions); Playwright 16 screen tests in
+Edge (two windows saved as a layout, the start choice kept across a reload, deleted; a bundle made from Health); lint,
+types, audit, data guard and gitleaks clean. **Live:** the engine restarted on the new code and answers; the settings
+are version 5 with the version 4 file kept; the layouts route answers (none saved, one window at start); a real bundle
+was kept (7 files, 2 logs, with health, versions, settings and gaps; no part file left) and searched: **no file** held
+the key id, the key path, the API token, the share's path, the profile folder, the computer's name, an account amount
+or a private key block. **Pending (the owner):** two windows on two monitors saved and reopened with `ikars open`.
+
+**Review.**
+- **Per commit:** `a7a6f58` none from the review; my own pass compiled the placeholders into one pattern; a test
+  found that JSON-escaped paths (doubled backslashes) escaped both fences, fixed before committing; `8109c7e` none
+  from the review; my own pass refused names starting with a dot (`..` in an address is a folder, so it could not be
+  deleted); the screen tests found the saving window counted twice (fixed before committing); `9ba176a` found by a
+  ResourceWarning.
+- **Merge review (medium), 10 findings:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | A later layout window that could not get a sign-in code crashed `ikars open` with a traceback | Said in words (OpenError); tested; `24a19cd` |
+  | 2 | Edge reads `--window-position`/`--window-size` from its first process only: windows joining a running Edge would not land in place | Each window also carries its place and moves itself there; saving asks for Edge's window-management permission; `24a19cd`; the owner's live check confirms |
+  | 3 | `ikars support` with the engine stopped did not redact the API token | The token read from `api.json` whenever it is there; tested; `24a19cd` |
+  | 4 | A half-written `api.json` crashed `ikars support` instead of falling back | Read inside the fallback; tested; `24a19cd` |
+  | 5 | A screen with characters outside the engine's set (a search for `*`) blocked saving any layout | %-encoded in the terminal (the same address); tested; `24a19cd` |
+  | 6 | The bundle loaded the settings with `load`, which migrates and rewrites outside the settings lock | `settings.read` (migrated in memory, never written); tested; `24a19cd` |
+  | 7 | Two bundles at once (a double click) shared one part file | One at a time, a part file of its own, the button waits; tested; `24a19cd` |
+  | 8 | Cents of a small balance (like 10000) redacted common numbers; the README claimed every amount | Cents searched for from $1,000 only; the README names the balance and position amounts; tested; `24a19cd` |
+  | 9 | The final check held whole members in memory and searched once per secret | Line by line with one pattern; `24a19cd` |
+  | 10 | No BUILD-LOG entry or resume point for this slice yet | This entry, PLAN section 5 and the resume point |
+
+**M1.8b-2 built**, subject to the owner's merge and two-monitor check.
