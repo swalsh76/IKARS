@@ -3,6 +3,7 @@ book, ledger record and alert here is made up."""
 
 import json
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -153,6 +154,24 @@ async def get(ctx: ApiContext, path: str, kind: type[Any], status: int = 200) ->
     return msgspec.json.decode(response.content, type=kind)
 
 
+async def test_the_gap_log_by_days(ctx: ApiContext, tmp_path: Path) -> None:
+    from ikars_engine.store import StateStore
+
+    state = StateStore(tmp_path / "state.sqlite")
+    old = state.add_gap(
+        "trade", "restart", T0 - 30 * 86_400 * 10**9, T0 - 29 * 86_400 * 10**9, "backfill", T0
+    )
+    new = state.add_gap("book", "reconnect", T0 - 10**9, T0, "unrecoverable", T0, "down 1.0 s")
+    ctx.gaps = state.gaps_since
+    page = await get(ctx, "/v1/gaps?days=7", c.GapPage)
+    assert [g.id for g in page.items] == [new] and old != new
+    assert page.items[0].status == "unrecoverable" and page.items[0].end_utc.endswith("Z")
+    assert len((await get(ctx, "/v1/gaps?days=90", c.GapPage)).items) == 2
+    ctx.gaps = None
+    assert (await get(ctx, "/v1/gaps", c.GapPage)).items == []
+    state.close()
+
+
 async def test_hello_health_and_recommendations(ctx: ApiContext) -> None:
     hello = await get(ctx, "/v1/hello", c.Hello)
     assert hello.api_version == c.API_VERSION and hello.schema_sha256 == c.schema_sha256()
@@ -167,6 +186,9 @@ async def test_markets_search_page_and_quote(ctx: ApiContext) -> None:
     assert [m.ticker for m in found.items] == ["OTHER"]
     second = await get(ctx, "/v1/markets?limit=1&offset=1", c.MarketPage)
     assert [m.ticker for m in second.items] == ["KXA"] and second.offset == 1
+    ctx.index.markets["KXDONE"] = replace(info("KXDONE", 9_999), status="closed")
+    closed_last = await get(ctx, "/v1/markets?category=Demo", c.MarketPage)
+    assert [m.ticker for m in closed_last.items] == ["KXB", "KXA", "KXDONE"]  # open ones first
     one = await get(ctx, "/v1/markets/KXA", c.MarketView)
     quote = (one.yes_bid_e6, one.yes_ask_e6, one.last_price_e6, one.watched)
     assert quote == (410_000, 430_000, 420_000, True)
@@ -192,6 +214,9 @@ async def test_ledger_status_and_pages(ctx: ApiContext) -> None:
     rest = await get(ctx, f"/v1/ledger/records?limit=2&before={first.before}", c.LedgerPage)
     assert [r.seq for r in rest.items] == [1] and rest.before is None
     assert rest.items[0].cash_e6 == 1_000_000 and rest.items[0].kind == "deposit"
+    ctx.ledger.append(Entry("fill", T0 + 9, "fill", "f9", ticker="KXA", cash_e6=-400_000))
+    one = await get(ctx, "/v1/ledger/records?ticker=KXA", c.LedgerPage)
+    assert [(r.seq, r.ticker) for r in one.items] == [(4, "KXA")]  # one market's records
 
 
 async def test_the_alert_log_by_line(ctx: ApiContext) -> None:
@@ -434,3 +459,51 @@ async def test_the_stream_cap_holds_when_streams_arrive_together(ctx: ApiContext
         ctx.streams[f"busy{n}"] = Stream(id=f"busy{n}")
     late = [chunk async for chunk in _events(ctx, Stream(id="late"), FakeRequest(5))]  # type: ignore[arg-type]
     assert len(late) == 1 and b"event: error" in late[0] and "late" not in ctx.streams
+
+
+# --- the candles route (M1.8a) ------------------------------------------------------------------
+
+
+def made_up_candles() -> list[Any]:
+    from ikars_core.models import Candlestick
+
+    return [Candlestick.model_validate({
+        "end_period_ts": 1_767_225_660,
+        "price": {"open_dollars": "0.4100", "close_dollars": "0.4200",
+                  "high_dollars": "0.4300", "low_dollars": "0.4000"},
+        "yes_bid": {"close_dollars": "0.4100"}, "yes_ask": {"close_dollars": "0.4300"},
+        "volume_fp": "25.00",
+    })]  # fmt: skip
+
+
+async def test_candles_are_served_cached_and_refused_cleanly(ctx: ApiContext) -> None:
+    calls: list[tuple[str, str, int, int, int]] = []
+
+    async def candles(series: str, ticker: str, start: int, end: int, interval: int) -> list[Any]:
+        calls.append((series, ticker, start, end, interval))
+        return made_up_candles()
+
+    ctx.candles = candles
+    page = await get(ctx, "/v1/markets/KXA/candles?interval=1&hours=2", c.CandlePage)
+    assert page.interval_minutes == 1 and page.items[0].close_e6 == 420_000
+    assert page.items[0].volume_e2 == 2_500 and page.items[0].end_utc.endswith("Z")
+    series, ticker, start, end, interval = calls[0]
+    assert (series, ticker, interval, end - start) == ("KXDEMO", "KXA", 1, 2 * 3600)
+    await get(ctx, "/v1/markets/KXA/candles?interval=1&hours=2", c.CandlePage)
+    assert len(calls) == 1  # the second within a minute came from the cache
+    assert (await get(ctx, "/v1/markets/NOPE/candles", c.ApiError, 404)).error == "not_found"
+    assert (
+        await get(ctx, "/v1/markets/KXA/candles?interval=5", c.ApiError, 400)
+    ).error == "bad_request"
+
+    failures: list[str] = []
+
+    async def failing(*args: Any) -> list[Any]:
+        failures.append("asked")
+        raise RuntimeError("Kalshi said no")
+
+    ctx.candles = failing
+    refused = await get(ctx, "/v1/markets/KXB/candles", c.ApiError, 503)
+    assert refused.error == "unavailable" and "said no" not in refused.detail
+    again = await get(ctx, "/v1/markets/KXB/candles", c.ApiError, 503)
+    assert again == refused and len(failures) == 1  # a failure is not asked again within a minute

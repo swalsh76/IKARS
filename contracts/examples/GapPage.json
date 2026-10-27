@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "channel": "trade",
+      "detail": "71 trades fetched",
+      "end_utc": "2026-01-01T00:00:03Z",
+      "id": 1,
+      "reason": "reconnect (connection_lost)",
+      "recovery": "backfill",
+      "start_utc": "2026-01-01T00:00:00Z",
+      "status": "done"
+    }
+  ]
+}

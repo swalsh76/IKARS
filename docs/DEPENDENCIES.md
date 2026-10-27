@@ -35,9 +35,15 @@ replaced) in its slice plan, with its licence checked then.
 Development only: `ruff`, `mypy`, `pytest` (with `pytest-asyncio`, `pytest-cov`, `hypothesis`), `pip-audit`; the
 exact set and versions are in `uv.lock`.
 
-### .NET packages (terminal, tests only so far)
+### .NET packages (terminal)
 
-`xunit.v3.mtp-v2` (Apache-2.0), `coverlet.MTP` (MIT), `Microsoft.Testing.Extensions.TrxReport` (MIT).
+| Package | Used for | Licence |
+|---|---|---|
+| `ScottPlot.WPF` 5.1.59 | the market price chart (M1.8a; KalTerm3's choice) | MIT |
+| its dependencies: `SkiaSharp` and `HarfBuzzSharp` (with native Windows assets), `OpenTK` and `OpenTK.GLWpfControl`, the GLFW redistributable | drawing | MIT; GLFW zlib |
+
+Tests only: `xunit.v3.mtp-v2` (Apache-2.0), `coverlet.MTP` (MIT), `Microsoft.Testing.Extensions.TrxReport` (MIT).
+The terminal itself uses WPF from the .NET Windows desktop runtime (bundled by the self-contained publish, D12).
 
 ### Outside services
 
@@ -64,6 +70,5 @@ exact set and versions are in `uv.lock`.
 | Local LLM runtime (llama.cpp server, Ollama or ONNX Runtime GenAI) and a 7 to 14B quantised model | M2 (D9) | optional extra | MIT (runtimes); model licences per model | Chosen by measured speed and quality in the slice; downloaded on demand. |
 | XGBoost (CUDA) or LightGBM; PyTorch (cu128) for sequence models; CuPy for sweeps | M3 to M5 (D15, D16) | optional extra | Apache-2.0; MIT; BSD-3; MIT | CUDA wheels run to gigabytes: optional, on demand. CPU fallbacks for each. |
 | Other-venue prices (exchange WebSockets, odds APIs) | later milestones (D19 G7) | plugin | per source | A paid odds API counts against the cost ceiling. |
-| WPF terminal libraries (charts, grids) | M1.8 | base | to choose | Chosen against the approved mock-ups; KalTerm3's choices reviewed first. |
 | Velopack | M1.9 (D12) | build only | MIT | Builds `Setup.exe` and the portable zip; the user installs nothing extra. |
 | Code signing (SignPath free plan or Azure Trusted Signing) | M1.9 (D12) | build only | service | Removes SmartScreen warnings; chosen in the packaging slice. |

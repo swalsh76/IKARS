@@ -150,6 +150,47 @@ class RecommendationPage(msgspec.Struct, kw_only=True):
     items: list[RecommendationView]
 
 
+class Candle(msgspec.Struct, kw_only=True):
+    """One period of a market's prices (Kalshi's candlestick): the traded band (None when nothing
+    traded), the closing YES bid and ask, and the contracts traded."""
+
+    end_utc: str
+    open_e6: int | None
+    high_e6: int | None
+    low_e6: int | None
+    close_e6: int | None
+    bid_close_e6: int | None
+    ask_close_e6: int | None
+    volume_e2: int | None
+
+
+class CandlePage(msgspec.Struct, kw_only=True):
+    """``GET /v1/markets/{ticker}/candles``: oldest first."""
+
+    ticker: str
+    interval_minutes: int
+    items: list[Candle]
+
+
+class GapView(msgspec.Struct, kw_only=True):
+    """A loss the engine logged (PLAN M1.4b): what was missed, and what became of it."""
+
+    id: int
+    channel: str
+    reason: str
+    start_utc: str
+    end_utc: str
+    recovery: str  # backfill, discovery or unrecoverable
+    status: str  # open, done, failed or unrecoverable
+    detail: str
+
+
+class GapPage(msgspec.Struct, kw_only=True):
+    """``GET /v1/gaps``: newest first."""
+
+    items: list[GapView]
+
+
 class Subscriptions(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
     """``PUT /v1/stream/{id}/subscriptions``: the markets whose quotes and books to stream."""
 
@@ -179,7 +220,9 @@ class ApiError(msgspec.Struct, kw_only=True):
 
 CONTRACTS: tuple[type[msgspec.Struct], ...] = (
     Hello, HealthView, MarketView, MarketPage, Level, BookView, PositionView, PortfolioView,
-    LedgerStatusView, LedgerRecordView, LedgerPage, AlertView, AlertPage, RecommendationView,
+    LedgerStatusView, LedgerRecordView, LedgerPage, AlertView, AlertPage, Candle, CandlePage,
+    GapView, GapPage,
+    RecommendationView,
     RecommendationPage, Subscriptions, StreamOpened, QuoteUpdate, ApiError,
 )  # fmt: skip
 
@@ -263,6 +306,15 @@ def examples() -> dict[str, Any]:
         at="2026-01-01T12:00:00-07:00",
         outcome="shown",
     )
+    candle = Candle(
+        end_utc="2026-01-01T12:01:00Z", open_e6=410_000, high_e6=430_000, low_e6=400_000,
+        close_e6=420_000, bid_close_e6=410_000, ask_close_e6=430_000, volume_e2=2_500,
+    )  # fmt: skip
+    gap = GapView(
+        id=1, channel="trade", reason="reconnect (connection_lost)",
+        start_utc="2026-01-01T00:00:00Z", end_utc="2026-01-01T00:00:03Z", recovery="backfill",
+        status="done", detail="71 trades fetched",
+    )  # fmt: skip
     found: dict[str, Any] = {
         "Hello": Hello(api_version=API_VERSION, engine_version="0.0.0", schema_sha256="0" * 64),
         "HealthView": HealthView(at_utc="2026-01-01T00:00:00Z", parts={"ledger": {"records": 1}}),
@@ -298,6 +350,10 @@ def examples() -> dict[str, Any]:
             at_utc="2026-01-01T00:00:00Z",
         ),
         "RecommendationPage": RecommendationPage(items=[]),
+        "Candle": candle,
+        "CandlePage": CandlePage(ticker=market.ticker, interval_minutes=1, items=[candle]),
+        "GapView": gap,
+        "GapPage": GapPage(items=[gap]),
         "Subscriptions": Subscriptions(quotes=[market.ticker], books=[market.ticker]),
         "StreamOpened": StreamOpened(stream_id="s-1", coalesce_ms=100),
         "QuoteUpdate": QuoteUpdate(

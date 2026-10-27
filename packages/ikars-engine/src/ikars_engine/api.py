@@ -25,7 +25,7 @@ import hmac
 import json
 import logging
 import secrets
-from collections.abc import AsyncGenerator, Callable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -34,6 +34,7 @@ from typing import Any
 
 import msgspec
 from ikars_core.book import OrderBook
+from ikars_core.models import Candlestick
 from ikars_core.winacl import other_readers
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -43,10 +44,11 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from ikars_engine import contracts as c
 from ikars_engine.files import write_text_atomic
-from ikars_engine.kalshi.discovery import MarketIndex, MarketInfo
+from ikars_engine.kalshi.discovery import OPEN_STATUSES, MarketIndex, MarketInfo
 from ikars_engine.ledger import KINDS, Ledger
 from ikars_engine.metrics import Metrics
 from ikars_engine.portfolio import Portfolio
+from ikars_engine.store import Gap
 
 log = logging.getLogger("ikars_engine.api")
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
@@ -55,6 +57,9 @@ MAX_SUBSCRIPTIONS = 200
 HEALTH_EVERY_S = 5.0  # also keeps an idle stream alive
 PORTFOLIO_EVERY_S = 1.0
 MAX_STREAMS = 8  # a terminal needs one or two
+MAX_CANDLE_HOURS = 24 * 7
+CANDLE_CACHE_S = 60.0  # a chart reopened within a minute costs no request
+MAX_CANDLE_CACHE = 256
 SHUTDOWN_S = 3  # open streams end at stop; the server waits at most this long
 NS = 1_000_000_000
 
@@ -87,7 +92,14 @@ class ApiContext:
     metrics: Metrics
     now_ns: Callable[[], int]
     coalesce_s: float = 0.1
+    # Kalshi's candlesticks through the engine's request budget: (series, ticker, start_s, end_s,
+    # interval minutes); None when the engine has no REST client (tests, offline)
+    candles: "Callable[[str, str, int, int, int], Awaitable[list[Candlestick]]] | None" = None
+    # the engine's gap log, ended at or after a time (newest first, at most a limit)
+    gaps: "Callable[[int, int], list[Gap]] | None" = None
     streams: dict[str, "Stream"] = field(default_factory=dict)
+    # (loop time, body, status): successes and failures alike, for CANDLE_CACHE_S
+    candle_cache: dict[tuple[str, int, int], tuple[float, bytes, int]] = field(default_factory=dict)
     closing: bool = False  # set at stop: every stream ends
     alert_index: "AlertIndex | None" = None
 
@@ -188,6 +200,26 @@ def market_view(ctx: ApiContext, info: MarketInfo) -> c.MarketView:
         series_ticker=info.series_ticker, category=info.category, status=info.status,
         close_time_utc=close, volume_24h_e2=info.volume_24h_e2, yes_bid_e6=bid, yes_ask_e6=ask,
         last_price_e6=ctx.last_price.get(info.ticker), watched=info.ticker in ctx.watched(),
+    )  # fmt: skip
+
+
+def candle_view(row: Candlestick) -> c.Candle:
+    return c.Candle(
+        end_utc=row.end_period.isoformat().replace("+00:00", "Z"),
+        open_e6=row.price.open_e6, high_e6=row.price.high_e6, low_e6=row.price.low_e6,
+        close_e6=row.price.close_e6, bid_close_e6=row.yes_bid.close_e6,
+        ask_close_e6=row.yes_ask.close_e6, volume_e2=row.volume_e2,
+    )  # fmt: skip
+
+
+def utc_text(ns: int) -> str:
+    return datetime.fromtimestamp(ns // NS, UTC).isoformat().replace("+00:00", "Z")
+
+
+def gap_view(gap: Gap) -> c.GapView:
+    return c.GapView(
+        id=gap.id, channel=gap.channel, reason=gap.reason, start_utc=utc_text(gap.start_ns),
+        end_utc=utc_text(gap.end_ns), recovery=gap.recovery, status=gap.status, detail=gap.detail,
     )  # fmt: skip
 
 
@@ -349,7 +381,8 @@ def create_app(ctx: ApiContext) -> ASGIApp:
             if (not query or query in m.ticker.lower() or query in m.title.lower())
             and (category is None or m.category == category)
         ]  # fmt: skip
-        found.sort(key=lambda m: (-m.volume_24h_e2, m.ticker))
+        # open markets first (closed ones keep their day's volume for a while), then by volume
+        found.sort(key=lambda m: (m.status not in OPEN_STATUSES, -m.volume_24h_e2, m.ticker))
         page = [market_view(ctx, m) for m in found[offset : offset + limit]]
         return _json(c.MarketPage(items=page, total=len(found), offset=offset))
 
@@ -380,7 +413,8 @@ def create_app(ctx: ApiContext) -> ASGIApp:
     async def ledger_records(request: Request) -> Response:
         before = _int(request, "before", None, 1, 2**62)
         limit = _int(request, "limit", 100, 1, MAX_PAGE) or 100
-        bodies = ctx.ledger.page(before, limit)
+        ticker = request.query_params.get("ticker") or None
+        bodies = ctx.ledger.page(before, limit, ticker=ticker)
         last = bodies[-1]["seq"] if bodies else None
         older = last if last is not None and last > 1 and len(bodies) == limit else None
         return _json(c.LedgerPage(items=[record_view(b) for b in bodies],
@@ -390,6 +424,48 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         after = _int(request, "after", None, 0, 2**62)
         limit = _int(request, "limit", 100, 1, MAX_PAGE) or 100
         return _json(c.AlertPage(items=read_alerts(alert_index(ctx), after, limit)))
+
+    async def candles(request: Request) -> Response:
+        ticker = request.path_params["ticker"]
+        interval = _int(request, "interval", 1, 1, 60) or 1
+        if interval not in (1, 60):
+            raise _BadRequest("interval must be 1 or 60 (minutes)")
+        hours = _int(request, "hours", 24, 1, MAX_CANDLE_HOURS) or 24
+        info = ctx.index.markets.get(ticker)
+        if info is None or ctx.candles is None:
+            return _error(404, "not_found", "no such market in the index, or no price history")
+        key = (ticker, interval, hours)
+        now = asyncio.get_running_loop().time()
+        cached = ctx.candle_cache.get(key)
+        if cached is not None and now - cached[0] < CANDLE_CACHE_S:
+            return Response(cached[1], status_code=cached[2], media_type="application/json")
+        end_s = ctx.now_ns() // NS
+        try:
+            rows = await ctx.candles(
+                info.series_ticker, ticker, end_s - hours * 3600, end_s, interval
+            )
+        except Exception as exc:  # Kalshi refused or failed: say so, never a bare 500
+            log.warning("candles not read", extra={"error": type(exc).__name__})
+            failed = _error(503, "unavailable", "Kalshi's price history could not be read now")
+            remember(key, now, bytes(failed.body), 503)  # a failure is not asked again for a minute
+            return failed
+        page = c.CandlePage(
+            ticker=ticker, interval_minutes=interval, items=[candle_view(r) for r in rows]
+        )
+        body = msgspec.json.encode(page)
+        remember(key, now, body, 200)
+        return Response(body, media_type="application/json")
+
+    def remember(key: tuple[str, int, int], now: float, body: bytes, status: int) -> None:
+        if len(ctx.candle_cache) >= MAX_CANDLE_CACHE:
+            ctx.candle_cache.clear()
+        ctx.candle_cache[key] = (now, body, status)
+
+    async def gaps(request: Request) -> Response:
+        days = _int(request, "days", 7, 1, 90) or 7
+        limit = _int(request, "limit", 200, 1, MAX_PAGE) or 200
+        found = [] if ctx.gaps is None else ctx.gaps(ctx.now_ns() - days * 86_400 * NS, limit)
+        return _json(c.GapPage(items=[gap_view(g) for g in found]))
 
     async def recommendations(request: Request) -> Response:
         return _json(c.RecommendationPage(items=[]))  # from M1.12
@@ -422,9 +498,11 @@ def create_app(ctx: ApiContext) -> ASGIApp:
     routes = [
         Route("/v1/hello", hello), Route("/v1/health", health), Route("/v1/markets", markets),
         Route("/v1/markets/{ticker}", market), Route("/v1/books/{ticker}", book),
+        Route("/v1/markets/{ticker}/candles", candles),
         Route("/v1/portfolio", portfolio), Route("/v1/ledger/status", ledger_status),
         Route("/v1/ledger/records", ledger_records), Route("/v1/alerts", alerts),
-        Route("/v1/recommendations", recommendations), Route("/v1/stream", stream),
+        Route("/v1/recommendations", recommendations), Route("/v1/gaps", gaps),
+        Route("/v1/stream", stream),
         Route("/v1/stream/{stream_id}/subscriptions", subscribe, methods=["PUT"]),
     ]  # fmt: skip
 

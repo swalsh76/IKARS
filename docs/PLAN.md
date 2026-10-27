@@ -566,7 +566,7 @@ shown.
 | G | **Safe upgrades:**<br>- versioned schema migrations for every SQLite file, with an automatic backup before each migration (the ledger's to the share as well)<br>- versioned settings<br>- a version handshake between the terminal and the engine<br>- an update rollback path<br><br>**An update must never break the tax ledger.** | M1.5, M1.7, M1.9 |
 | H | **Alert hygiene:** priority levels; de-duplication and throttling; quiet hours; a digest for low-priority items. Only the top tier interrupts. | M1.6 (framework), M4 (recommendations) |
 | I | **Diagnostics and rebuild:**<br>- structured logs with rotation and **redaction** (keys, key paths and account values never reach a log)<br>- a one-click redacted support bundle<br>- a tested **"workstation lost" runbook**: reinstall, restore the ledger and settings from the share, verify | M1.4, M1.8, M1.11 |
-| J | **Performance targets, measured continuously and shown in health:** feed-to-alert latency for the sniping path (target under 250 ms, confirmed in M1.4's plan) and the terminal's frame time under bursts. | M1.4, M1.8, M4 |
+| J | **Performance targets, measured continuously and shown in health:** feed-to-alert latency for the sniping path (target under 250 ms, confirmed in M1.4's plan) and the terminal's frame time under bursts. *Amended 2026-10-27 (owner, M1.8a):* the terminal's target is **update to screen**: from the terminal applying a change to the change being on the display, **p99 at most 33 ms** while 100 markets stream at 10 Hz, with the UI work per update shown alongside. Gaps between WPF's frames are not a measure, since WPF draws only when something changed. | M1.4, M1.8, M4 |
 
 ### D21. Third gap review and scope freeze (APPROVED 2026-10-26)
 
@@ -644,7 +644,8 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 | M1.5a Audit ledger | **done** (BUILD-LOG 1.5a; PR #7 merged as `087b819`): reconciles exactly with Kalshi |
 | M1.5b Share backups, restore drill, portfolio | **done** (BUILD-LOG 1.5b; PR #8 merged as `5b6f702`) |
 | M1.6 Run mode and alerts | **done** (BUILD-LOG 1.6; PR #9 merged as `2efc95f`); the owner's sign-out check of auto-start pending |
-| M1.7 Loopback API and contracts | **built and verified live** (BUILD-LOG 1.7): p99 feed-to-stream ≤ 200 ms; PR waiting for the owner's merge |
+| M1.7 Loopback API and contracts | **done** (BUILD-LOG 1.7; PR #10 merged as `0ba5d83`) |
+| M1.8 Terminal shell | plan approved 2026-10-27 (split a/b); **M1.8a built** (BUILD-LOG 1.8a; PR #11; D20 J amended to update-to-screen, met at the console); M1.8b next |
 
 ## 9. Parking lot
 
@@ -653,3 +654,8 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 - Engine on the server host.
 - Further source plugins (D5 options A, D, E; paid news APIs).
 - An MSI build (WiX) if a true MSI is ever needed (D12).
+- An index on the ledger's `(stream, ticker, seq)` for the Market screen's "your ledger records" (M1.8a merge
+  review). It needs a ledger migration (backup first); the scan is trivial at today's few hundred records. Revisit
+  when the ledger reaches tens of thousands.
+- Readable screen-reader names for list items: the terminal's lists expose each record's raw text to UI Automation
+  (M1.8a live check). Natural with M1.8b's hotkeys and themes, or later.

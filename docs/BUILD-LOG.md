@@ -1427,3 +1427,200 @@ runs, and a loopback port while it listens. Nothing else, and no firewall change
   port, behind a session token.
 
 **M1.7 done**, subject to the owner's merge.
+
+**M1.7 done:** PR #10 merged as `0ba5d83` (2026-10-27).
+
+### 1.8 Terminal shell (plan APPROVED 2026-10-27, all five answers as recommended; branch `m1/8-terminal`)
+
+**Proposed split** (like M1.4 and M1.5): **M1.8a** the shell, the client, navigation and the main screens;
+**M1.8b** hotkeys, layouts, themes, settings with the first-run wizard, and the support bundle. Each is reviewed
+and merged on its own.
+
+**M1.8a builds** (new `Ikars.Client` and `Ikars.Terminal` .NET projects, on `Ikars.Contracts`):
+1. **The client (`Ikars.Client`):**
+   - reads `api.json`, sends the token, and refuses a different API major version (the handshake);
+   - typed calls for every snapshot route;
+   - the stream from KalTerm3's tested SSE reader and reconnect code (resuming alerts by line), changing
+     subscriptions as screens open and close.
+2. **Connect or start:** the terminal connects to the running engine. If none is running it starts the engine with
+   the command `install-autostart` registered, and shows progress while the engine starts up.
+3. **Navigation (R9):**
+   - one navigation service over a typed reference (kind plus id);
+   - a breadcrumb trail with back and forward;
+   - every view model built from a reference, so a link is just a reference.
+4. **Screens, per the approved mock-ups:**
+   - **Overview:** portfolio and exposure, alerts, and a health strip are live now. Panels whose data comes in
+     later slices (top recommendations and journal from M1.12, movers from M1.12, source items from M2, perp
+     funding and book signals from M3) are drawn in place with a short "arrives in …" note (open question 2).
+   - **Markets:** search and categories (from the engine's index), opening into a market.
+   - **Market drill-down:**
+     - the title and live quote;
+     - the YES price chart for today (from a new engine route, open question 3);
+     - the order book (both sides are bids);
+     - the linked-items panel. For now it holds same-event markets and your ledger records for the market;
+       source items, recommendations and perps join in their slices. Selection stays in sync across panels.
+   - **Health:** engine, feed, ledger, backups, GPU and API, with the gap log.
+   - **Ledger:** status and paged records (your data; local only).
+   - **Alerts:** the alert log by priority.
+5. **Rendering:** stream updates are coalesced and repainted at a fixed rate (about 10 Hz), as D3 says, so WPF stays
+   light under bursts.
+6. **Frame time (J):** measured from WPF's render loop, with p50 and p99 shown in the health view (open
+   question 4).
+7. **Engine addition:** `GET /v1/markets/{ticker}/candles` (Kalshi's candlesticks through the engine's request
+   budget, cached for a minute), with its contract and golden example.
+
+**M1.8b builds:**
+- hotkeys (the mock-up's list, and `?` to show them);
+- saved layouts across monitors (KalTerm3's window placement);
+- light and dark themes (WPF's Windows 11 theme, as KalTerm3);
+- versioned terminal settings with a migration, and the **first-run wizard** (G15): it checks the key variables
+  (never shows them), the engine, the share, the tax zone and quiet hours;
+- the redacted **support bundle** (I): logs, health and versions in one zip, with no keys, tokens, account values
+  or paths.
+
+**Kept from KalTerm3, and changed.**
+- *Kept:* the MVVM helpers, the SSE reader and reconnect, markets, market detail, order book, chart and layout
+  code, the toaster and formatting. Each is read critically and adapted.
+- *Removed:* the SQL Server and multi-user parts, trading (recommend-only until M7), and watchlists (to the
+  parking lot unless you want them).
+
+**Changes on this machine:** the terminal's settings under `%LOCALAPPDATA%\IKARS\terminal`. Nothing else in M1.8a.
+The packaged install comes in M1.9.
+
+**New packages:** `ScottPlot.WPF` (MIT, KalTerm3's chart) for the price chart. Nothing else: KalTerm3's own small
+MVVM helpers are reused instead of a toolkit.
+
+**Tests:**
+- view models against a fake API: navigation, breadcrumbs, back and forward, subscriptions following the open
+  screens, coalescing, the handshake refusal, connect-or-start;
+- the client against a local test server: token, SSE parsing, reconnect and resume;
+- the candles route in the engine.
+
+**Live checks:**
+- the terminal connects to the running engine, and starts one when none is running;
+- the Overview shows the real portfolio, alerts and health;
+- drill into a live market: its quote, book and chart update;
+- the linked-items panel opens and selection stays in sync;
+- the ledger view pages your records;
+- frame time is measured while 100 markets stream.
+
+**Open questions.**
+1. **Split into M1.8a and M1.8b?** *Recommended:* yes, as above.
+2. **Overview panels whose data comes later:**
+   - *Recommended:* draw them now, in their mock-up places, with a short "arrives in M1.12" (or M2, M3) note, so
+     the layout is final and nothing moves later.
+   - *Alternative:* hide them until their data exists.
+3. **The price chart:** *recommended:* `ScottPlot.WPF` (MIT, KalTerm3's) with the new candles route on the engine.
+   *Alternative:* no chart until M1.12.
+4. **Frame-time target:** *recommended:* **p99 at most 33 ms** (30 frames a second) while 100 markets stream at
+   10 Hz.
+5. **Coverage gate for the WPF project:**
+   - *Recommended:* the views stay thin (XAML and minimal code-behind) and are left out of the 90% line gate; the
+     view models, client and navigation are held to it.
+   - *Alternative:* UI automation tests to cover the views too, which are slower and more brittle.
+
+**Owner's answers (2026-10-27):** all five as recommended:
+1. split into M1.8a and M1.8b;
+2. later panels drawn now, each with an "arrives in" note;
+3. ScottPlot with the engine's candles route;
+4. p99 frame time at most 33 ms while 100 markets stream;
+5. thin views left out of the coverage gate, with view models, client and navigation held to it.
+
+#### 1.8a built (2026-10-27)
+
+**Built** (commits `c485d4a`, `3cbf8fc`, `ee06ba5`, `778cda1`, `a4fa061`, `db1676f`; new package `ScottPlot.WPF`,
+MIT):
+
+| Area | What |
+|---|---|
+| Engine routes | `GET /v1/markets/{ticker}/candles` (Kalshi's candlesticks through the request budget; successes and failures cached for a minute); ledger records by market (`?ticker=`); `GET /v1/gaps` (the gap log for the Health screen); the markets list puts open markets first. Contracts and golden examples updated (24). |
+| `Ikars.Client` | The engine connection: `api.json`, the version handshake, a typed API client with its own timeout, an SSE reader, and a stream watcher that subscribes, resumes after the last alert, backs off (a refusal keeps backing off) and drops a stream silent for 20 s. The connector starts the engine through its registered command when none runs. |
+| `Ikars.Terminal` | WPF (`ThemeMode=System`). One navigator: drill-down, breadcrumbs, back and forward (R9); a screen left while loading is cancelled and lets go of its subscriptions. An update hub hands the stream's changes to the screens once per 100 ms tick, and sends a subscription change only when the screens' union changed. |
+| Screens | **Overview** (cash, open cost, unrealised, positions, exposure, the newest alerts, a health strip, and the six later panels drawn with "arrives in" notes); **Markets** (search, paging, live bid and ask); **Market** (quote, both book sides, the day's price chart, and the linked panel: same-event markets and your ledger records for it); **Ledger** (status, pages newest first); **Alerts** (by priority); **Health** (every engine part, the week's gap log, frame time). |
+| Frame time (J) | **Update to screen** (D20 J as amended): for each tick that changed the screen, the time until WPF starts the frame after the one that shows it (an upper bound, high by up to one refresh), and the UI work per update (the hand-over and its layout); the last 600 as p50 and p99, on the status bar and the Health screen. The window listens for frames only while a change waits. |
+| Start-up | `--data-folder <path>` points the terminal at another engine's folder (the load test; the portable install later). |
+
+**Verified.**
+- 1,279 Python tests pass (93.8% overall) and 69 .NET tests pass: `Ikars.Terminal` 97.7% of lines (views
+  excluded, as approved), `Ikars.Client` 93.7%, `Ikars.Contracts` 100%. ruff, mypy, dotnet format, the data guard
+  and gitleaks are clean.
+- **Live**, against the background engine (driven through UI Automation; counts only):
+
+  | Check | Result |
+  |---|---|
+  | Start the engine when none runs | the owner-stopped engine was started by the terminal through the registered command; connected in 55 s (start-up includes the market index) |
+  | Overview | portfolio, alerts, health strip and the planned panels with live data |
+  | Markets | 212,020 markets; search finds a market by ticker |
+  | Market drill-down | quote, both book sides (10 levels each), the linked panel with the same-event market; ledger records by market correct once the engine ran the new routes |
+  | Ledger paging | 223 records: 223 to 124, 123 to 24, 23 to 1 (Older then disabled), Newest back to the top; chain verified |
+  | Health | 87 health rows and the gap log; the API token appears nowhere (only the request budget's `tokens_*` rates) |
+
+**Frame time (J): how the target was settled.** The load for these checks was the engine's real API server over a
+made-up context: 100 watched markets whose quotes and books all change every 100 ms.
+1. **Over Remote Desktop** the first meter (gaps between rendered frames) read p50 31 ms, p99 63 ms. The remote
+   display runs at about 32 Hz with software rendering (render tier 0), so nothing could be judged there.
+2. **At the console** (59 Hz, the RTX 5070 Ti, hardware rendering) the owner read p99 34 ms idle and 48 to 49 ms
+   under load. Clearing and refilling lists every second was replaced by in-place updates (`144c5c4`); the readings
+   did not move.
+3. **A trace at the console** showed the terminal's UI work per update at p99 1.3 ms on Markets and 15 ms on a
+   market, so the gaps were not IKARS's work. A 1 ms Windows timer resolution changed nothing.
+4. **A bare WPF window** (no IKARS code) settled it: p99 46 ms when nothing changes, and p50 and p99 both
+   **16.7 ms** (2 gaps over 20 ms in 1,791 frames) when its text changes every frame. **WPF draws only when
+   something changed**, so frame gaps measure idling, not slowness. My earlier reading, that WPF's timing on this
+   machine was irregular, was wrong. Forcing the high-performance GPU changed nothing (every monitor is on the
+   5070 Ti, and WPF already rendered there); the two preference values were removed afterwards.
+5. **The owner amended D20 J** (2026-10-27): keep 33 ms, applied to **update to screen**. Measured at the console
+   with the new meter (`40e73ae`):
+
+   | Screen | To screen p50 / p99 | UI work p99 |
+   |---|---|---|
+   | Markets, 100 made-up markets at 10 Hz | 16 / **32 ms** | 2 ms |
+   | One market, same load | 16 / **32 ms** | 10 ms |
+   | Overview, same load | 15 / **30 ms** | 2 ms |
+   | Overview, real engine | 16 / **24 ms** | 2 ms |
+
+   **Within the target** on every screen, with an upper-bound measure.
+
+**Live findings, fixed (`a4fa061`).**
+1. **17 of the top 50 markets were closed.** A closed 15-minute market keeps its day's volume and sorted first.
+   Open markets now come first (`OPEN_STATUSES`, shared with discovery).
+2. **An empty chart drew bare axes.** It now says why it is empty: no trades today, no price history, or Kalshi
+   did not answer.
+3. **"Your ledger records" showed the same records for every market.** The background engine had started before
+   the new routes were committed, so it ignored `?ticker=`. Restarting it fixed this; no code change.
+4. **Three "engine restarted" alerts from the evening** were the M1.7 live checks' own stops and the uvicorn
+   logging crash fixed in M1.7; nothing new.
+
+**Review.**
+- **Per commit (`778cda1`):** 3 fixed:
+  1. a screen left while loading kept its subscriptions (the navigator now cancels the load and closes it again);
+  2. a failed flush in the timer tick would end the terminal (shown as a problem instead);
+  3. a failed subscription change was not retried (it stays pending).
+- **Per commit (`a4fa061`):** none.
+- **Merge review (medium), 10 findings:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | A Markets page arriving after the screen closed subscribed its 50 markets for the rest of the session | Ignored once the screen is closed; tested |
+  | 2 | The Overview re-sent its subscriptions every second with the portfolio | The hub sends only a changed set; tested |
+  | 3 | A stream that stays open but silent was never noticed | Dropped after 20 s without an event (health comes every 5 s); tested |
+  | 4 | A refused stream (too many) reset the backoff and retried every second | A refusal keeps backing off; tested |
+  | 5 | Overlapping timer ticks could send an older subscription set last | One flush at a time |
+  | 6 | The frame meter counted a minimise or drag as a slow frame, and sorted the window twice per reading; its render callback ran always | Pauses skipped and one sort per reading (`db1676f`); then superseded by the update-to-screen meter (`40e73ae`), which listens for frames only while a change waits |
+  | 7 | A failed candles read was asked of Kalshi again on every open | Failures cached for a minute too; the chart says why it is empty; tested |
+  | 8 | A request timeout was taken for an engine restart: reconnect and a repeated Kalshi-backed request | A timeout is not retried (`TimedOut`); tested |
+  | 9 | An alert arriving during a screen's snapshot appeared twice; the Alerts lists grew without a bound | Once each, newest first by line, at most 200 per priority; tested |
+  | 10 | The ledger's ticker filter has no index | **Parked** (PLAN §9): it needs a ledger migration, and the scan is trivial at today's size |
+
+- **Per commit (`db1676f`):** 1 fixed: disposing the old client on a reconnect would cancel calls still running on
+  it. It is no longer disposed; it owns no sockets (one shared handler).
+- **Per commit (`144c5c4`):** none.
+- **Per commit (`40e73ae`):** 1 fixed: a duplicated doc comment on `TickAsync`.
+
+**Kept, changed and why.**
+- *Kept from KalTerm3:* WPF with the Windows 11 theme, ScottPlot for charts, the SSE stream client's shape.
+- *Changed:* one navigator owns every screen (KalTerm3 opened windows per view), so drill-down, breadcrumbs and
+  back/forward work the same everywhere (R9). Updates are coalesced twice: in the engine (100 ms per market) and in
+  the terminal (one hand-over per tick), so a burst never reaches the UI thread as a burst.
+
+**M1.8a built**, subject to the owner's merge.

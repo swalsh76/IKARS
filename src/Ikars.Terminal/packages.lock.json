@@ -1,0 +1,199 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0-windows10.0.19041": {
+      "ScottPlot.WPF": {
+        "type": "Direct",
+        "requested": "[5.1.59, )",
+        "resolved": "5.1.59",
+        "contentHash": "d6Mv5PFtp+SUH2r8vBCb/mKsR6kobsOX/8/oZYzZl+k3a9jv+BmxVZAkr1Vshq6457812HcNGppoNJ1pSJk5zQ==",
+        "dependencies": {
+          "OpenTK": "4.9.4",
+          "OpenTK.GLWpfControl": "4.3.3",
+          "ScottPlot": "5.1.59",
+          "SkiaSharp.Views.WPF": "3.119.0"
+        }
+      },
+      "HarfBuzzSharp": {
+        "type": "Transitive",
+        "resolved": "8.3.1.1",
+        "contentHash": "tLZN66oe/uiRPTZfrCU4i8ScVGwqHNh5MHrXj0yVf4l7Mz0FhTGnQ71RGySROTmdognAs0JtluHkL41pIabWuQ==",
+        "dependencies": {
+          "HarfBuzzSharp.NativeAssets.Win32": "8.3.1.1"
+        }
+      },
+      "HarfBuzzSharp.NativeAssets.Linux": {
+        "type": "Transitive",
+        "resolved": "8.3.1.1",
+        "contentHash": "3EZ1mpIiKWRLL5hUYA82ZHteeDIVaEA/Z0rA/wU6tjx6crcAkJnBPwDXZugBSfo8+J3EznvRJf49uMsqYfKrHg=="
+      },
+      "HarfBuzzSharp.NativeAssets.Win32": {
+        "type": "Transitive",
+        "resolved": "8.3.1.1",
+        "contentHash": "UsJtQsfAJoFDZrXc4hCUfRPMqccfKZ0iumJ/upcUjz/cmsTgVFGNEL5yaJWmkqsuFYdMWbj/En5/kS4PFl9hBA=="
+      },
+      "OpenTK": {
+        "type": "Transitive",
+        "resolved": "4.9.4",
+        "contentHash": "fp9ZI6akO4ZuIGzuUE0QRU5zRJhXbSXa5racehFoTdvodhRDecXCOcH68mRsZaMwnxLO9ECnf2LGM9BmiJKvhw==",
+        "dependencies": {
+          "OpenTK.Audio.OpenAL": "4.9.4",
+          "OpenTK.Compute": "4.9.4",
+          "OpenTK.Core": "4.9.4",
+          "OpenTK.Graphics": "4.9.4",
+          "OpenTK.Input": "4.9.4",
+          "OpenTK.Mathematics": "4.9.4",
+          "OpenTK.Windowing.Common": "4.9.4",
+          "OpenTK.Windowing.Desktop": "4.9.4",
+          "OpenTK.Windowing.GraphicsLibraryFramework": "4.9.4"
+        }
+      },
+      "OpenTK.Audio.OpenAL": {
+        "type": "Transitive",
+        "resolved": "4.9.4",
+        "contentHash": "N/SCeFrLJ3ckUbshyfsonbtjmDxh55urGiR+Fe1iPkTWyEW5OKfQRoIOZyjEva/4eRqOXdt3bV2ka4IJ2+JvZw==",
+        "dependencies": {
+          "OpenTK.Core": "[4.9.4, 4.10.0)",
+          "OpenTK.Mathematics": "[4.9.4, 4.10.0)"
+        }
+      },
+      "OpenTK.Compute": {
+        "type": "Transitive",
+        "resolved": "4.9.4",
+        "contentHash": "30G+/9mtrUJwX5xcRyz2qcujQ2s+wDm+C7qg6jDsLyGWUdND3j/vD+nlQ6tuKuAow51zWduFVujPkaS8VrBinQ=="
+      },
+      "OpenTK.Core": {
+        "type": "Transitive",
+        "resolved": "4.9.4",
+        "contentHash": "/4Mn3ABf1xNfHMzDFUapVY2K4PG3oP/oWTQJlK0JacT20HwsNe/HPIAhnAJWz27EM3ukOJDtqyQRukvQKqkcLw=="
+      },
+      "OpenTK.GLWpfControl": {
+        "type": "Transitive",
+        "resolved": "4.3.3",
+        "contentHash": "mbKt+ZApqYk/Ym4Ph0dnI+hfSnyXn/gWW6Ys6l3C+fMlgXLYaWpbQ+/3yNm6G1lJ3vteXGxtoMJPFYlaXi/tQw==",
+        "dependencies": {
+          "OpenTK": "[4.8.2, 5.0.0)"
+        }
+      },
+      "OpenTK.Graphics": {
+        "type": "Transitive",
+        "resolved": "4.9.4",
+        "contentHash": "yZeq5swIsRnNzifVA9fLtl+qMAQvmYiF1b7U/XQLARmmU4PYQ23lPNahqAdD22XzA21ew7eG3yDyPLkYw+hDBA==",
+        "dependencies": {
+          "OpenTK.Core": "[4.9.4, 4.10.0)",
+          "OpenTK.Mathematics": "[4.9.4, 4.10.0)"
+        }
+      },
+      "OpenTK.Input": {
+        "type": "Transitive",
+        "resolved": "4.9.4",
+        "contentHash": "njbC7fySQEK30rjOQ1uRjlycEkLw+UVoPT3nRQ8uBPNLotDgr47NEcPEjmJyX1ll+pm/wmtcvJIYHBRi1HbOqg=="
+      },
+      "OpenTK.Mathematics": {
+        "type": "Transitive",
+        "resolved": "4.9.4",
+        "contentHash": "2ucF25RVJzdSLXUHgjAgB058gVfSgerrR5pLCn9J+Bnyqi45NrBfPu9wyTT35ZCjYwLJCu/HJMnzKFLjq+uFIA=="
+      },
+      "OpenTK.redist.glfw": {
+        "type": "Transitive",
+        "resolved": "3.4.0.44",
+        "contentHash": "HEjbdk0wWxSRrXHl3DSmrA8trecndgJpAHHloJJ1vPseNfeu/ynmrH/LturU1KguRn4r3IzZ81UIp5xRjnyahg=="
+      },
+      "OpenTK.Windowing.Common": {
+        "type": "Transitive",
+        "resolved": "4.9.4",
+        "contentHash": "xNjvKjoptAh6w5/YYIx/9sNv3/A2VVlTahlekTlLP+qfNyig+0jBuLHO4bWELWZ7Ta3Y1m/2Pvk0Z1KCG8VZOA==",
+        "dependencies": {
+          "OpenTK.Core": "[4.9.4, 4.10.0)",
+          "OpenTK.Mathematics": "[4.9.4, 4.10.0)"
+        }
+      },
+      "OpenTK.Windowing.Desktop": {
+        "type": "Transitive",
+        "resolved": "4.9.4",
+        "contentHash": "LBX4jwCneISIBST2vWYLI8cdR8tLwHNcswK1decElbTAXMB+H6uFIoF41ld+af4q3TsHpjR5fyP2ilbTK3T0rA==",
+        "dependencies": {
+          "OpenTK.Core": "[4.9.4, 4.10.0)",
+          "OpenTK.Mathematics": "[4.9.4, 4.10.0)",
+          "OpenTK.Windowing.Common": "[4.9.4, 4.10.0)",
+          "OpenTK.Windowing.GraphicsLibraryFramework": "[4.9.4, 4.10.0)"
+        }
+      },
+      "OpenTK.Windowing.GraphicsLibraryFramework": {
+        "type": "Transitive",
+        "resolved": "4.9.4",
+        "contentHash": "wNlxnPrD7veMV8EGTTi/sCDeg5V8w/18vC0aw0Ao69eNneD7YSq9Ad+C389rVA957eHNR6Xieu/5qzHQeEOyxQ==",
+        "dependencies": {
+          "OpenTK.Core": "[4.9.4, 4.10.0)",
+          "OpenTK.redist.glfw": "3.4.0.44"
+        }
+      },
+      "ScottPlot": {
+        "type": "Transitive",
+        "resolved": "5.1.59",
+        "contentHash": "a2xnmMNfhspakKobDfAX5s1GPLFgmEXtRewR9p6bWM91QuCxF5SjHnDbixAcZoU50LPicrCe04sWzIVzdSrmNw==",
+        "dependencies": {
+          "HarfBuzzSharp.NativeAssets.Linux": "8.3.1.1",
+          "SkiaSharp": "3.119.0",
+          "SkiaSharp.HarfBuzz": "3.119.0",
+          "SkiaSharp.NativeAssets.Linux.NoDependencies": "3.119.0"
+        }
+      },
+      "SkiaSharp": {
+        "type": "Transitive",
+        "resolved": "3.119.0",
+        "contentHash": "gR9yVoOta2Mc1Rxt15LD65AckfHMfwjIs/3kkD59C9bT2nYYISsE6uz3t4aMPNHA6CgsIL0Ssn+jE5OVilZ1yw==",
+        "dependencies": {
+          "SkiaSharp.NativeAssets.Win32": "3.119.0"
+        }
+      },
+      "SkiaSharp.HarfBuzz": {
+        "type": "Transitive",
+        "resolved": "3.119.0",
+        "contentHash": "5ocGzl+RYEZFnUPUbModshnEFvKTku4hTtOBsLvy5MCK2KAHjq5Nw2+uAVUx79Rjh0z8fTojT6ZVav8MJgW0ug==",
+        "dependencies": {
+          "HarfBuzzSharp": "8.3.1.1",
+          "SkiaSharp": "3.119.0"
+        }
+      },
+      "SkiaSharp.NativeAssets.Linux.NoDependencies": {
+        "type": "Transitive",
+        "resolved": "3.119.0",
+        "contentHash": "e92vdqf1VOETPjy1T67Fs1zPxfGMM1nbrpt69GM5foXSI/iIbq6L9avPz/bl/DbWtb81D0yF/NKjRmXuOZoLcg=="
+      },
+      "SkiaSharp.NativeAssets.Win32": {
+        "type": "Transitive",
+        "resolved": "3.119.0",
+        "contentHash": "IwC9yx36lOdXVT2DjgmWHl1qkVspfj8ctd4+li8CNnvqdfaTolXCOh6TLznURcPAvzatx9K/tLOB7zT6T8EA9w=="
+      },
+      "SkiaSharp.Views.Desktop.Common": {
+        "type": "Transitive",
+        "resolved": "3.119.0",
+        "contentHash": "KST7Q3n+X5BhDj1aKTJXk9tITWWznveka9n+pBjOtE53Omc+wlZR0s4fQStybWCVVaWG9eaeOMaw93J3zEMklA==",
+        "dependencies": {
+          "SkiaSharp": "3.119.0"
+        }
+      },
+      "SkiaSharp.Views.WPF": {
+        "type": "Transitive",
+        "resolved": "3.119.0",
+        "contentHash": "1Dmj9RlBW/gvmJwSUER+N9plA/kcWOgiL5g3q2DB+USVQav8rQtfOZIQZ1Wt/AqhwepOacv1M6pZKDWtXmwDAg==",
+        "dependencies": {
+          "OpenTK": "4.3.0",
+          "OpenTK.GLWpfControl": "4.2.3",
+          "SkiaSharp": "3.119.0",
+          "SkiaSharp.Views.Desktop.Common": "3.119.0"
+        }
+      },
+      "ikars.client": {
+        "type": "Project",
+        "dependencies": {
+          "Ikars.Contracts": "[1.0.0, )"
+        }
+      },
+      "ikars.contracts": {
+        "type": "Project"
+      }
+    }
+  }
+}

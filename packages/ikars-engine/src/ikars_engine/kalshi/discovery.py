@@ -30,6 +30,7 @@ from ikars_engine.store import StateStore
 BOOKMARK = "discovery.updated_s"
 OVERLAP_SECONDS = 120
 COMBO_PREFIX = "KXMVE"
+OPEN_STATUSES = frozenset({"active", "open"})  # Kalshi's REST and WebSocket names for trading
 log = logging.getLogger("ikars_engine.kalshi.discovery")
 
 
@@ -78,7 +79,7 @@ class MarketIndex:
         )
 
     def open_markets(self) -> list[MarketInfo]:
-        return [m for m in self.markets.values() if m.status in ("active", "open")]
+        return [m for m in self.markets.values() if m.status in OPEN_STATUSES]
 
     def snapshot(self, path: Path) -> int:
         rows = list(self.markets.values())

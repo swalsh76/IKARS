@@ -174,6 +174,15 @@ class StateStore:
         )
         return [Gap(*row) for row in rows]
 
+    def gaps_since(self, since_ns: int, limit: int) -> list[Gap]:
+        """The gaps that ended at or after ``since_ns``, newest first (the terminal's gap log)."""
+        rows = self._db.execute(
+            "SELECT id, channel, reason, start_ns, end_ns, recovery, status, detail FROM gap"
+            " WHERE end_ns >= ? ORDER BY id DESC LIMIT ?",
+            (since_ns, limit),
+        )
+        return [Gap(*row) for row in rows]
+
     # --- bookmarks and heartbeats ------------------------------------------------------------
 
     def bookmark(self, name: str) -> int | None:
