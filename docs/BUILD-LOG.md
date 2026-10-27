@@ -2167,7 +2167,12 @@ placement no longer apply). **Owner's answers (2026-10-27): all as recommended.*
 - **Hotkeys** (the mock-up's list): `Ctrl+K` search; `Ctrl+1`..`5` the screens; `Alt+Left/Right` back and forward
   (Edge's own); `Enter` the newest urgent alert; `B` the order book; `X` the Linked panel; `Ctrl+Shift+L` the theme;
   `?` the list. `T`/`I`/`D` and `C` are listed as arriving with the recommendations (M1.12).
-- **Themes:** dark, light or Windows', remembered.
+- **Themes:** dark, light or Windows', remembered. **Skins (owner, 2026-10-27, after the plan):** built-in palettes
+  only, chosen from Settings: Dark, Light, High contrast, Midnight and Paper, or "Follow Windows" (Dark or Light);
+  `Ctrl+Shift+L` switches between Dark and Light; saved with the engine's settings. Colours only, so the CSP is
+  unchanged. Own skins (editing colours) were offered and not chosen.
+- **Mock-ups approved as shown** (owner, 2026-10-27): `Settings.html` and `Wizard.html`; the Appearance section's
+  theme switch becomes the skin picker.
 - **Layouts:** a layout is a set of IKARS windows (each a screen, a position and a size, on any monitor); "Save
   layout as..."; `ikars open --layout NAME`; the last one restored at start. Panes docked within a window are parked
   (PLAN section 9).
