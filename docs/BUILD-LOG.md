@@ -1769,7 +1769,7 @@ approved as "read with GET only"); the key still signs GETs only, and other orde
   | Ledger | chain verified, **reconciles exactly**, no import errors |
   | Stop | **3.5 s**; recorded as a clean stop (the next start's gaps say "stopped") |
   | A torn real recording hour (a scratch copy, deleted after) | the start went on; the hour set aside as `07.parquet.damaged`; the open file's rows kept |
-  | Resting orders (item 8) | **pending:** needs a resting order of the owner's; IKARS reads it with GET only |
+  | Resting orders (item 8) | **partly confirmed (2026-10-27):** a resting **sell** closing part of a held YES position is read (Kalshi labels it `side` yes, `action` sell, `outcome_side` no, as the model maps it); it holds back no cash, so the balance matched and every reconciliation stayed exact. The **buy** case (cash held back) still needs a resting buy |
 
 **Live finding, fixed (`66fcec0`).** The minute import re-reads a day of fills; each already-recorded fill older
 than a later one was flagged and warned about before being skipped as already recorded (4 warnings). The real
