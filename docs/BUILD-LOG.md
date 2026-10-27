@@ -1817,3 +1817,28 @@ key, GET-only rule and Python checks are unchanged: the engine alone talks to Ka
   It is not a required check; whether to require it is the owner's ruleset decision. *Later the same day:*
   merged as PR #15 (`179dd8c`); at the owner's request the aggregate `CodeQL` check (GitHub's code-scanning app)
   is now **required** on `main` beside `python` and `hygiene`, so a new language needs no ruleset change.
+
+#### 1.R2 Platform review for the new direction (owner, 2026-10-27)
+
+**Asked:** "one more full milestone review, keeping in mind the new direction, with an eye towards reusability and
+overall platform stability". M1.R had just reviewed every module for correctness, so this pass read the API,
+contracts, engine core, plugins, sources, runner, recorder and services for three questions: is the engine ready for
+the web terminal, can M1.12 and M2 plug in, and does it stay up for weeks. **Placement approved by the owner.**
+
+| # | Finding | Placed |
+|---|---|---|
+| 1 | High: every engine start picks a new port and token; a browser page cannot rediscover them, so each watchdog restart, update or reboot leaves a dead terminal window | M1.8a-web: a stable port in settings (fallback when taken, `ikars open` relaunches) and a session secret that survives restarts (DPAPI, D8) |
+| 2 | `HealthView.parts` is `dict[str, Any]`: the generated TypeScript type would be `any`, unchecked at runtime | M1.8a-web: a typed health contract |
+| 3 | Nanosecond integers (`received_ns`, health times) exceed 2^53 and are rounded by JavaScript (by about 0.25 µs); no test guards the rule | M1.8a-web: a contract test; `_ns` documented as approximate in the browser |
+| 4 | Mixed time formats on the wire (seconds and nanoseconds; `AlertView.at` is local time) | M1.8a-web: one format, settled before a client exists |
+| 5 | Market search filters and lowercases the whole index per request on the event loop; type-ahead could stall the feed | M1.8a-web: a precomputed search key, a debounced search, measured at the real index size |
+| 6 | High for back-tests: the recorder writes Kalshi channel schemas, but `ReplaySource` reads only the generic item schema (only the synthetic demo uses it), so G3 does not hold for real data | New slice **M1.13**, before M3's back-tests; G3 marked partly done |
+| 7 | `ReplaySource` loads every recording into memory (about 2.1 GB a day) | M1.13: a streaming merge |
+| 8 | The live runner never loads plugins (`discover`) or registers listeners: a signal or source plugin has no path in, its items are not recorded (D20 A) and never reach the API | M1.12 |
+| 9 | A plugin's emitted item keeps the `received_ns` the plugin chose; a buggy source could let a replay see the future | M1.12: the host stamps it |
+| 10 | Duplicated time helpers (`api.utc_text`/`ledger.iso_utc`, `alerts._ns`/`ledger_import.ns_of`) | PLAN §9: with the next slice touching them |
+
+**Checked, no change needed.** Off the event loop: hourly compaction, the storage governor, share backups, ledger
+checks, GPU detection. Bounded: metric names (per channel and plugin, never per market), the plugin gap list. Slow
+growth only: the alert log and the gap and exchange-status tables (a few rows a day). Shutdown, restart, damaged
+files and the feed were covered by M1.R.

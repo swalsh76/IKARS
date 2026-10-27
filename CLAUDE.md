@@ -114,6 +114,9 @@ slice still needs its own approved plan before code.
   balance does not hold back a resting buy; reconciliation exact). Pending from the owner: the M1.6 auto-start sign-out check.
   **Web review and security posture decided** (owner 2026-10-27; BUILD-LOG 1.8w-sec): browser hardening and npm
   rules fold into M1.8a-web; **CodeQL** added (PR #15 merged as `179dd8c`; green on `main`; required since 2026-10-27).
+  **Platform review 1.R2 done** (owner approved placement 2026-10-27): items 1 to 5 go into M1.8a-web (stable
+  port and session across restarts, typed health, 2^53 test, one time format, search key), 8 and 9 into M1.12,
+  6 and 7 into the new **M1.13** replay slice, 10 parked.
   **Next:** the **M1.8a-web** plan for approval, on branch `m1/8a-web`; then M1.8b. The owner allows `gh pr merge`
   by a local permission rule; merge only when asked.
 
