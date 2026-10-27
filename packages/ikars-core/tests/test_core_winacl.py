@@ -72,7 +72,8 @@ def test_write_without_read_is_not_reading(private_file: Path) -> None:
 
 
 def test_a_deny_entry_grants_nothing(private_file: Path) -> None:
-    icacls(private_file, "/deny", f"*{USERS}:(R)")
+    # read data only: denying (R) would also deny READ_CONTROL, and with it reading the ACL
+    icacls(private_file, "/deny", f"*{USERS}:(RD)")
     assert readers(private_file) == []
 
 

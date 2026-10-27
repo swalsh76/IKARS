@@ -3,7 +3,9 @@
 POSIX file modes do not exist on Windows, so "readable by its owner alone" is decided from the
 file's discretionary ACL instead. A principal counts as a reader when an *allow* entry that applies
 to the file itself (not an inherit-only entry) grants it any read right, or the right to change
-the ACL or take ownership (which lets it grant itself read). The owner (also as OWNER
+the ACL or take ownership (which lets it grant itself read). The account running this process is
+an expected reader too: a file may be owned by the Administrators group (the default for files an
+administrator creates on some machines) while its user reads it. The owner (also as OWNER
 RIGHTS), SYSTEM and the Administrators group are expected readers; anyone else (Users, Everyone,
 Authenticated Users, another account) is reported. A file with no DACL is readable by everyone.
 """
@@ -17,6 +19,22 @@ if sys.platform == "win32":
 
     _advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    # Handles are pointer-sized: without these declarations ctypes would pass them as 32-bit ints.
+    _kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    _kernel32.GetCurrentProcess.argtypes = []
+    _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    _advapi32.OpenProcessToken.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.HANDLE),
+    ]
+    _advapi32.GetTokenInformation.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
 
     _SE_FILE_OBJECT = 1
     _OWNER_SECURITY_INFORMATION = 0x1
@@ -24,6 +42,8 @@ if sys.platform == "win32":
     # ACCESS_ALLOWED and ACCESS_ALLOWED_CALLBACK (conditional): the same layout up to the SID
     _ALLOW_TYPES = frozenset({0x0, 0x9})
     _INHERIT_ONLY_ACE = 0x8
+    _TOKEN_QUERY = 0x8
+    _TOKEN_USER = 1
     # FILE_READ_DATA, GENERIC_READ, GENERIC_ALL, MAXIMUM_ALLOWED read directly; WRITE_DAC and
     # WRITE_OWNER let a principal give itself read. Any of them counts as being able to read.
     _READ_RIGHTS = 0x1 | 0x80000000 | 0x10000000 | 0x02000000 | 0x40000 | 0x80000
@@ -69,9 +89,32 @@ def _sid_string(sid: int) -> str:
         _kernel32.LocalFree(text)
 
 
+def current_user_sid() -> str:
+    """The SID of the account this process runs as (the one reading its own key)."""
+    if sys.platform != "win32":
+        raise NotImplementedError("current_user_sid reads a Windows access token")
+    token = wintypes.HANDLE()
+    if not _advapi32.OpenProcessToken(
+        _kernel32.GetCurrentProcess(), _TOKEN_QUERY, ctypes.byref(token)
+    ):
+        raise AclError(ctypes.get_last_error(), "cannot open this process's access token")
+    try:
+        size = wintypes.DWORD()
+        _advapi32.GetTokenInformation(token, _TOKEN_USER, None, 0, ctypes.byref(size))
+        buffer = ctypes.create_string_buffer(size.value)
+        if not _advapi32.GetTokenInformation(token, _TOKEN_USER, buffer, size, ctypes.byref(size)):
+            raise AclError(ctypes.get_last_error(), "cannot read this process's user")
+        # TOKEN_USER starts with SID_AND_ATTRIBUTES, whose first member is the SID pointer
+        sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p)).contents.value
+        return _sid_string(sid or 0)
+    finally:
+        _kernel32.CloseHandle(token)
+
+
 def other_readers(path: Path) -> list[str]:
-    """The SIDs (as strings) of every principal besides the owner, SYSTEM and Administrators that
-    may read ``path``; ``["Everyone (no DACL)"]`` if the file has no DACL. Windows only."""
+    """The SIDs (as strings) of every principal besides the owner, the current user, SYSTEM and
+    Administrators that may read ``path``; ``["Everyone (no DACL)"]`` if the file has no DACL.
+    Windows only."""
     if sys.platform != "win32":
         raise NotImplementedError("other_readers reads a Windows ACL")
     owner = ctypes.c_void_p()
@@ -92,7 +135,7 @@ def other_readers(path: Path) -> list[str]:
     try:
         if not dacl.value:
             return ["Everyone (no DACL)"]
-        expected = EXPECTED_READERS | {_sid_string(owner.value or 0)}
+        expected = EXPECTED_READERS | {_sid_string(owner.value or 0), current_user_sid()}
         info = _AclSizeInformation()
         if not _advapi32.GetAclInformation(dacl, ctypes.byref(info), ctypes.sizeof(info), 2):
             raise AclError(ctypes.get_last_error(), f"cannot read the ACL of {path}")
