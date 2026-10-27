@@ -15,7 +15,7 @@ Requirements from the owner (2026-10-26):
 
 | # | Requirement |
 |---|---|
-| R1 | Infrastructure based on **KAPS** (`github.com/swalsh76/KAPS`); user interface based on **KalTerm3** (`github.com/swalsh76/KalTerm3`). |
+| R1 | Infrastructure based on **KAPS** (`github.com/swalsh76/KAPS`); user interface based on **KalTerm3** (`github.com/swalsh76/KalTerm3`). *Since 2026-10-27 (D1 amended) the terminal is a TypeScript web app: KalTerm3 remains a reference for behaviour (layouts, risk layer, order routes), not for code.* |
 | R2 | Every step is planned ahead; anything beyond a simple edit is presented to the owner for decision and approval. |
 | R3 | Progress tracked in `CLAUDE.md` (session resume) and in this plan plus `BUILD-LOG.md`. |
 | R4 | Target platform **Windows 11**; hardware as in KAPS (workstation, server host, analytics node). |
@@ -58,7 +58,15 @@ Requirements from the owner (2026-10-26):
 
 Each decision lists the recommendation first. The owner approves, amends or rejects each one.
 
-### D1. Language and stack: Python engine + .NET WPF terminal (APPROVED 2026-10-26)
+### D1. Language and stack: Python engine + TypeScript web terminal (APPROVED 2026-10-26; terminal AMENDED 2026-10-27)
+
+**Amendment (owner, 2026-10-27):** the terminal is a **TypeScript web app** (React, Vite, strict TypeScript, pnpm),
+served by the engine on its loopback address and opened as a **Microsoft Edge app window** with its own IKARS
+profile (`msedge --app`). The owner chose it for flexibility and future expansion and customisation. The .NET WPF
+terminal built in M1.8a was retired; it is kept in history at the tag `wpf-terminal-final`, and the behaviour it
+settled carries over (BUILD-LOG 1.8w). Alternatives weighed (BUILD-LOG 1.8w): staying with WPF; Avalonia; WinUI 3;
+Blazor Hybrid; a .NET or Tauri host around WebView2. The original text follows for the record.
+
 
 - **Engine (Python 3.13, `uv` workspace):** forks `kaps-core` as `ikars-core` (signing, REST, WebSocket,
   fixed-point money, fees; already portable). Python has by far the best libraries for the new work: feed and
@@ -69,6 +77,9 @@ Each decision lists the recommendation first. The owner approves, amends or reje
 - **One source of truth for money:** fees, P&L and recommendations are computed **only in the engine**; the terminal
   displays them. No fee logic is duplicated across languages.
 - *Alternatives (not chosen):* (a) **all .NET**, reusing all of KalTerm3; (b) **all Python** with a Qt (PySide6) GUI.
+- *Superseded 2026-10-27:* the `.NET 10, WPF` terminal bullet above (see the amendment). The **one source of truth
+  for money** stands, and matters more in TypeScript: the web terminal does no money arithmetic; it formats the
+  engine's integers with integer operations only.
 
 #### Terminal navigation model (owner, 2026-10-26: R9)
 
@@ -109,9 +120,18 @@ and approved in M1 before any screen is built:
   **deltas** (markets, source items, recommendations, health), with subscriptions changed over HTTP (owner,
   2026-10-27: amended from one WebSocket, so KalTerm3's tested SSE client and reconnect code carry over). Server: Starlette/uvicorn; serialisation with `msgspec` (fastest
   validated JSON in Python).
-- The terminal coalesces updates and repaints at a fixed rate (about 5 to 10 Hz) so WPF stays light under bursts.
-- Contracts are defined once in the engine and exported as JSON Schema; the C# records are generated/checked from
-  it by a contract test.
+- The terminal coalesces updates and repaints at a fixed rate (about 5 to 10 Hz) so the UI stays light under bursts.
+- Contracts are defined once in the engine and exported as JSON Schema. *Amended 2026-10-27:* the TypeScript types
+  are **generated** from the schema, and a TypeScript test reads every golden example with runtime validation
+  (unknown fields refused), so neither side can drift silently.
+- **The web terminal (amended 2026-10-27):**
+  - The engine also serves the terminal's static files, so the page and the API share one loopback origin (no
+    cross-origin rules).
+  - **Sign-in:** the launch link carries a **one-time code**; the engine exchanges it for an `HttpOnly`,
+    `SameSite=Strict` cookie for this port only, so the session token is never readable by page scripts. The guard
+    accepts that cookie or the bearer token, and a browser `Origin` only when it is the engine's own loopback
+    origin. Loopback only, as before.
+  - The stream is read with `fetch` (not `EventSource`), so reconnects and the alert resume work as in M1.8a.
 - *Alternative:* gRPC with Protocol Buffers (strong cross-language typing and streaming, but more tooling and it
   discards KalTerm3's stream client).
 
@@ -354,7 +374,9 @@ arithmetic. For each recommendation:
 ### D11. Quality gates (APPROVED 2026-10-26)
 
 - Python: `ruff`, `mypy --strict`, `pytest` (90% coverage; 95% for money and fees). C#: warnings as errors, xUnit v3,
-  same coverage rule. CI on GitHub Actions **windows-latest** (the target platform). Live Kalshi tests GET-only, as
+  same coverage rule. *Amended 2026-10-27 (web terminal):* TypeScript `strict`, ESLint, Vitest with **90% coverage**
+  enforced by its thresholds, Playwright for whole screens, `pnpm audit` and a frozen lockfile in CI. The C# gates
+  retire with the C# code. CI on GitHub Actions **windows-latest** (the target platform). Live Kalshi tests GET-only, as
   in KAPS.
 - **Rolling mini code reviews (R14, owner instruction 2026-10-26, APPROVED):** besides tests and CI, every commit
   and every merge gets a small, focused review, so large periodic whole-codebase reviews are rarely needed.
@@ -390,7 +412,8 @@ Both are built by CI from a tag and published to GitHub Releases.
 - **Engine:** a standalone CPython (python-build-standalone, the build `uv` itself uses) with the locked packages
   pre-installed. Nothing is frozen (unlike PyInstaller), so there are no import quirks and no antivirus false
   alarms from frozen executables.
-- **Terminal:** `dotnet publish` self-contained for `win-x64`.
+- **Terminal:** `dotnet publish` self-contained for `win-x64`. *Amended 2026-10-27:* the web terminal's built static
+  files, served by the engine. No .NET runtime is shipped; Edge (part of Windows 11) shows the app window.
 - **Optional extras:** the GPU packages and the local model (D9, D15) are downloaded on demand from the terminal's
   settings, never bundled, so the base download stays small.
 - Settings, data and logs go under `%LOCALAPPDATA%\IKARS`, never in the program folder. The portable build instead
@@ -606,7 +629,7 @@ only through a milestone proposal approved by the owner.
 | **M1.5 Audit and tax ledger, portfolio** | D18's store, hash chain, checkpoints, `verify`. Account import (fills, settlements, fees, transfers, funding, interest) with reconciliation. Positions and exposure marked to market (G1). The paper stream kept apart. **Versioned schema migrations with a backup before each one** (G). Nightly backup to the share's `ikars\` subtree; `ledger restore-drill` (G14). | Reads the owner's account (GET only). **Creates `ikars\` and its marker on the NAS share** (owner's go-ahead at the slice plan). |
 | **M1.6 Run mode and alerts** | The engine as a background process independent of the terminal; auto-start at login; keep-awake while running; a scheduled watchdog that restarts it (G5). The **alert framework**: priority levels, de-duplication, throttling, quiet hours, digest (H). **Windows notifications on the workstation** for engine down, feed stale and backup failed (G6; no phone pushes, owner 2026-10-27). **GPU detection** (D15): the device, driver and CUDA version in health, CPU paths when there is none (moved from M1.4b, owner 2026-10-27). | Adds a per-user logon task and a scheduled watchdog task (no admin); shows test notifications on the workstation. |
 | **M1.7 Loopback API and contracts** | Starlette/uvicorn on `127.0.0.1` with a per-session token and a **version handshake** (G). Snapshots over HTTP, deltas over one WebSocket (markets, books, portfolio, ledger, alerts, health). `msgspec` contracts exported as JSON Schema; the C# contract test. | None. |
-| **M1.8 Terminal shell** | From KalTerm3, stripped of the SQL Server and multi-user parts. The navigation service, the Overview per the approved mock-ups (portfolio included), the linked-items panel, the health view, hotkeys, layouts, themes. Live markets and a ledger view. Versioned settings and the first-run wizard (G15, G). A redacted **support bundle** (I). Frame time measured (J). Connects to the running engine or starts it. | None. |
+| **M1.8 Terminal shell** | *Replanned 2026-10-27 (D1 amended):* **M1.8a-web** (the engine serves the app with the one-time-code sign-in and an `open` command; generated types and golden tests; the stream reader, update hub and URL navigator; the screens from the mock-ups with Lightweight Charts and AG Grid; the update-to-screen meter and its load test) and **M1.8b** (hotkeys, layouts, themes, settings and wizard, support bundle). The original text: from KalTerm3, stripped of the SQL Server and multi-user parts. The navigation service, the Overview per the approved mock-ups (portfolio included), the linked-items panel, the health view, hotkeys, layouts, themes. Live markets and a ledger view. Versioned settings and the first-run wizard (G15, G). A redacted **support bundle** (I). Frame time measured (J). Connects to the running engine or starts it. | None. |
 | **M1.9 Packaging** | Velopack `Setup.exe` and the portable zip with the standalone Python engine and the terminal. Per-user install on a clean Windows 11 account. The first-run wizard on a fresh install. An auto-update from one release to the next **with migrations**, and a tested **rollback** (G). Signing decided (G12). | A test pre-release on GitHub. |
 | **M1.10 Perp research** | Read-only: perp endpoints, fees, funding schedule, margin and liquidation rules; `docs/research/perps.md`. | Live GET requests. |
 | **M1.12 End-to-end momentum** | The thin vertical slice (D21-2): a minimal momentum signal on Kalshi's feed, **registered by hash** (G4); a minimal P&L after fees (D7's entry and exit costs, `ikars-core` fees); the recommendation on the Overview with a drill-down and provenance (F); a priority-tiered alert (H); journalled and scored forward from day one. No sizing beyond a fixed small size, and no news or LLM. | None (read-only). |
@@ -645,7 +668,7 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 | M1.5b Share backups, restore drill, portfolio | **done** (BUILD-LOG 1.5b; PR #8 merged as `5b6f702`) |
 | M1.6 Run mode and alerts | **done** (BUILD-LOG 1.6; PR #9 merged as `2efc95f`); the owner's sign-out check of auto-start pending |
 | M1.7 Loopback API and contracts | **done** (BUILD-LOG 1.7; PR #10 merged as `0ba5d83`) |
-| M1.8 Terminal shell | plan approved 2026-10-27 (split a/b); **M1.8a done** (BUILD-LOG 1.8a; PR #11 merged as `77849e3`; D20 J amended to update-to-screen, met at the console); M1.8b next (plan to be proposed) |
+| M1.8 Terminal shell | M1.8a (WPF) done and merged as `77849e3`, then **retired by the D1 amendment** (2026-10-27; BUILD-LOG 1.8w; tag `wpf-terminal-final`). **WPF pruned** (branch `m1/8-prune-wpf`). Next: the **M1.8a-web** plan, for approval; then M1.8b |
 
 ## 9. Parking lot
 

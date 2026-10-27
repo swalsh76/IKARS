@@ -1626,3 +1626,46 @@ made-up context: 100 watched markets whose quotes and books all change every 100
 **M1.8a built**, subject to the owner's merge.
 
 **M1.8a done:** PR #11 merged as `77849e3` (2026-10-27).
+
+### 1.8w Direction change: a TypeScript web terminal (owner, 2026-10-27)
+
+**Decision.** After M1.8a, the owner compared the WPF terminal with Avalonia, WinUI 3, Blazor Hybrid and a
+TypeScript web app, and chose **TypeScript** for flexibility and future expansion and customisation. All the
+recommended answers were approved:
+1. **Window:** the engine serves the app on its loopback address; it opens as a **Microsoft Edge app window**
+   (`msedge --app`) with its own IKARS profile (none of the owner's extensions or cookies). No host program.
+2. **Sign-in:** a **one-time code** in the launch link, exchanged by the engine for an `HttpOnly`,
+   `SameSite=Strict` cookie for this port only; the session token is never readable by page scripts. The guard
+   accepts only the engine's own loopback origin.
+3. **Framework:** **React**, with Vite, strict TypeScript, pnpm, Vitest (90%), Playwright, ESLint and `pnpm audit`.
+4. **Money:** the web terminal does no money arithmetic. The engine's integers (10^-6 dollars, 10^-2 contracts)
+   are exact as JavaScript numbers up to 2^53; a distinct money type and integer-only formatting, with tests,
+   keep them that way.
+
+Decisions amended: D1 (the terminal), D3 (static files, sign-in, fetch-based stream reading), D11 (the web gates),
+D12 (no .NET runtime shipped); M1.8 replanned as **M1.8a-web** and **M1.8b**. R9 (Overview, drill-down,
+cross-reference) and D20 J (update to screen, p99 at most 33 ms) are unchanged.
+
+**What was reusable.**
+
+| Part | Verdict |
+|---|---|
+| The Python engine | Kept. Two changes come with M1.8a-web: serving the app, and the browser sign-in. |
+| `contracts/` (the JSON Schema and golden examples) | Kept: the source of the generated TypeScript types and their golden test. |
+| `docs/design/mockups/` (HTML and CSS) | Kept: the starting point of the screens. |
+| `Ikars.Terminal`, `Ikars.Client`, `Ikars.Contracts`, `Ikars.Core`, their tests, and the .NET build files | Removed (about 4,100 lines of C# and XAML). History keeps them at the tag `wpf-terminal-final`. |
+| CI's `dotnet` job, Dependabot's `nuget` entry, `tools/ci/check-coverage.ps1` | Removed; the web job and `npm` entry come with M1.8a-web. |
+
+**Behaviour that carries over** (settled and tested in M1.8a; re-implemented and re-tested in TypeScript):
+1. One navigator: drill-down, breadcrumbs, back and forward; in the browser, real URLs, so every screen can be
+   linked to.
+2. A screen left while loading cancels its requests and lets go of its subscriptions.
+3. Updates handed to the screens about ten times a second; a subscription change sent only when the union changed;
+   one flush at a time; a failed change retried.
+4. The stream: resume after the last alert; backoff that a refusal does not reset; a stream silent for 20 s is
+   dropped; a request timeout is not taken for an engine restart.
+5. Lists updated in place; alerts once each, newest first by line, at most 200 per priority.
+6. The **update-to-screen meter** (D20 J): from a change to the frame after the one that shows it, with the UI work
+   per update; and the console load test (100 made-up markets at 10 Hz through the engine's real API server).
+7. Open markets first; an empty chart says why; the book note for unwatched markets.
+

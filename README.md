@@ -5,8 +5,9 @@ recommendations in a real-time Windows 11 terminal**. Every recommendation shows
 other entry and exit costs**. IKARS is aimed at prices set by people trading at a human pace, not at the
 millisecond races professional firms win.
 
-It is a Python engine with a .NET WPF terminal. Its infrastructure comes from the owner's earlier projects KAPS,
-SPARQ and KalTerm3.
+It is a Python engine with a TypeScript web terminal, served by the engine on the workstation's loopback address
+and shown in an Edge app window. Its infrastructure comes from the owner's earlier projects KAPS, SPARQ and
+KalTerm3.
 
 **Status:** being set up (milestone M1). IKARS only recommends; it sends no orders. See [docs/PLAN.md](docs/PLAN.md)
 for the plan and [docs/BUILD-LOG.md](docs/BUILD-LOG.md) for how each part was built and verified.
