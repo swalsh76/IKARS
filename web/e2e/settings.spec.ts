@@ -1,0 +1,77 @@
+// Settings and the first-run wizard (M1.8b-1), against the made-up-data server.
+
+import { expect, test, type Page } from "@playwright/test";
+import { base, signInUrl } from "./demo";
+import { startDemo, type Demo } from "./demo-server";
+
+function watchPolicy(page: Page): string[] {
+  const refused: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" || /Content Security Policy|Refused to/i.test(m.text())) refused.push(m.text());
+  });
+  page.on("pageerror", (e) => refused.push(`page error: ${e.message}`));
+  return refused;
+}
+
+test("settings: a skin is applied, saved and kept across a reload; a change notes its restart", async ({ page }) => {
+  const refused = watchPolicy(page);
+  await page.goto(await signInUrl());
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByRole("region", { name: "Kalshi key" })).toContainText("IKARS_KALSHI_KEY_ID");
+  await page.locator("#setting-skin").selectOption("midnight");
+  const skin = () => page.evaluate(() => document.documentElement.getAttribute("data-theme"));
+  expect(await skin()).toBe("midnight");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect.poll(skin).toBe("midnight"); // loaded from the engine's settings
+  await page.locator("#setting-port").fill("48000");
+  await page.locator("#setting-quiet_start").fill("23:00");
+  await expect(page.getByTestId("settings-note")).toContainText("2 changes not saved");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByTestId("settings-note")).toContainText("Saved");
+  await expect(page.getByTestId("settings-note")).toContainText("the port applies after an engine restart");
+  await page.locator("#setting-session_days").fill("3.5");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByTestId("settings-note")).toContainText("session days must be a whole number");
+  await page.locator("#setting-skin").selectOption("system"); // leave the demo as it was found
+  expect(refused).toEqual([]);
+});
+
+test.describe("the first-run wizard", () => {
+  let demo: Demo;
+  test.beforeAll(async () => {
+    demo = await startDemo(["--first-run"]);
+  });
+  test.afterAll(() => demo.stop());
+
+  test("opens when there are no settings, saves the zone and quiet hours, and ends on the Overview", async ({ page }) => {
+    const refused = watchPolicy(page);
+    const answer = await fetch(`http://127.0.0.1:${demo.port}/v1/session/code`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${demo.token}` },
+    });
+    await page.goto(((await answer.json()) as { url: string }).url);
+    await expect(page).toHaveURL(/\/welcome$/);
+    await expect(page.getByRole("region", { name: "Kalshi key" })).toContainText("IKARS_KALSHI_KEY_ID");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByRole("region", { name: "Engine and feed" })).toContainText("connected");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Skip for now" }).click();
+    await page.locator("#wizard-quiet-start").fill("21:30");
+    await page.getByRole("button", { name: "Save and continue" }).click();
+    await expect(page.getByRole("region", { name: "Done" })).toContainText("quiet hours 21:30 to 07:00");
+    await page.getByRole("button", { name: "Start at sign-in" }).click();
+    await expect(page.getByRole("region", { name: "Done" })).toContainText("Start at sign-in installed");
+    await page.getByRole("button", { name: "Open the Overview" }).click();
+    await expect(page.getByRole("heading", { name: "Portfolio and exposure" })).toBeVisible();
+    await page.reload(); // settings exist now: no wizard
+    await expect(page).toHaveURL(/\/overview$/);
+    expect(refused).toEqual([]);
+  });
+});
+
+test("the settings screen exists at its address", async ({ page }) => {
+  await page.goto(await signInUrl());
+  await page.goto(`${base()}/settings`);
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+});

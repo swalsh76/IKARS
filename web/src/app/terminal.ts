@@ -5,6 +5,7 @@ import { Hub, type HubDeps } from "../api/hub";
 import { Meter } from "../api/meter";
 import { EventStream, type StreamDeps } from "../api/stream";
 import { browserNavigator, type Navigator } from "../nav/route";
+import { applyTheme, isTheme, type Theme } from "./theme";
 
 export interface Terminal {
   hub: Hub;
@@ -21,6 +22,7 @@ export interface TerminalDeps {
   meter?: Meter;
   stream?: StreamDeps;
   navigator?: Navigator;
+  theme?: (theme: Theme) => void;
 }
 
 const timers = {
@@ -78,6 +80,12 @@ export async function startTerminal(deps: Partial<TerminalDeps> = {}): Promise<T
   try {
     await (deps.signIn ?? signIn)();
     await loadFirst();
+    // the saved skin, and the wizard on a first run (an engine without settings keeps the defaults)
+    const settings = await fetchJson("/v1/settings", "SettingsView").catch(() => null);
+    if (settings) {
+      (deps.theme ?? applyTheme)(isTheme(settings.skin) ? settings.skin : "system");
+      if (settings.first_run && navigator.current().screen !== "welcome") navigator.replace("/welcome");
+    }
   } catch (error) {
     // the stream reports the state from here (signed out, or the engine not answering yet)
     if (!(error instanceof ApiFailure)) throw error;

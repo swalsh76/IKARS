@@ -9,6 +9,8 @@ export type Route =
   | { screen: "market"; ticker: string }
   | { screen: "ledger" }
   | { screen: "alerts" }
+  | { screen: "settings" }
+  | { screen: "welcome" }
   | { screen: "missing"; path: string };
 
 export interface Crumb {
@@ -23,6 +25,8 @@ const TITLES: Record<Exclude<Route["screen"], "missing">, string> = {
   market: "Market",
   ledger: "Ledger",
   alerts: "Alerts",
+  settings: "Settings",
+  welcome: "Set up IKARS",
 };
 
 /** The route an address names. */
@@ -35,7 +39,9 @@ export function parse(pathname: string, search = ""): Route {
   }
   const [first, second] = parts;
   if (parts.length === 0 || (first === "overview" && parts.length === 1)) return { screen: "overview" };
-  if (parts.length === 1 && (first === "health" || first === "ledger" || first === "alerts")) return { screen: first };
+  if (parts.length === 1 && (first === "health" || first === "ledger" || first === "alerts" || first === "settings" || first === "welcome")) {
+    return { screen: first };
+  }
   if (parts.length === 1 && first === "markets") {
     const params = new URLSearchParams(search);
     const category = params.get("category");

@@ -87,6 +87,31 @@ describe("starting the terminal", () => {
     terminal.stop();
   });
 
+  it("applies the saved skin and opens the wizard on a first run", async () => {
+    const shown: string[] = [];
+    const replaced: string[] = [];
+    const get = vi.fn(async (path: string) => {
+      if (path === "/v1/settings") return { skin: "midnight", first_run: true };
+      return path.startsWith("/v1/alerts") ? { items: [] } : {};
+    });
+    const nav = { ...navigator, replace: (to: string) => replaced.push(to) };
+    const terminal = await startTerminal({ signIn: async () => false, get: get as never, hub: hubTimers, stream: quiet, navigator: nav, theme: (t) => shown.push(t) });
+    expect(shown).toEqual(["midnight"]);
+    expect(replaced).toEqual(["/welcome"]);
+    terminal.stop();
+  });
+
+  it("keeps the defaults when the engine has no settings", async () => {
+    const shown: string[] = [];
+    const get = vi.fn(async (path: string) => {
+      if (path === "/v1/settings") throw new ApiFailure("refused", "no settings", 404);
+      return path.startsWith("/v1/alerts") ? { items: [] } : {};
+    });
+    const terminal = await startTerminal({ signIn: async () => false, get: get as never, hub: hubTimers, stream: quiet, navigator, theme: (t) => shown.push(t) });
+    expect(shown).toEqual([]);
+    terminal.stop();
+  });
+
   it("lets a programming error through", async () => {
     await expect(
       startTerminal({

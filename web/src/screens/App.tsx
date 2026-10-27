@@ -5,6 +5,8 @@ import { Guarded } from "./Guarded";
 import { Alerts } from "./Alerts";
 import { Health } from "./Health";
 import { Ledger } from "./Ledger";
+import { Settings } from "./Settings";
+import { Welcome } from "./Welcome";
 import { Overview } from "./Overview";
 import { Link, Shell } from "./Shell";
 
@@ -30,6 +32,10 @@ function Screen() {
       return <Ledger />;
     case "alerts":
       return <Alerts />;
+    case "settings":
+      return <Settings />;
+    case "welcome":
+      return <Welcome />;
     case "missing":
       return (
         <section className="card">

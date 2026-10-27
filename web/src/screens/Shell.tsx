@@ -25,6 +25,7 @@ const NAV: { label: string; to: string; screens: Route["screen"][] }[] = [
   { label: "Ledger", to: "/ledger", screens: ["ledger"] },
   { label: "Alerts", to: "/alerts", screens: ["alerts"] },
   { label: "Health", to: "/health", screens: ["health"] },
+  { label: "Settings", to: "/settings", screens: ["settings", "welcome"] },
 ];
 
 function Search() {
