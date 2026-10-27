@@ -530,3 +530,119 @@ checked against the code, and all **fixed** in `ff5a13d`:
 - The deny test now denies read-data only (`(RD)`): denying `(R)` also denies `READ_CONTROL`, and with it reading
   the ACL.
 - The owner's own key file still passes.
+
+**M1.2 done:** PR #3 merged by the owner's instruction as `3485b16` (2026-10-27 00:18 UTC). The owner added a
+local permission rule so the assistant can run `gh pr merge` when asked; `.claude/settings.local.json` is
+git-ignored.
+
+### 1.3 UI mock-ups (plan PROPOSED 2026-10-27; branch `m1/3-mockups`)
+
+**Builds.** Clickable mock-ups of the terminal's navigation model (R9), with made-up data (`KXDEMO-…`), for the
+owner's approval **before M1.8 builds any screen**. They follow the Windows 11 Fluent look of KalTerm3's WPF
+terminal, and its existing views (Markets, MarketDetail, OrderBook, CandleChart, Alerts, Status) are the starting
+point.
+
+1. **Overview (main screen):**
+   - top recommendations (expected value after costs, return per day, size, a "why" line);
+   - live movers;
+   - latest source items with their linked markets;
+   - portfolio and exposure (G1);
+   - perp funding;
+   - the journal's scorecard;
+   - a health strip (feeds, latency, backups, storage, cost).
+
+   Every element links to a drill-down.
+2. **Drill-down, markets path:** category → series → event → market detail (price chart with news markers, order
+   book depth, the entry and exit P&L scenarios of D7) → recommendation detail (evidence, provenance, lifecycle).
+   Breadcrumbs, back and forward.
+3. **Cross-reference panel:** a docked panel for whatever is selected: source items that moved it, related
+   markets, a perp hedge, past recommendations and outcomes; selection kept in sync.
+4. **Health view** (G10, G11, J, D21-5) and the **alert** styles by priority (H).
+5. **Hotkeys overlay, dark and light, a multi-monitor layout sketch** (G16).
+
+**Medium (open question 1).** *Recommended:* one self-contained HTML mock-up, published as a **private claude.ai
+Artifact** for the owner to click through and comment on. Its source is kept in `docs/design/mockups/` (made-up
+data only). It is fast to change between rounds; the WPF build in M1.8 then follows the approved version.
+*Alternative:* a throwaway WPF/XAML prototype, closer to the final look but slower to iterate.
+
+**Changes on any machine:** none (a private artifact on the owner's claude.ai account).
+
+**New packages:** none in the product. The mock-up may load a charting library from a CDN, pinned and only in the
+mock-up.
+
+**Live checks:** none.
+
+**Open questions.**
+1. HTML Artifact (recommended) or a WPF prototype?
+2. Rounds: the owner comments; the assistant revises; **approval is recorded in this log** before M1.8.
+
+### 1.4a Engine core (plan PROPOSED 2026-10-27; branch `m1/4a-engine-core`)
+
+**Builds** (in `ikars-engine`; no network in this slice):
+
+1. **Configuration and paths.**
+   - Settings in a versioned TOML file (G15, G): read with the standard library's `tomllib`, written with
+     `tomli-w` (already in the lock).
+   - Data, logs and settings under `%LOCALAPPDATA%\IKARS`, or beside the program when `portable.marker` exists
+     (D12).
+   - Secrets are never stored in the settings, only the names of the environment variables (D8).
+2. **Logging (I).** The standard library's `logging`, as JSON lines, rotated by size, with a **redaction filter**:
+   - the key id and key path (from the environment), PEM blocks and bearer tokens are masked;
+   - account models are never passed to a logger (enforced by a test).
+3. **Item, reference and link model (D1, D19, A).**
+   - Typed references (`Ref(kind, id)`).
+   - Items with **publisher time and received time**.
+   - Links between references.
+   - All as `msgspec` structs, which the loopback API (M1.7) reuses as its contracts.
+4. **Plugin registry (D19):** plugins found through Python entry points (group `ikars.plugins`); kinds source,
+   signal, order type and venue, each a small typed interface that declares its settings, secrets, rate budget
+   and item kinds. Each plugin runs in **its own task** with:
+   - a bounded queue (open question 2);
+   - a timeout on every call;
+   - a crash boundary with restart backoff.
+
+   One failing plugin never stalls the others.
+5. **One input interface, live or replay (G3, A).**
+   - An `EventClock` (the wall clock, or a virtual clock in replay) and an event stream ordered by **received
+     time**.
+   - The replay source reads recorded Parquet (the schema is defined here and written by M1.4b's recorder) and
+     releases each item **only at its received time**, so nothing downstream can see the future.
+   - The same engine code runs on either source.
+6. **Clock skew (G10):** `ikars_core.clock`'s estimator wired in; the offset is used by the signers and reported
+   in health.
+7. **Metrics (J):**
+   - counters;
+   - latency histograms (fixed log-scale buckets, cheap enough for the hot path);
+   - **feed-to-alert latency** stages stamped with monotonic times;
+   - a hook for the terminal's frame time (M1.8).
+8. **Cost tracking (D21-5):** per-plugin spend against a monthly budget; past a threshold a plugin is told to
+   degrade (cheaper model, slower polling), and at the ceiling it is paused.
+9. `python -m ikars_engine` runs the core with no plugins and a replay of a synthetic recording, as a smoke test.
+
+**Changes on this machine:** none beyond the repository and package caches.
+
+**New packages:**
+
+| Package | Version | Licence |
+|---|---|---|
+| `msgspec` | 0.22.0 (2026-09-29) | BSD-3 |
+| `pyarrow` | 26.0.0 (2026-10-09) | Apache-2.0 |
+
+Both are over two weeks old; `pyarrow` is also what M1.4b writes with.
+
+**Tests.**
+- **Determinism:** the same recording replayed twice gives byte-identical outputs.
+- **Point-in-time:** an item is never released before its received time.
+- **Isolation:** a plugin that raises, hangs or floods is contained, restarted with backoff, and counted.
+- **Redaction:** planted secrets never reach a log file.
+- **Settings:** migration from an older version.
+- Property tests on the clock and the histogram.
+
+**Live checks:** none (offline slice).
+
+**Open questions.**
+1. **Settings format:** TOML (recommended: human-editable, `tomllib` in the standard library) or JSON.
+2. **When a plugin's queue is full:** *recommended* drop the oldest item and **record a gap** (counted, shown in
+   health, kept in the gap log), never a silent drop and never blocking the feed. *Alternative:* block the
+   producer with a timeout.
+3. **Logs:** JSON lines (recommended: machine-readable for the support bundle) or plain text.

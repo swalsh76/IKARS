@@ -90,13 +90,9 @@ slice still needs its own approved plan before code.
   `IKARS_KALSHI_PRIVATE_KEY_PATH` (separate from KAPS/SPARQ's `KALSHI_*`). Never print or read the id, the path or the
   file; check with `Test-Path` only; load into a single command's process. First use: M1.2's live tests.
 - **M1 slice list and gates approved (2026-10-26).** **M1.1 done:** PR #1 merged as `2f19222`, CI green on `main`
-  (BUILD-LOG 1.1). **M1.2 (`ikars-core`) built and verified** on `m1/2-core` (BUILD-LOG 1.2), live included:
-  - the signed account reads parse the owner's real records;
-  - order books keep up and match the ticker (both sides are bids);
-  - production book messages have no `clock` yet.
-
-  Merge review: 10 findings, all fixed. **Next: PR #2 for the owner to merge**, then the M1.4a plan (M1.3
-  mock-ups run alongside).
+  (BUILD-LOG 1.1). **M1.2 done** (PR #3 merged as `3485b16`; BUILD-LOG 1.2). **M1.3 (mock-ups) and M1.4a (engine core) plans
+  proposed** (BUILD-LOG 1.3, 1.4a) on branch `m1/4a-engine-core`, awaiting the owner. The owner allows
+  `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 
