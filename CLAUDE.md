@@ -101,7 +101,7 @@ slice still needs its own approved plan before code.
   **M1.5 done** (PR #8 merged as `5b6f702`): the real ledger lives in `%LOCALAPPDATA%\IKARS\ledger`; share backups
   and the restore drill pass. **M1.6 done** (PR #9 merged as `2efc95f`): the engine runs in the background with the watchdog task and
   auto-start (the owner's sign-out check pending). **M1.7 done** (PR #10 merged as `0ba5d83`): token-guarded loopback API with an SSE stream. **M1.8 plan APPROVED** (BUILD-LOG 1.8: split a/b, later panels drawn with notes, ScottPlot + candles route, p99
-  frame <= 33 ms, views out of the coverage gate). **M1.8a built** on `m1/8-terminal` (BUILD-LOG 1.8a; merge review done, itemized): PR #11 open. D20 J amended by the owner (2026-10-27): **update to screen p99 <= 33 ms** (frame gaps measure WPF idling, not slowness); met at the console (p99 24 to 32 ms under the 100-market load). Waiting for the owner's merge. Then M1.8b. The owner allows
+  frame <= 33 ms, views out of the coverage gate). **M1.8a built** on `m1/8-terminal` (BUILD-LOG 1.8a; merge review done, itemized): PR #11 open. D20 J amended by the owner (2026-10-27): **update to screen p99 <= 33 ms** (frame gaps measure WPF idling, not slowness); met at the console (p99 24 to 32 ms under the 100-market load). **M1.8a done** (PR #11 merged as `77849e3`). **Paused by the owner (2026-10-27).** Next on resume: propose the M1.8b plan (hotkeys, layouts, themes, versioned settings with the first-run wizard, support bundle) for approval; the owner's M1.6 auto-start sign-out check is still pending. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

@@ -645,7 +645,7 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 | M1.5b Share backups, restore drill, portfolio | **done** (BUILD-LOG 1.5b; PR #8 merged as `5b6f702`) |
 | M1.6 Run mode and alerts | **done** (BUILD-LOG 1.6; PR #9 merged as `2efc95f`); the owner's sign-out check of auto-start pending |
 | M1.7 Loopback API and contracts | **done** (BUILD-LOG 1.7; PR #10 merged as `0ba5d83`) |
-| M1.8 Terminal shell | plan approved 2026-10-27 (split a/b); **M1.8a built** (BUILD-LOG 1.8a; PR #11; D20 J amended to update-to-screen, met at the console); M1.8b next |
+| M1.8 Terminal shell | plan approved 2026-10-27 (split a/b); **M1.8a done** (BUILD-LOG 1.8a; PR #11 merged as `77849e3`; D20 J amended to update-to-screen, met at the console); M1.8b next (plan to be proposed) |
 
 ## 9. Parking lot
 
