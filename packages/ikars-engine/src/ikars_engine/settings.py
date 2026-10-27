@@ -7,6 +7,7 @@ first and are then renamed over the old one, so a crash never leaves half a file
 """
 
 import os
+import re
 import shutil
 import tomllib
 from collections.abc import Callable
@@ -16,6 +17,7 @@ from typing import Any
 
 import msgspec
 import tomli_w
+from ikars_core.fixedpoint import PrecisionError, to_e6
 
 VERSION = 2
 
@@ -58,38 +60,91 @@ class SettingsError(ValueError):
     """The settings file cannot be read, or holds a value it must not."""
 
 
-SECRET_LOOKING = ("secret", "password", "token", "private_key")
+# Words that make a key name a secret (whole words of the name, split on _ - .), and pairs that do.
+SECRET_WORDS = frozenset(
+    {
+        "secret",
+        "secrets",
+        "password",
+        "passwd",
+        "token",
+        "apikey",
+        "credential",
+        "credentials",
+        "auth",
+        "cookie",
+        "bearer",
+        "passphrase",
+    }
+)
+SECRET_PAIRS = frozenset({("api", "key"), ("private", "key"), ("access", "key"), ("secret", "key")})
+# A key naming an environment variable holds a name, not a secret (PLAN D8)
+VARIABLE_SUFFIX = "_variable"
+_PEM_MARK = "-----BEGIN"
+
+
+def _looks_secret(key: str) -> bool:
+    lowered = key.lower()
+    if lowered.endswith(VARIABLE_SUFFIX):
+        return False
+    words = [w for w in re.split(r"[_\-.\s]+", lowered) if w]
+    return (
+        lowered == "key"
+        or any(w in SECRET_WORDS for w in words)
+        or any(pair in SECRET_PAIRS for pair in zip(words, words[1:], strict=False))
+    )
 
 
 def _v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
-    # version 1 kept the monthly budget in whole dollars as budget.monthly_dollars
+    # version 1 kept the monthly budget in dollars as budget.monthly_dollars; converted exactly
     budget = dict(data.get("budget", {}))
     if "monthly_dollars" in budget:
-        budget["monthly_e6"] = int(budget.pop("monthly_dollars")) * 1_000_000
+        value = budget.pop("monthly_dollars")
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            raise SettingsError(f"budget.monthly_dollars is not an amount: {value!r}")
+        try:
+            budget["monthly_e6"] = to_e6(str(value))
+        except (ValueError, PrecisionError) as exc:
+            raise SettingsError(f"budget.monthly_dollars is not an amount: {value!r}") from exc
     return {**data, "budget": budget, "version": 2}
 
 
 MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {1: _v1_to_v2}
 
 
+def _version(data: dict[str, Any]) -> int:
+    version = data.get("version", 1)
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        raise SettingsError(f"the settings version must be a whole number from 1, got {version!r}")
+    return version
+
+
 def migrate(data: dict[str, Any]) -> dict[str, Any]:
-    version = int(data.get("version", 1))
+    version = _version(data)
     if version > VERSION:
         raise SettingsError(f"the settings are from a newer IKARS (version {version} > {VERSION})")
     while version < VERSION:
-        data = MIGRATIONS[version](data)
-        version = int(data["version"])
+        step = MIGRATIONS.get(version)
+        if step is None:
+            raise SettingsError(f"no migration from settings version {version}")
+        data = step(data)
+        version = _version(data)
     return data
 
 
 def _refuse_secrets(data: Any, where: str = "") -> None:
     if isinstance(data, dict):
         for key, value in data.items():
-            if any(word in str(key).lower() for word in SECRET_LOOKING):
+            if _looks_secret(str(key)):
                 raise SettingsError(
                     f"settings must not hold secrets ({where}{key}); name an environment variable"
                 )
             _refuse_secrets(value, f"{where}{key}.")
+    elif isinstance(data, list):
+        for value in data:
+            _refuse_secrets(value, where)
+    elif isinstance(data, str) and _PEM_MARK in data:
+        raise SettingsError(f"settings must not hold a key or certificate ({where.rstrip('.')})")
 
 
 def load(path: Path) -> Settings:
@@ -102,20 +157,25 @@ def load(path: Path) -> Settings:
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
         raise SettingsError(f"the settings file is not valid TOML: {exc}") from exc
     _refuse_secrets(raw)
-    migrated = migrate(dict(raw))
+    migrated = migrate(dict(raw))  # raises SettingsError, never a bare error
     try:
         settings = msgspec.convert(migrated, Settings)
     except msgspec.ValidationError as exc:
         raise SettingsError(f"the settings file has a bad value: {exc}") from exc
-    if int(raw.get("version", 1)) != VERSION:
+    if _version(raw) != VERSION:
         backup(path)
         save(settings, path)
     return settings
 
 
 def backup(path: Path) -> Path:
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    """Copy ``path`` beside itself under a name that never overwrites an earlier backup."""
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     target = path.with_name(f"{path.stem}.{stamp}.bak{path.suffix}")
+    n = 1
+    while target.exists():
+        target = path.with_name(f"{path.stem}.{stamp}-{n}.bak{path.suffix}")
+        n += 1
     shutil.copy2(path, target)
     return target
 
@@ -124,5 +184,8 @@ def save(settings: Settings, path: Path) -> None:
     data = msgspec.to_builtins(settings)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(tomli_w.dumps(data), encoding="utf-8")
+    with temporary.open("w", encoding="utf-8") as file:
+        file.write(tomli_w.dumps(data))
+        file.flush()
+        os.fsync(file.fileno())  # on disk before the rename, so a power cut leaves old or new
     os.replace(temporary, path)

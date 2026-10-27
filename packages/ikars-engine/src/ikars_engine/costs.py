@@ -34,7 +34,7 @@ class CostTracker:
         self._spent: defaultdict[str, int] = defaultdict(int)
 
     def _roll(self) -> None:
-        month = datetime.fromtimestamp(self._clock.now_ns() / 1e9, UTC).strftime("%Y-%m")
+        month = datetime.fromtimestamp(self._clock.now_ns() // 1_000_000_000, UTC).strftime("%Y-%m")
         if month != self._month:
             self._month = month
             self._spent.clear()
@@ -56,6 +56,7 @@ class CostTracker:
         return Budget.NORMAL
 
     def total_e6(self) -> int:
+        self._roll()
         return sum(self._spent.values())
 
     def by_plugin(self) -> dict[str, int]:

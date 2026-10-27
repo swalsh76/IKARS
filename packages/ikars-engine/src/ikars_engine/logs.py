@@ -27,8 +27,12 @@ class Redactor:
     """Masks secret values and secret-shaped text in strings."""
 
     def __init__(self, secrets: Iterable[str]) -> None:
-        # longest first, so a value that contains another is masked whole
-        self._secrets = sorted({s for s in secrets if s and len(s) >= 4}, key=len, reverse=True)
+        # longest first, so a value that contains another is masked whole; case-insensitive, since
+        # Windows paths (and hex key ids) match in any case
+        values = sorted({s for s in secrets if s and len(s) >= 4}, key=len, reverse=True)
+        self._pattern = (
+            re.compile("|".join(re.escape(v) for v in values), re.IGNORECASE) if values else None
+        )
 
     @classmethod
     def from_environment(
@@ -36,13 +40,14 @@ class Redactor:
     ) -> "Redactor":
         env = dict(os.environ) if environ is None else environ
         values = [env.get(name, "") for name in variables]
-        # a path is also written with the other slash, and its folder alone gives it away
+        # a path is also written with the other slash; its file name alone names the key
         more = [v.replace("\\", "/") for v in values] + [v.replace("/", "\\") for v in values]
-        return cls(values + more)
+        names = [re.split(r"[\\/]", v)[-1] for v in values if "/" in v or "\\" in v]
+        return cls(values + more + names)
 
     def text(self, value: str) -> str:
-        for secret in self._secrets:
-            value = value.replace(secret, REDACTED)
+        if self._pattern is not None:
+            value = self._pattern.sub(REDACTED, value)
         value = _PEM.sub(REDACTED, value)
         return _BEARER.sub("Bearer " + REDACTED, value)
 
@@ -102,14 +107,26 @@ def configure(
     files_kept: int = 10,
     logger: logging.Logger | None = None,
 ) -> logging.Handler:
-    """Send ``logger`` (the root logger by default) to ``folder/ikars.jsonl``, rotated by size."""
+    """Send ``logger`` (the root logger by default) to ``folder/ikars.jsonl``, rotated by size.
+
+    Redaction is a handler filter (a logger's own filters do not see records from child loggers),
+    so it is put on **every** handler the logger has, not only this one. A handler added later must
+    go through :func:`protect`."""
     folder.mkdir(parents=True, exist_ok=True)
     handler = logging.handlers.RotatingFileHandler(
         folder / "ikars.jsonl", maxBytes=max_bytes, backupCount=files_kept, encoding="utf-8"
     )
-    handler.addFilter(RedactingFilter(redactor))
     handler.setFormatter(JsonFormatter())
     target = logger or logging.getLogger()
     target.addHandler(handler)
+    for each in target.handlers:
+        protect(each, redactor)
     target.setLevel(level)
+    return handler
+
+
+def protect(handler: logging.Handler, redactor: Redactor) -> logging.Handler:
+    """Make ``handler`` redact every record before writing it (idempotent)."""
+    if not any(isinstance(f, RedactingFilter) for f in handler.filters):
+        handler.addFilter(RedactingFilter(redactor))
     return handler

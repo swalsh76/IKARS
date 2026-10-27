@@ -298,6 +298,9 @@ class PluginHost:
             slot.tasks[0] = asyncio.create_task(self._produce(slot), name=f"{name}.run")
 
     async def stop(self) -> None:
+        for name, slot in sorted(self._slots.items()):
+            if left := slot.inbox.qsize():  # never a silent drop, even at shutdown
+                self._gap(name, "engine stopped: queued items not handled", left)
         tasks = [t for s in self._slots.values() for t in s.tasks]
         for task in tasks:
             task.cancel()

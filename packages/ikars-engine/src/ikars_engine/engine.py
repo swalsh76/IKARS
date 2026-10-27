@@ -13,7 +13,9 @@ After each item the cost tracker's state is applied: from the degrade threshold 
 told to take its cheaper path, and at the ceiling paid plugins are paused.
 """
 
+import asyncio
 import logging
+from collections import deque
 from collections.abc import Callable
 
 from ikars_engine.clocks import EventClock
@@ -52,23 +54,47 @@ class Engine:
         self.deterministic = deterministic
         self.listeners: list[Listener] = []
         self._budget_paused: set[str] = set()
+        self._pending: deque[Item] = deque()  # deterministic: emits waiting for their turn
+        self._routing = False  # deterministic: a delivery is under way
+        self._route_lock = asyncio.Lock()  # deterministic deliveries run strictly one at a time
         self.host = PluginHost(clock, self._emitted, self.metrics, host_options)
 
     async def _emitted(self, item: Item) -> None:
         self.metrics.count("engine.emitted")
         for listener in self.listeners:
-            listener(item)
+            try:
+                listener(item)
+            except Exception as exc:  # a listener's fault is its own, never the plugin's
+                self.metrics.count("engine.listener_errors")
+                log.warning("listener raised", extra={"error": repr(exc), "ref": str(item.ref)})
         if item.hops >= MAX_DEPTH:  # carried on the item, so it holds live as well as replayed
             self.metrics.count("engine.depth_limit")
             log.warning("emit depth limit reached", extra={"ref": str(item.ref)})
             return
-        await self._route(item)
+        if not self.deterministic:
+            self.host.offer(item)
+        elif self._routing:
+            self._pending.append(item)  # delivered after the emitting plugin's call returns
+        else:
+            await self._route(item)  # emitted outside any delivery: route it now
 
     async def _route(self, item: Item) -> None:
-        if self.deterministic:
-            await self.host.deliver(item)
-        else:
+        """Route an item from the source. Deterministic: deliver it, then every item that results,
+        breadth first, each outside the timeout of the plugin that emitted it."""
+        if not self.deterministic:
             self.host.offer(item)
+            return
+        async with self._route_lock:
+            self._routing = True
+            try:
+                await self.host.deliver(item)
+                while self._pending:
+                    await self.host.deliver(self._pending.popleft())
+            finally:
+                self._routing = False
+                if self._pending:  # only on cancellation: counted, never left for another item
+                    self.metrics.count("engine.pending_dropped", len(self._pending))
+                    self._pending.clear()
 
     def _apply_budget(self) -> None:
         if self.costs is None:
