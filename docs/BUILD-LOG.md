@@ -1361,3 +1361,69 @@ runs, and a loopback port while it listens. Nothing else, and no firewall change
 2. a free port at each start, recorded in `api.json`;
 3. ledger records over the API, paged;
 4. hand-written C# records, checked by golden examples.
+
+#### 1.7 built (2026-10-27)
+
+**Built** (commits `07a0775`, `9772736`, `28e1334`; new packages `starlette` and `uvicorn`, BSD-3-Clause):
+
+| Area | What |
+|---|---|
+| Contracts | Every payload is a `msgspec` struct in `contracts.py`, exported as JSON Schema (`contracts/ikars-api.schema.json`) and golden examples (`contracts/examples`, 19 files). A test fails on drift; `python -m ikars_engine contracts export` regenerates them. |
+| Server | Starlette on uvicorn inside the engine's event loop, on `127.0.0.1` and a free port at each start. uvicorn configures no logging (it fails under `pythonw`). `api.json` holds the port and token: written once the server is serving, the owner's alone (ACL-checked), and removed at stop. |
+| Guard | A per-session token compared in constant time; a loopback `Host` only (IPv6 included); any browser `Origin` refused. |
+| Snapshots | hello (the handshake: API version, engine version, schema hash), health, markets (search and paging), a market, a book, the portfolio, ledger status and records (paged, newest first), the alert log (by line), recommendations (empty until M1.12). |
+| Stream | Server-Sent Events (D3 amended); subscriptions over HTTP; quotes and books sent only when changed, coalesced at 100 ms; the portfolio when it changes; new alerts read through an incremental line index; health every 5 s. At most 8 streams, an exact cap. Streams end at stop. |
+| Latency (J) | `api.feed_to_stream_ns` in health, from a frame's arrival to its event leaving. Only updates are timed, and quotes and books keep separate change times. |
+| C# | `Ikars.Contracts`: hand-written records with snake_case names; unknown fields, missing required fields and wrong nulls are refused. `Ikars.Contracts.Tests` round-trips every golden example and checks the schema's names. No new NuGet packages. |
+
+**Verified.**
+- 1,277 Python tests pass (94% coverage of `api.py`, 93.8% overall), and 24 .NET tests pass (100% of
+  `Ikars.Contracts`). ruff, mypy, pip-audit, dotnet format, the data guard and gitleaks are all clean.
+- **Live**, against the background engine:
+
+  | Check | Result |
+  |---|---|
+  | Handshake | API 1.0; a request without the token is refused |
+  | Snapshots | 211,362 markets indexed; a live book ready (33 and 58 levels); portfolio; the ledger verified and **exact**; a ledger page |
+  | Stream (30 s, 5 watched markets) | 1 opened, 38 quote, 565 book, 1 portfolio and 5 health events; **at most 7.8 events a second per market** |
+  | Feed to stream | **p50 ≤ 20 ms, p99 ≤ 200 ms** (target 250 ms; log-bucket bounds) |
+  | Exposure | nothing answers on the machine's network address; **the token is in no log** |
+  | Stop with a stream open | done in 2.4 s; `api.json` removed |
+
+**Live findings, fixed (`9772736`).**
+1. **uvicorn's own logging set-up crashed the background engine.** Under `pythonw` there is no console, so its
+   formatter failed at start. `serve`'s start-up logging (M1.6) caught it, and the server now sets
+   `log_config=None`. A test runs the server with no stdout or stderr.
+2. **The first live p99 was 2,000 ms.** That was a measurement error: the first event after subscribing is
+   a market's current state, which is as old as the market is quiet. Now only updates are timed.
+
+**Review (R14).**
+- **Per commit (`07a0775`), 3 fixed:**
+  1. A bare IPv6 `Host` was refused.
+  2. A cut-back alert log froze a stream's alerts.
+  3. `api.json` was written before the server was serving.
+- **Per commit (`9772736`):** none. A flaky M1.5a test was also fixed: its secret "777" matched a log timestamp
+  by chance.
+- **Per merge (medium), all 10 fixed in `28e1334`:**
+
+  | # | Finding | Fix |
+  |---|---|---|
+  | 1 | An open stream kept uvicorn waiting forever at stop | Streams end at stop; a 3 s graceful limit |
+  | 2 | Malformed subscription JSON was a bare 500 | A 400 `ApiError` |
+  | 3 | A market dropped and added back got no current state, and was timed as an update | Sent afresh, not timed |
+  | 4 | Alert line numbers split differently in two readers (U+2028) | Split on `\n` only, everywhere |
+  | 5 | A stream that was never iterated stayed registered; there was no cap | Registered when it runs; at most 8 |
+  | 6 | A ticker frame that changed no quote moved its time (latency understated) | Only real quote changes move it |
+  | 7 | A keep-alive branch that could never run | Removed (health every 5 s) |
+  | 8 | The whole alert log was read per page and per stream start | An incremental line index |
+  | 9 | The alert log's name was repeated in two places | `alerts.ALERT_LOG` |
+  | 10 | `Ledger.page` built its parameters in a roundabout way | Simplified |
+- **Per commit (`28e1334`):** 1 fixed: the stream cap was not exact when requests arrived together. An
+  `error` stream event was added to the contract.
+
+**Kept, changed and why.**
+- *Kept from KalTerm3:* Server-Sent Events for the stream, so its client and reconnect code carry over to M1.8.
+- *Changed:* KalTerm3's API was a separate server on a fixed port. IKARS's runs inside the engine, on a free
+  port, behind a session token.
+
+**M1.7 done**, subject to the owner's merge.
