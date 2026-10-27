@@ -1814,4 +1814,6 @@ key, GET-only rule and Python checks are unchanged: the engine alone talks to Ka
 - **CodeQL added now** (`.github/workflows/codeql.yml`): `security-extended` queries for Python and the CI workflows
   on every pull request, on `main` and weekly; TypeScript joins with the first terminal code (CodeQL fails a
   language with no source). Pinned to v4.39.0 (12 days old) rather than v4.39.1 (6 days), by the new waiting rule.
-  It is not a required check; whether to require it is the owner's ruleset decision.
+  It is not a required check; whether to require it is the owner's ruleset decision. *Later the same day:*
+  merged as PR #15 (`179dd8c`); at the owner's request the aggregate `CodeQL` check (GitHub's code-scanning app)
+  is now **required** on `main` beside `python` and `hygiene`, so a new language needs no ruleset change.
