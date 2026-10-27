@@ -267,10 +267,11 @@ class Ledger:
     def page(self, before: int | None, limit: int, stream: str = "real") -> list[dict[str, Any]]:
         """Up to ``limit`` record bodies with a sequence below ``before`` (all when None), newest
         first: the API's ledger pages."""
-        query, args = "SELECT body FROM record WHERE stream = ?", [stream]
-        params: list[str | int] = [*args]
+        query = "SELECT body FROM record WHERE stream = ?"
+        params: list[str | int] = [stream]
         if before is not None:
-            query, params = query + " AND seq < ?", [stream, before]
+            query += " AND seq < ?"
+            params.append(before)
         rows = self._db.execute(query + " ORDER BY seq DESC LIMIT ?", [*params, limit])
         return [json.loads(body) for (body,) in rows]
 

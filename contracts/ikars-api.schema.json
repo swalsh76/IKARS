@@ -669,6 +669,7 @@
   "stream_events": {
     "alert": "AlertView",
     "book": "BookView",
+    "error": "ApiError",
     "health": "HealthView",
     "opened": "StreamOpened",
     "portfolio": "PortfolioView",

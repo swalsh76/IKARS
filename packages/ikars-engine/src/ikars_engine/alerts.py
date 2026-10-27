@@ -34,6 +34,7 @@ from ikars_engine.files import write_text_atomic
 URGENT, HIGH, NORMAL, LOW = "urgent", "high", "normal", "low"
 PRIORITIES = (URGENT, HIGH, NORMAL, LOW)
 APP_ID = "IKARS"
+ALERT_LOG = "alerts.jsonl"  # in the data folder; the API serves it
 NS = 1_000_000_000
 
 _WINRT = ", ContentType = WindowsRuntime] | Out-Null"
@@ -135,7 +136,7 @@ class AlertDesk:
         digest_s: int = 3_600,
     ) -> None:
         self._notifier = notifier
-        self._log = folder / "alerts.jsonl"
+        self._log = folder / ALERT_LOG
         self._state_path = folder / "alert-desk.json"
         self._quiet = quiet
         self._throttle_ns = throttle_s * NS

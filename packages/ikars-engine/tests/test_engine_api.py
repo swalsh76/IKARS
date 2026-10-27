@@ -14,6 +14,7 @@ from ikars_core.book import OrderBook
 from ikars_core.ws_models import parse_frame
 from ikars_engine import contracts as c
 from ikars_engine.api import (
+    AlertIndex,
     ApiContext,
     ApiServer,
     Stream,
@@ -198,7 +199,7 @@ async def test_the_alert_log_by_line(ctx: ApiContext) -> None:
     assert [a.line for a in last_two.items] == [2, 3]
     after = await get(ctx, "/v1/alerts?after=1", c.AlertPage)
     assert [a.text for a in after.items] == ["alert 2", "alert 3"]
-    assert read_alerts(ctx.alert_log.with_name("none.jsonl"), None, 5) == []
+    assert read_alerts(AlertIndex(ctx.alert_log.with_name("none.jsonl")), None, 5) == []
 
 
 # --- the stream ---------------------------------------------------------------------------------
@@ -235,7 +236,7 @@ async def test_the_stream_opens_streams_and_closes(
     monkeypatch.setattr(api, "PORTFOLIO_EVERY_S", 0.0)
     monkeypatch.setattr(api, "HEALTH_EVERY_S", 0.0)
     state = Stream(id="s1", quotes={"KXA"})
-    _place(state, ctx.alert_log, 2)  # a reconnect that saw alert 2
+    _place(state, AlertIndex(ctx.alert_log), 2)  # a reconnect that saw alert 2
     ctx.streams[state.id] = state
     chunks = [chunk async for chunk in _events(ctx, state, FakeRequest(1))]  # type: ignore[arg-type]
     events = [chunk.split(b"\n")[1].decode() for chunk in chunks]
@@ -248,13 +249,15 @@ async def test_the_stream_opens_streams_and_closes(
 
 def test_new_alerts_read_only_new_complete_lines(ctx: ApiContext) -> None:
     state = Stream(id="s")
-    _place(state, ctx.alert_log, None)  # a new stream starts at the end
+    _place(state, AlertIndex(ctx.alert_log), None)  # a new stream starts at the end
     assert new_alerts(ctx.alert_log, state) == []
     with open(ctx.alert_log, "a", encoding="utf-8") as handle:
         handle.write(json.dumps({"key": "k4", "text": "alert 4"}) + "\n" + '{"key": "half')
     added = new_alerts(ctx.alert_log, state)
     assert [(a.line, a.text) for a in added] == [(4, "alert 4")]  # the half line waits
-    _place(Stream(id="gone"), ctx.alert_log.with_name("none.jsonl"), None)  # no file: no error
+    _place(
+        Stream(id="gone"), AlertIndex(ctx.alert_log.with_name("none.jsonl")), None
+    )  # no file: no error
 
 
 async def test_subscriptions_are_set_over_http(ctx: ApiContext) -> None:
@@ -312,7 +315,7 @@ def test_host_headers_with_and_without_ports() -> None:
 
 def test_a_cut_back_alert_log_starts_the_stream_again(ctx: ApiContext) -> None:
     state = Stream(id="s")
-    _place(state, ctx.alert_log, None)
+    _place(state, AlertIndex(ctx.alert_log), None)
     ctx.alert_log.write_text(json.dumps({"key": "new", "text": "after the cut"}) + "\n", "utf-8")
     added = new_alerts(ctx.alert_log, state)
     assert [(a.line, a.text) for a in added] == [(1, "after the cut")]
@@ -336,3 +339,98 @@ async def test_the_server_starts_without_a_console(
     await server.start()
     assert server.port is not None and (tmp_path / "api.json").exists()
     await server.stop()
+
+
+# --- the M1.7 merge review's findings -----------------------------------------------------------
+
+
+async def test_stopping_the_server_ends_an_open_stream(ctx: ApiContext, tmp_path: Path) -> None:
+    """Review 1: an open stream kept uvicorn waiting for ever at stop."""
+    import asyncio
+    import time as clock
+
+    def context_for(token: str) -> ApiContext:
+        ctx.token = token
+        ctx.coalesce_s = 0.05
+        return ctx
+
+    server = ApiServer(context_for, tmp_path)
+    await server.start()
+    headers = {"Authorization": f"Bearer {ctx.token}"}
+    seen = asyncio.Event()
+
+    async def listen() -> None:
+        async with (
+            httpx.AsyncClient(base_url=f"http://127.0.0.1:{server.port}", timeout=30) as http,
+            http.stream("GET", "/v1/stream", headers=headers) as stream,
+        ):
+            async for line in stream.aiter_lines():
+                if line.startswith("event: opened"):
+                    seen.set()
+
+    reader = asyncio.create_task(listen())
+    await asyncio.wait_for(seen.wait(), 5)
+    began = clock.monotonic()
+    await asyncio.wait_for(server.stop(), 10)
+    assert clock.monotonic() - began < 5 and ctx.streams == {}
+    await asyncio.wait_for(asyncio.gather(reader, return_exceptions=True), 5)
+
+
+async def test_malformed_subscriptions_and_re_subscribing(ctx: ApiContext) -> None:
+    """Review 2: malformed JSON was a bare 500. Review 3: a market dropped and added back got no
+    current state, and was timed as an update."""
+    state = Stream(id="s7", quotes={"KXA"})
+    ctx.streams["s7"] = state
+    transport = httpx.ASGITransport(app=create_app(ctx))
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as http:
+        path = "/v1/stream/s7/subscriptions"
+        bad = await http.put(path, headers=AUTH, content=b"{quotes:")
+        assert bad.status_code == 400 and bad.json()["error"] == "bad_request"
+        assert len(changes(ctx, state)) == 1  # KXA's current quote
+        await http.put(path, headers=AUTH, json={"quotes": []})
+        await http.put(path, headers=AUTH, json={"quotes": ["KXA"]})
+    again = changes(ctx, state)
+    assert [chunk.split(b"\n")[1] for chunk in again] == [b"event: quote"]  # sent afresh
+    assert ctx.metrics.snapshot()["timings"] == {}  # neither send timed as an update
+
+
+def test_alert_lines_split_on_newlines_only(ctx: ApiContext) -> None:
+    """Review 4: a U+2028 in an alert split it in one reader and not the other."""
+    with open(ctx.alert_log, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"key": "k4", "text": "odd title"}, ensure_ascii=False) + "\n")
+        handle.write(json.dumps({"key": "k5", "text": "after"}) + "\n")
+    index = AlertIndex(ctx.alert_log)
+    found = [(a.line, a.text) for a in read_alerts(index, 3, 10)]
+    assert found == [(4, "odd title"), (5, "after")]
+    state = Stream(id="s")
+    _place(state, index, 3)
+    assert [a.line for a in new_alerts(ctx.alert_log, state)] == [4, 5]
+    assert read_alerts(index, None, 1)[0].line == 5
+
+
+async def test_a_stream_registers_when_it_runs_and_streams_are_capped(ctx: ApiContext) -> None:
+    """Review 5: a stream never iterated stayed registered for ever; nothing capped them."""
+    import ikars_engine.api as api
+
+    for n in range(api.MAX_STREAMS):
+        ctx.streams[f"busy{n}"] = Stream(id=f"busy{n}")
+    response = await call(ctx, "GET", "/v1/stream")
+    assert response.status_code == 503 and response.json()["error"] == "unavailable"
+    ctx.streams.clear()
+    state = Stream(id="lazy")
+    generator = _events(ctx, state, FakeRequest(0))  # type: ignore[arg-type]
+    assert "lazy" not in ctx.streams  # nothing registered until it runs
+    await generator.__anext__()
+    assert "lazy" in ctx.streams
+    await generator.aclose()
+    assert "lazy" not in ctx.streams
+
+
+async def test_the_stream_cap_holds_when_streams_arrive_together(ctx: ApiContext) -> None:
+    """Per-commit review: requests arriving together all passed the check before registering."""
+    import ikars_engine.api as api
+
+    for n in range(api.MAX_STREAMS):
+        ctx.streams[f"busy{n}"] = Stream(id=f"busy{n}")
+    late = [chunk async for chunk in _events(ctx, Stream(id="late"), FakeRequest(5))]  # type: ignore[arg-type]
+    assert len(late) == 1 and b"event: error" in late[0] and "late" not in ctx.streams

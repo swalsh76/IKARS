@@ -25,7 +25,7 @@ import hmac
 import json
 import logging
 import secrets
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncGenerator, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -52,9 +52,10 @@ log = logging.getLogger("ikars_engine.api")
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
 MAX_PAGE = 500
 MAX_SUBSCRIPTIONS = 200
-HEALTH_EVERY_S = 5.0
+HEALTH_EVERY_S = 5.0  # also keeps an idle stream alive
 PORTFOLIO_EVERY_S = 1.0
-KEEPALIVE_S = 15.0
+MAX_STREAMS = 8  # a terminal needs one or two
+SHUTDOWN_S = 3  # open streams end at stop; the server waits at most this long
 NS = 1_000_000_000
 
 
@@ -87,6 +88,8 @@ class ApiContext:
     now_ns: Callable[[], int]
     coalesce_s: float = 0.1
     streams: dict[str, "Stream"] = field(default_factory=dict)
+    closing: bool = False  # set at stop: every stream ends
+    alert_index: "AlertIndex | None" = None
 
 
 @dataclass
@@ -250,9 +253,9 @@ def new_alerts(path: Path, state: "Stream") -> list[c.AlertView]:
     complete = chunk[: chunk.rfind(b"\n") + 1]  # a line still being written waits
     state.alert_offset += len(complete)
     views = []
-    for text in complete.decode("utf-8", errors="replace").splitlines():
+    for raw in complete.split(b"\n")[:-1]:  # lines end at \n only, as the index counts them
         state.alert_line += 1
-        view = _alert(state.alert_line, text)
+        view = _alert(state.alert_line, raw.decode("utf-8", errors="replace"))
         if view is not None:
             views.append(view)
     return views
@@ -270,15 +273,59 @@ def _alert(line: int, text: str) -> c.AlertView | None:
     )  # fmt: skip
 
 
-def read_alerts(path: Path, after: int | None, limit: int) -> list[c.AlertView]:
+class AlertIndex:
+    """Where each line of the alert log starts, kept up to date by reading only what was added
+    (the log only grows), so a page or a stream's starting point never reads the whole file."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.starts: list[int] = []  # the byte offset of line n + 1
+        self.end = 0  # where the last complete line ends
+
+    def refresh(self) -> None:
+        try:
+            with open(self.path, "rb") as handle:
+                if handle.seek(0, 2) < self.end:  # cut back: index it again
+                    self.starts, self.end = [], 0
+                handle.seek(self.end)
+                chunk = handle.read()
+        except OSError:
+            return
+        at = 0
+        while (newline := chunk.find(b"\n", at)) != -1:
+            self.starts.append(self.end + at)
+            at = newline + 1
+        self.end += at
+
+    @property
+    def lines(self) -> int:
+        return len(self.starts)
+
+    def offset_after(self, line: int) -> int:
+        """Where line ``line + 1`` starts (the end of the log after its last line)."""
+        return self.starts[line] if line < len(self.starts) else self.end
+
+    def read(self, first: int, count: int) -> list[tuple[int, bytes]]:
+        """Lines ``first`` .. ``first + count - 1`` (numbered from 1), with their numbers."""
+        last = min(first + count - 1, len(self.starts))
+        if first > last:
+            return []
+        with open(self.path, "rb") as handle:
+            handle.seek(self.starts[first - 1])
+            data = handle.read(self.offset_after(last) - self.starts[first - 1])
+        return list(enumerate(data.split(b"\n")[: last - first + 1], start=first))
+
+
+def read_alerts(index: AlertIndex, after: int | None, limit: int) -> list[c.AlertView]:
     """Alert-log lines numbered from 1: after ``after``, or the last ``limit`` when None."""
+    index.refresh()
+    first = after + 1 if after is not None else max(1, index.lines - limit + 1)
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        chosen = index.read(first, limit)
     except OSError:
         return []
-    numbered = list(enumerate(lines, start=1))
-    chosen = numbered[after:][:limit] if after is not None else numbered[-limit:]
-    return [view for line, text in chosen if (view := _alert(line, text)) is not None]
+    texts = ((n, raw.decode("utf-8", errors="replace")) for n, raw in chosen)
+    return [view for line, text in texts if (view := _alert(line, text)) is not None]
 
 
 # --- the application ----------------------------------------------------------------------------
@@ -342,16 +389,17 @@ def create_app(ctx: ApiContext) -> ASGIApp:
     async def alerts(request: Request) -> Response:
         after = _int(request, "after", None, 0, 2**62)
         limit = _int(request, "limit", 100, 1, MAX_PAGE) or 100
-        return _json(c.AlertPage(items=read_alerts(ctx.alert_log, after, limit)))
+        return _json(c.AlertPage(items=read_alerts(alert_index(ctx), after, limit)))
 
     async def recommendations(request: Request) -> Response:
         return _json(c.RecommendationPage(items=[]))  # from M1.12
 
     async def stream(request: Request) -> Response:
         after = _int(request, "after_alert", None, 0, 2**62)
+        if len(ctx.streams) >= MAX_STREAMS:
+            return _error(503, "unavailable", f"at most {MAX_STREAMS} streams at once")
         state = Stream(id=secrets.token_hex(8))
-        _place(state, ctx.alert_log, after)
-        ctx.streams[state.id] = state
+        _place(state, alert_index(ctx), after)
         return StreamingResponse(_events(ctx, state, request), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-store"})  # fmt: skip
 
@@ -361,11 +409,14 @@ def create_app(ctx: ApiContext) -> ASGIApp:
             return _error(404, "not_found", "no such stream (it may have closed)")
         try:
             wanted = msgspec.json.decode(await request.body(), type=c.Subscriptions)
-        except msgspec.ValidationError as exc:
+        except msgspec.DecodeError as exc:  # malformed JSON or the wrong shape
             return _error(400, "bad_request", str(exc))
         if len(wanted.quotes) > MAX_SUBSCRIPTIONS or len(wanted.books) > MAX_SUBSCRIPTIONS:
             return _error(400, "bad_request", f"at most {MAX_SUBSCRIPTIONS} markets each")
         state.quotes, state.books = set(wanted.quotes), set(wanted.books)
+        # a market dropped and added back starts afresh: its current state is sent again
+        state.sent_quote = {t: v for t, v in state.sent_quote.items() if t in state.quotes}
+        state.sent_book = {t: v for t, v in state.sent_book.items() if t in state.books}
         return _json(wanted)
 
     routes = [
@@ -390,19 +441,18 @@ def create_app(ctx: ApiContext) -> ASGIApp:
 # --- the stream ---------------------------------------------------------------------------------
 
 
-def _place(state: Stream, path: Path, after: int | None) -> None:
+def alert_index(ctx: ApiContext) -> AlertIndex:
+    if ctx.alert_index is None:
+        ctx.alert_index = AlertIndex(ctx.alert_log)
+    return ctx.alert_index
+
+
+def _place(state: Stream, index: AlertIndex, after: int | None) -> None:
     """Put ``state`` at the end of the alert log (a new stream), or just after line ``after`` (a
     reconnecting one, which then receives the lines it missed)."""
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return
-    lines = data.count(b"\n")
-    keep = lines if after is None else min(after, lines)
-    offset = 0
-    for _ in range(keep):
-        offset = data.index(b"\n", offset) + 1
-    state.alert_line, state.alert_offset = keep, offset
+    index.refresh()
+    keep = index.lines if after is None else min(after, index.lines)
+    state.alert_line, state.alert_offset = keep, index.offset_after(keep)
 
 
 def _event(state: Stream, name: str, payload: Any) -> bytes:
@@ -438,13 +488,18 @@ def changes(ctx: ApiContext, state: Stream) -> list[bytes]:
     return out
 
 
-async def _events(ctx: ApiContext, state: Stream, request: Request) -> AsyncIterator[bytes]:
+async def _events(ctx: ApiContext, state: Stream, request: Request) -> AsyncGenerator[bytes]:
     loop = asyncio.get_running_loop()
     opened = c.StreamOpened(stream_id=state.id, coalesce_ms=int(ctx.coalesce_s * 1000))
-    yield _event(state, "opened", opened)
-    health_at = portfolio_at = keepalive_at = loop.time()
+    if len(ctx.streams) >= MAX_STREAMS:  # several arrived at once: the cap holds here too
+        busy = c.ApiError(error="unavailable", detail=f"at most {MAX_STREAMS} streams at once")
+        yield _event(state, "error", busy)
+        return
+    ctx.streams[state.id] = state  # registered only once it runs, so it is always removed
+    health_at = portfolio_at = loop.time()
     try:
-        while not await request.is_disconnected():
+        yield _event(state, "opened", opened)
+        while not ctx.closing and not await request.is_disconnected():
             for chunk in changes(ctx, state):
                 yield chunk
             now = loop.time()
@@ -458,11 +513,8 @@ async def _events(ctx: ApiContext, state: Stream, request: Request) -> AsyncIter
                 for alert in new_alerts(ctx.alert_log, state):
                     yield _event(state, "alert", alert)
             if now - health_at >= HEALTH_EVERY_S:
-                health_at = keepalive_at = now
+                health_at = now
                 yield _event(state, "health", c.HealthView(at_utc=now_utc(), parts=ctx.health()))
-            elif now - keepalive_at >= KEEPALIVE_S:
-                keepalive_at = now
-                yield b": keep-alive\n\n"
             await asyncio.sleep(ctx.coalesce_s)
     finally:
         ctx.streams.pop(state.id, None)
@@ -497,7 +549,7 @@ class ApiServer:
         self.port = listener.getsockname()[1]
         config = uvicorn.Config(
             create_app(self.ctx), log_level="warning", access_log=False, lifespan="off",
-            server_header=False, date_header=False,
+            server_header=False, date_header=False, timeout_graceful_shutdown=SHUTDOWN_S,
             # uvicorn must not configure logging: its console formatter fails under pythonw (no
             # console: live finding), and the engine's redacting log handlers already cover it
             log_config=None,
@@ -520,6 +572,8 @@ class ApiServer:
             log.warning("api.json is readable by other accounts", extra={"readers": len(readers)})
 
     async def stop(self) -> None:
+        if self.ctx is not None:
+            self.ctx.closing = True  # open streams end, so the server can
         if self._server is not None:
             self._server.should_exit = True
         if self._task is not None:

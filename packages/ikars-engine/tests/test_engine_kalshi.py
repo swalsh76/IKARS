@@ -775,3 +775,18 @@ async def test_the_request_budget_reports_what_was_spent(tmp_path: Path) -> None
     used = requests_used({"tokens_per_s": 50.0}, client.bucket, client)
     assert used["tokens_per_s"] == 50.0 and used["requests"] == 1 and used["rate_limited"] == 0
     assert used["tokens_spent"] == round(client.bucket.stats.spent) > 0
+
+
+async def test_a_volume_only_ticker_frame_leaves_the_quote_time(tmp_path: Path) -> None:
+    """M1.7 merge review 6: a frame that changed no quote moved its time, so the stream's measured
+    latency came out too low."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    await rig.feed.queue.put(frame("ticker", TICKER_MSG, T0 + 3, sid=1))
+    await rig.items(1)
+    assert rig.source.changed_ns["M1"] == T0 + 3
+    volume_only = {"market_ticker": "M1", "volume_fp": "10.00", "ts_ms": 5}
+    await rig.feed.queue.put(frame("ticker", volume_only, T0 + 9, sid=1))
+    await rig.items(1)
+    assert rig.source.changed_ns["M1"] == T0 + 3  # unchanged: the quote did not move
+    await rig.source.stop()

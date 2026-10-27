@@ -284,15 +284,17 @@ class KalshiSource:
         published: int | None = None
         if isinstance(message, TickerMsg):
             ticker = message.market_ticker
+            before = (self.quotes.get(ticker), self.last_price_e6.get(ticker))
             if message.price_e6 is not None:
                 self.last_price_e6[ticker] = message.price_e6
-            self.changed_ns[ticker] = at
             if message.yes_bid_e6 is not None or message.yes_ask_e6 is not None:
                 bid, ask = self.quotes.get(ticker, (None, None))
                 self.quotes[ticker] = (
                     bid if message.yes_bid_e6 is None else message.yes_bid_e6,
                     ask if message.yes_ask_e6 is None else message.yes_ask_e6,
                 )
+            if (self.quotes.get(ticker), self.last_price_e6.get(ticker)) != before:
+                self.changed_ns[ticker] = at  # a volume-only frame leaves the quote's time
             published = message.ts_ms
             if ticker in self.watched.current:
                 self.recorder.write("ticker", self._ticker_row(message, at))

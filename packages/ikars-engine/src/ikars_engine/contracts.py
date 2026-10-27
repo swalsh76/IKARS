@@ -191,6 +191,7 @@ STREAM_EVENTS: dict[str, type[msgspec.Struct]] = {
     "portfolio": PortfolioView,
     "alert": AlertView,
     "health": HealthView,
+    "error": ApiError,  # the stream could not open (too many at once), then it ends
 }
 
 

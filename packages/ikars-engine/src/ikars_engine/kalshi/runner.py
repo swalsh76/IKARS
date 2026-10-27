@@ -32,6 +32,7 @@ from ikars_core.rest import KalshiAccountClient, KalshiPublicClient
 from ikars_core.ws import FeedConfig, KalshiFeed
 
 from ikars_engine import gpu, taxzone
+from ikars_engine.alerts import ALERT_LOG
 from ikars_engine.api import ApiContext, ApiServer
 from ikars_engine.backup_service import BackupService
 from ikars_engine.clocks import WallClock
@@ -205,7 +206,7 @@ async def build(paths: Paths, settings: Settings) -> Live:
             ledger=ledger,
             ledger_health=service.health,
             portfolio=held.portfolio,
-            alert_log=paths.data / "alerts.jsonl",
+            alert_log=paths.data / ALERT_LOG,
             metrics=metrics,
             now_ns=clock.now_ns,
         )
