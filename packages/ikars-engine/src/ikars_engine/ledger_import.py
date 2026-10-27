@@ -247,6 +247,8 @@ class AccountImporter:
             if key in seen or self._ledger.has(*key):
                 continue
             seen.add(key)
+            if entry.fields.get("out_of_order"):  # said only for one added (the overlap re-reads)
+                log.warning("ledger: a fill arrived after a later one; flagged for the owner")
             book.add(entry)
             entries.append(entry)
         self._ledger.append_all(entries)
@@ -406,7 +408,6 @@ class AccountImporter:
                 # listed after a later fill of the same market was recorded: it is costed against
                 # the position as it is now, which may differ from the position at its own time.
                 # An append-only ledger cannot re-cost the later fills; the owner labels it (M1.R 9)
-                log.warning("ledger: a fill arrived after a later one; flagged for the owner")
                 return replace(
                     entry,
                     fields={**entry.fields, "out_of_order": True},

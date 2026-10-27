@@ -594,13 +594,19 @@ async def test_money_held_by_resting_buys_is_not_a_difference(tmp_path: Path) ->
     ledger.close()
 
 
-async def test_a_fill_listed_after_a_later_one_is_flagged(tmp_path: Path) -> None:
+async def test_a_fill_listed_after_a_later_one_is_flagged(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """M1.R 9: a late-listed fill was costed against today's position, silently."""
     ledger, account = ledger_at(tmp_path), account_with_history()
     importer = AccountImporter(ledger, account, VirtualClock(T0))  # type: ignore[arg-type]
     await importer.run_once()
     account.live.append(raw_fill("late", "yes", "1.00", "0.5000", "2025-12-30T12:00:00Z"))
     await importer.run_once()
+    assert [r for r in caplog.records if "arrived after" in r.getMessage()]  # said when added
+    caplog.clear()
+    await importer.run_once()  # the overlap reads every fill again: nothing new, nothing said
+    assert not [r for r in caplog.records if "arrived after" in r.getMessage()]
     late = next(b for b in ledger.records(kind="fill") if b["source_id"] == "late")
     assert late["fields"]["out_of_order"] is True and "label it" in late["note"]
     first = next(b for b in ledger.records(kind="fill") if b["source_id"] == "h1")
