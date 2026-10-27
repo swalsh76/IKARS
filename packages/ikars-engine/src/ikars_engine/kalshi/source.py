@@ -10,12 +10,16 @@ Every feed event is one of two things (from KAPS ``pump.py``):
   data **unrecoverable** (Kalshi replays neither). A broken book or a ``seq`` gap on the book
   channel also asks Kalshi for fresh snapshots.
 
-A **restart** without a clean shutdown is a loss too: at start, every channel's last heartbeat opens
-a gap to now. Recorded: trades for every market; ticker and books for the watched set; lifecycle for
-every market (owner, 2026-10-27).
+Downtime is a loss too: at start, every channel's last heartbeat opens a gap to the moment the
+subscriptions are live again ("stopped" after a clean shutdown, "restart" after a crash). A
+subscription the exchange refused after a reconnect is sent again with backoff until it holds, and
+the time it was missing is logged. A frame that fails to process is counted and logged as a gap (at
+most once a minute per channel); it never stops the feed. Recorded: trades for every market; ticker
+and books for the watched set; lifecycle for every market (owner, 2026-10-27).
 
 Background loops run beside the feed, each catching and logging its own errors so one failure never
-stops the others: discovery, the exchange, the heartbeat (which also flushes the recorder and gives
+stops the others: discovery, the exchange, the heartbeat (which also flushes the recorder, compacts
+finished hours in a worker thread and gives
 the signer the clock offset), the trade backfill, the watched set's rebalance and the storage
 governor. Every REST call shares one token bucket (owner: a quarter of the account's read bucket).
 """
@@ -24,7 +28,7 @@ import asyncio
 import json
 import logging
 from collections import Counter
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
@@ -91,8 +95,10 @@ class Feed(Protocol):
         self, sid: int, action: str, market_tickers: list[str]
     ) -> list[str]: ...
     async def get_snapshot(self, sid: int, market_tickers: list[str]) -> None: ...
+    async def resubscribe(self, channel: str) -> int: ...
     def events(self) -> AsyncIterator[Any]: ...
     def channel_of(self, sid: int) -> str | None: ...
+    def sid_of(self, channel: str) -> int | None: ...
     def stats(self) -> dict[str, Any]: ...
 
 
@@ -108,6 +114,8 @@ class Intervals:
     backfill_pad_s: int = 5
     backfill_slice_s: int = 3_600
     backfill_attempts: int = 5
+    resubscribe_s: float = 1.0  # the first retry of a refused subscription; doubles up to a minute
+    error_gap_s: float = 60.0  # at most one "processing error" gap per channel this often
 
 
 DEFAULT_INTERVALS = Intervals()
@@ -149,8 +157,12 @@ class KalshiSource:
         self.books: dict[str, OrderBook] = {}
         self.last_received: dict[str, int] = {}
         self.last_price_e6: dict[str, int] = {}
-        self._book_sid: int | None = None
+        self._live_since = 0  # when the subscriptions went live: a loss starts here at the latest
         self._snapshots = 0
+        self._snapshot_wanted: set[str] = set()  # asked for, not yet arrived
+        self._retrying: set[str] = set()  # subscriptions being sent again
+        self._error_gap_at: dict[str, int] = {}
+        self._side_tasks: set[asyncio.Task[None]] = set()
         self._attempts: Counter[int] = Counter()
         self.counts: Counter[str] = Counter()
         self.storage: dict[str, object] = {}
@@ -165,6 +177,7 @@ class KalshiSource:
                 "recorder: compacted hours a previous run left open", extra={"files": recovered}
             )
         previous = (self._state.heartbeats(), self._state.shut_down_cleanly())
+        self._state.clear_clean_shutdown()  # a crash during start is not a clean shutdown
         await self.discovery.full()
         self._state.set_bookmark(FULL_BOOKMARK, now)  # the next cycle is an incremental one
         await self.exchange.poll()
@@ -175,12 +188,11 @@ class KalshiSource:
         self.watched.current = self.watched.choose(self.discovery.index, self.last_price_e6, now)
         self.watched.measure(now)
         if self.watched.current:
-            self._book_sid = await self._feed.subscribe(
-                ORDERBOOK_CHANNEL, sorted(self.watched.current)
-            )
-        # a run that died: every channel is missing from its last heartbeat until now, when the
-        # subscriptions are live again (not when start() began: discovery takes minutes)
-        self._gaps_from_restart(*previous)
+            await self._feed.subscribe(ORDERBOOK_CHANNEL, sorted(self.watched.current))
+        self._live_since = self._clock.now_ns()
+        # every channel is missing from its last heartbeat until now, when the subscriptions are
+        # live again (not when start() began: discovery takes minutes)
+        self._gaps_from_downtime(*previous)
         loops: list[tuple[str, Callable[[], Awaitable[None]], float]] = [
             ("discovery", self._discover, self._every.discovery_s),
             ("exchange", self._poll_exchange, self._every.exchange_s),
@@ -196,9 +208,10 @@ class KalshiSource:
         ]
 
     async def stop(self) -> None:
-        for task in self._tasks:
+        tasks = [*self._tasks, *self._side_tasks]
+        for task in tasks:
             task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)
         await self._feed.close()
         self._heartbeat_now()
         self.recorder.close()
@@ -223,20 +236,32 @@ class KalshiSource:
 
     async def _pump(self) -> None:
         async for event in self._feed.events():
-            if isinstance(event, Data):
-                await self._frame(event)
-            elif isinstance(event, Reconnected):
-                self._lost_link(event)
-            elif isinstance(event, SequenceGap):
-                await self._sequence_gap(event)
-            elif isinstance(event, ResubscribeFailed):
-                channel = SUBSCRIPTION_CHANNELS.get(event.channel, event.channel)
-                self._gap(
-                    channel,
-                    "resubscribe failed",
-                    self.last_received.get(channel, self._clock.now_ns()),
-                    event.error,
-                )
+            try:
+                if isinstance(event, Data):
+                    await self._frame(event)
+                elif isinstance(event, Reconnected):
+                    self._lost_link(event)
+                elif isinstance(event, SequenceGap):
+                    self._sequence_gap(event)
+                elif isinstance(event, ResubscribeFailed):
+                    self._resubscribe_failed(event)
+            except Exception as exc:  # one bad event never stops the feed
+                self._processing_error(event, exc)
+
+    def _processing_error(self, event: Any, exc: Exception) -> None:
+        self._metrics.count("kalshi.pump.errors")
+        log.warning("feed event failed", extra={"event": type(event).__name__, "error": repr(exc)})
+        frame = getattr(event, "frame", None)
+        channel = CHANNEL_OF_TYPE.get(getattr(frame, "type", ""), "feed")
+        now = self._clock.now_ns()
+        if now - self._error_gap_at.get(channel, -(10**30)) >= self._every.error_gap_s * NS:
+            self._error_gap_at[channel] = now
+            self._gap(channel, "processing error", now, repr(exc)[:300])
+
+    def _side_task(self, work: Coroutine[Any, Any, None], name: str) -> None:
+        task = asyncio.create_task(work, name=f"kalshi.{name}")
+        self._side_tasks.add(task)
+        task.add_done_callback(self._side_tasks.discard)
 
     async def _frame(self, event: Data) -> None:
         frame = event.frame
@@ -273,6 +298,7 @@ class KalshiSource:
             ticker = message.market_ticker
             book = self.books.setdefault(ticker, OrderBook(ticker))
             book.apply_snapshot(message)
+            self._snapshot_wanted.discard(ticker)
             self._snapshots += 1
             for side, levels in (("yes", message.yes), ("no", message.no)):
                 for price, count in levels:
@@ -288,7 +314,7 @@ class KalshiSource:
             book = self.books.setdefault(ticker, OrderBook(ticker))
             if book.apply_delta(message) is Applied.BROKEN:
                 self._metrics.count("kalshi.book.broken")
-                await self._snapshot([ticker])
+                self._request_snapshots([ticker])
             self.recorder.write(
                 "book_delta",
                 {"received_ns": at, "ts_ms": message.ts_ms, "ticker": ticker, "seq": frame.seq,
@@ -316,13 +342,22 @@ class KalshiSource:
             "open_interest_e2": message.open_interest_e2,
         }  # fmt: skip
 
-    async def _snapshot(self, tickers: list[str]) -> None:
-        if self._book_sid is None or not tickers:
+    def _request_snapshots(self, tickers: list[str]) -> None:
+        """Ask for fresh snapshots off the pump (a command waits for its reply, which comes through
+        the pump); a market already asked for is not asked again until its snapshot comes."""
+        wanted = [t for t in tickers if t not in self._snapshot_wanted]
+        sid = self._feed.sid_of(ORDERBOOK_CHANNEL)  # looked up each time: a reconnect changes it
+        if sid is None or not wanted:
             return
+        self._snapshot_wanted.update(wanted)
+        self._side_task(self._snapshot(sid, wanted), "snapshot")
+
+    async def _snapshot(self, sid: int, tickers: list[str]) -> None:
         try:
-            await self._feed.get_snapshot(self._book_sid, tickers)
+            await self._feed.get_snapshot(sid, tickers)
             self._metrics.count("kalshi.book.snapshot_requests")
         except Exception as exc:
+            self._snapshot_wanted.difference_update(tickers)  # free to ask again
             log.warning("snapshot request failed", extra={"error": repr(exc)})
 
     # --- losses ------------------------------------------------------------------------------
@@ -342,33 +377,63 @@ class KalshiSource:
         log.warning("feed gap", extra={"channel": channel, "reason": reason, "gap": gap_id})
         return gap_id
 
+    def _since(self, channel: str) -> int:
+        """Where a loss on ``channel`` starts: its last frame, or when the subscriptions went live
+        (a quiet channel has none; "now" would make the gap empty)."""
+        return self.last_received.get(channel, self._live_since)
+
     def _lost_link(self, event: Reconnected) -> None:
-        now = self._clock.now_ns()
+        down_from = self._clock.now_ns() - int(event.downtime * NS)
         for channel in ("trade", "ticker", "lifecycle", "book"):
             self._gap(
                 channel,
                 f"reconnect ({event.reason})",
-                self.last_received.get(channel, now),
+                min(self._since(channel), down_from),
                 f"down {event.downtime:.1f} s",
             )
         self.books.clear()  # every book is rebuilt from the snapshots the resubscription brings
+        self._snapshot_wanted.clear()
 
-    async def _sequence_gap(self, event: SequenceGap) -> None:
+    def _sequence_gap(self, event: SequenceGap) -> None:
         name = self._feed.channel_of(event.sid) or ""
         channel = SUBSCRIPTION_CHANNELS.get(name, name)
         self._gap(
-            channel,
-            "sequence",
-            self.last_received.get(channel, self._clock.now_ns()),
-            f"expected {event.expected}, got {event.got}",
+            channel, "sequence", self._since(channel), f"expected {event.expected}, got {event.got}"
         )
         if channel == "book":
-            await self._snapshot(sorted(self.watched.current))
+            self._request_snapshots(sorted(self.watched.current))
 
-    def _gaps_from_restart(self, beats: dict[str, int], clean: bool) -> None:
-        if beats and not clean:
-            for channel, at in sorted(beats.items()):
-                self._gap(channel, "restart", at)
+    def _resubscribe_failed(self, event: ResubscribeFailed) -> None:
+        channel = SUBSCRIPTION_CHANNELS.get(event.channel, event.channel)
+        self._gap(channel, "resubscribe failed", self._since(channel), event.error)
+        if event.channel not in self._retrying:
+            self._retrying.add(event.channel)
+            self._side_task(self._resubscribe(event.channel), "resubscribe")
+
+    async def _resubscribe(self, name: str) -> None:
+        """Send a refused subscription again, with backoff, until it holds; the time it was
+        missing is a gap of its own."""
+        channel = SUBSCRIPTION_CHANNELS.get(name, name)
+        failed_at = self._clock.now_ns()
+        wait = self._every.resubscribe_s
+        try:
+            while True:
+                await asyncio.sleep(wait)
+                try:
+                    await self._feed.resubscribe(name)
+                    break
+                except Exception as exc:
+                    self._metrics.count("kalshi.resubscribe.errors")
+                    log.warning("resubscribe failed", extra={"channel": name, "error": repr(exc)})
+                    wait = min(wait * 2, 60.0)
+            self._gap(channel, "resubscribed", failed_at, "missing until the retry held")
+        finally:
+            self._retrying.discard(name)
+
+    def _gaps_from_downtime(self, beats: dict[str, int], clean: bool) -> None:
+        reason = "stopped" if clean else "restart"
+        for channel, at in sorted(beats.items()):
+            self._gap(channel, reason, at)
 
     # --- background steps --------------------------------------------------------------------
 
@@ -393,7 +458,8 @@ class KalshiSource:
 
     async def _heartbeat(self) -> None:
         self._heartbeat_now()
-        self.recorder.flush()
+        if self.recorder.close_finished(self._clock.now_ns()):  # flushes too
+            await asyncio.to_thread(self.recorder.compact_pending)  # seconds of work: off the loop
         if self._signer is not None:
             self._signer.offset_ms = self._skew.offset_ms
 
@@ -418,7 +484,11 @@ class KalshiSource:
         first = start_ns // NS - self._every.backfill_pad_s
         last = -(-end_ns // NS) + self._every.backfill_pad_s
         cutoff = int((await self._data.historical_cutoff()).trades_created_ts.timestamp())
-        known = self.recorder.known_trade_ids(start_ns - MINUTE_NS, end_ns + MINUTE_NS)
+        # what the feed recorded in the window, and what an earlier attempt stored (with the time
+        # it was fetched, so in a later hour)
+        known = self.recorder.known_trade_ids(
+            start_ns - MINUTE_NS, max(end_ns + MINUTE_NS, self._clock.now_ns())
+        )
         count = 0
         for low in range(first, last, self._every.backfill_slice_s):
             high = min(low + self._every.backfill_slice_s, last)
@@ -448,16 +518,22 @@ class KalshiSource:
             sorted(wanted - self.watched.current),
             sorted(self.watched.current - wanted),
         )
-        if self._book_sid is None and wanted:
-            self._book_sid = await self._feed.subscribe(ORDERBOOK_CHANNEL, sorted(wanted))
-        elif self._book_sid is not None:
-            if added:
-                await self._feed.update_subscription(self._book_sid, "add_markets", added)
-            if removed:
-                await self._feed.update_subscription(self._book_sid, "delete_markets", removed)
-                for ticker in removed:
-                    self.books.pop(ticker, None)
-        self.watched.current = wanted
+        sid = self._feed.sid_of(ORDERBOOK_CHANNEL)
+        if sid is None:
+            if wanted:
+                await self._feed.subscribe(ORDERBOOK_CHANNEL, sorted(wanted))
+                self.watched.current = wanted
+            return
+        # removals first, so the set never grows past its cap; the exchange's answer is the
+        # truth after each step (a failed step leaves the set as it really is)
+        if removed:
+            held = await self._feed.update_subscription(sid, "delete_markets", removed)
+            self.watched.current = set(held)
+            for ticker in removed:
+                self.books.pop(ticker, None)
+        if added:
+            held = await self._feed.update_subscription(sid, "add_markets", added)
+            self.watched.current = set(held)
 
     async def _govern(self) -> None:
         if self._governor is None:

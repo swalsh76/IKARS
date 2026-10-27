@@ -187,6 +187,10 @@ class StateStore:
             "INSERT OR REPLACE INTO clean_shutdown (id, at_ns) VALUES (1, ?)", (at_ns,)
         )
 
+    def clear_clean_shutdown(self) -> None:
+        """Running again: a crash from here on is not a clean shutdown."""
+        self._db.execute("DELETE FROM clean_shutdown")
+
     def shut_down_cleanly(self) -> bool:
         return self._db.execute("SELECT 1 FROM clean_shutdown").fetchone() is not None
 

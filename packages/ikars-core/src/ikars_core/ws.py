@@ -240,6 +240,22 @@ class KalshiFeed:
         self._subscriptions.append(_Subscription(channel, params, sid))
         return sid
 
+    def sid_of(self, channel: str) -> int | None:
+        """The current subscription id of ``channel`` (it changes with every link), or None."""
+        for sub in self._subscriptions:
+            if sub.channel == channel:
+                return sub.sid
+        return None
+
+    async def resubscribe(self, channel: str) -> int:
+        """Send a remembered subscription again (after a failed restore); returns its new sid."""
+        for sub in self._subscriptions:
+            if sub.channel == channel:
+                reply = await self._command("subscribe", sub.params)
+                sub.sid = self._sid_of(reply)
+                return sub.sid
+        raise FeedError(f"no subscription to {channel!r} to send again")
+
     def channel_of(self, sid: int) -> str | None:
         """The channel a subscription id belongs to on the current link, or None if unknown.
 

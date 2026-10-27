@@ -191,6 +191,23 @@ async def test_a_subscription_kalshi_refuses_to_restore_is_reported_not_fatal() 
     assert numbers(events) == ["t-4"]
 
 
+async def test_a_refused_subscription_can_be_sent_again_and_its_sid_looked_up() -> None:
+    async def second(ws: ServerConnection) -> None:
+        command = await read_command(ws)
+        await ws.send(error_reply(command, 7, "busy"))
+        await ws.send(subscribed(await read_command(ws), 9))  # the retry holds
+        await ws.wait_closed()
+
+    first = subscribe_then(then=lambda ws: ws.close())
+    async with FakeKalshi(first, second) as srv, feed_for(srv) as feed:
+        assert feed.sid_of("trade") is None
+        assert await feed.subscribe("trade") == 1 and feed.sid_of("trade") == 1
+        await take(feed.events(), 2)  # Reconnected, ResubscribeFailed
+        assert await feed.resubscribe("trade") == 9 and feed.sid_of("trade") == 9
+        with pytest.raises(FeedError, match="no subscription"):
+            await feed.resubscribe("ticker")
+
+
 async def test_only_subscriptions_still_wanted_are_restored() -> None:
     async def both(ws: ServerConnection) -> None:
         for sid in (1, 2):

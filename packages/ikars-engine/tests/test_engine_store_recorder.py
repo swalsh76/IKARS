@@ -112,7 +112,7 @@ def test_a_crash_leaves_an_arrow_file_that_the_next_start_compacts(tmp_path: Pat
     arrow = next(tmp_path.glob("trade/*/*.arrow"))
     # a hard crash: the writer is never closed (the dead process releases the file), and the last
     # batch is torn
-    recorder._open["trade"][1][1].close()
+    next(iter(recorder._open.values()))[1].close()
     data = arrow.read_bytes()
     arrow.write_bytes(data[: len(data) - 20])
     restarted = Recorder(tmp_path)
@@ -197,3 +197,68 @@ def test_the_first_row_of_a_new_hour_is_never_lost(tmp_path: Path) -> None:
     recorder.close()
     rows = read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist()
     assert rows == ["old-hour", "new-hour"]
+
+
+def test_a_compaction_cut_off_between_its_steps_is_finished_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review 10: a crash between writing the Parquet and deleting the IPC file duplicated rows."""
+    first = Recorder(tmp_path)
+    first.write("trade", trade(T0 + 1, "a"))
+    first.close()
+    second = Recorder(tmp_path)
+    second.write("trade", trade(T0 + 2, "b"))
+
+    def crash(merged: Path) -> Path:
+        raise OSError("the power went")
+
+    monkeypatch.setattr("ikars_engine.recorder.finish_compaction", crash)
+    second.close()  # the merged rows are in the temporary file; the IPC file is renamed
+    assert second.compaction_failures == 1
+    assert list(tmp_path.glob("trade/*/*.arrow.merged")) and list(tmp_path.glob("trade/*/*.tmp"))
+    monkeypatch.undo()
+    assert Recorder(tmp_path).recover() == 1
+    assert read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist() == ["a", "b"]
+    assert not list(tmp_path.glob("trade/*/*.arrow*")) and not list(tmp_path.glob("trade/*/*.tmp"))
+
+
+def test_a_compaction_that_fails_leaves_the_hour_for_the_next_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review 2: a file held by another program used to stop the recording."""
+    recorder = Recorder(tmp_path)
+    recorder.write("trade", trade(T0 + 1, "a"))
+
+    def held(path: Path, channel: str) -> Path:
+        raise PermissionError("in use")
+
+    monkeypatch.setattr("ikars_engine.recorder.compact", held)
+    recorder.close()
+    assert recorder.compaction_failures == 1 and list(tmp_path.glob("trade/*/*.arrow"))
+    monkeypatch.undo()
+    assert Recorder(tmp_path).recover() == 1
+    assert read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist() == ["a"]
+
+
+def test_an_hour_closes_only_after_its_grace_period(tmp_path: Path) -> None:
+    recorder = Recorder(tmp_path, flush_seconds=3600)
+    recorder.write("trade", trade(T0 + 1, "a"))
+    assert recorder.close_finished(T0 + HOUR_NS + 119 * 10**9) == 0
+    assert recorder.close_finished(T0 + HOUR_NS + 120 * 10**9) == 1
+    assert hours(tmp_path, "trade") == [] and recorder.compact_pending() == 1
+    assert len(hours(tmp_path, "trade")) == 1
+
+
+def test_a_row_later_than_the_grace_never_reopens_a_closed_hour(tmp_path: Path) -> None:
+    """Per-commit review: a closed hour may be compacting in a worker; reopening it raced that."""
+    recorder = Recorder(tmp_path, flush_seconds=3600)
+    recorder.write("trade", trade(T0 + 1, "a"))
+    assert recorder.close_finished(T0 + HOUR_NS + 120 * 10**9) == 1
+    recorder.write("trade", trade(T0 + 2, "late"))  # received in hour 00, written after it closed
+    recorder.flush()
+    assert recorder.late_rows == 1
+    assert [hour for _, hour in recorder._open] == [("2026-01-01", "01")]  # 00 not reopened
+    recorder.close()
+    files = hours(tmp_path, "trade")
+    assert [p.name for p in files] == ["00.parquet", "01.parquet"]
+    assert read_rows(files[1:], "trade").column("trade_id").to_pylist() == ["late"]

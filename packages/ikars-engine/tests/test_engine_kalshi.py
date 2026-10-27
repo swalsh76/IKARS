@@ -13,7 +13,7 @@ from ikars_core.config import Environment, KalshiConfig
 from ikars_core.endpoints import MarketData
 from ikars_core.ratelimit import TokenBucket
 from ikars_core.rest import KalshiPublicClient
-from ikars_core.ws import Data, Reconnected, ResubscribeFailed, SequenceGap
+from ikars_core.ws import Data, FeedError, Reconnected, ResubscribeFailed, SequenceGap
 from ikars_core.ws_models import parse_frame
 from ikars_engine.clocks import VirtualClock
 from ikars_engine.kalshi.discovery import BOOKMARK, Discovery, MarketIndex, series_of
@@ -112,6 +112,10 @@ class FakeFeed:
         self.subscriptions: dict[int, tuple[str, list[str] | None]] = {}
         self.updates: list[tuple[int, str, list[str]]] = []
         self.snapshots: list[list[str]] = []
+        self.snapshot_sids: list[int] = []
+        self.resubscribed: list[str] = []
+        self.refuse_resubscribe = 0  # how many resubscribes fail before one holds
+        self.cap: int | None = None  # the exchange refuses adds past this many markets
         self.closed = False
 
     async def start(self) -> None:
@@ -130,10 +134,24 @@ class FakeFeed:
         self, sid: int, action: str, market_tickers: list[str]
     ) -> list[str]:
         self.updates.append((sid, action, market_tickers))
-        return market_tickers
+        channel, held = self.subscriptions[sid]
+        now = set(held or [])
+        now = now - set(market_tickers) if action == "delete_markets" else now | set(market_tickers)
+        if self.cap is not None and len(now) > self.cap:
+            raise FeedError("too many markets")
+        self.subscriptions[sid] = (channel, sorted(now))
+        return sorted(now)
+
+    async def resubscribe(self, channel: str) -> int:
+        self.resubscribed.append(channel)
+        if self.refuse_resubscribe:
+            self.refuse_resubscribe -= 1
+            raise FeedError("refused")
+        return self.sid_of(channel) or 0
 
     async def get_snapshot(self, sid: int, market_tickers: list[str]) -> None:
         self.snapshots.append(market_tickers)
+        self.snapshot_sids.append(sid)
 
     async def events(self) -> AsyncIterator[Any]:
         while (event := await self.queue.get()) is not None:
@@ -146,8 +164,13 @@ class FakeFeed:
     def stats(self) -> dict[str, Any]:
         return {"connected": True, "sequence_gaps": 0}
 
-    def sid_of(self, channel: str) -> int:
-        return next(sid for sid, (name, _) in self.subscriptions.items() if name == channel)
+    def book_sid(self) -> int:
+        sid = self.sid_of("orderbook_delta")
+        assert sid is not None
+        return sid
+
+    def sid_of(self, channel: str) -> int | None:
+        return next((sid for sid, (name, _) in self.subscriptions.items() if name == channel), None)
 
 
 def frame(kind: str, msg: dict[str, Any], at: int, seq: int | None = None, sid: int = 1) -> Data:
@@ -227,6 +250,7 @@ class Rig:
                 backfill_s=3600,
                 rebalance_s=3600,
                 governor_s=3600,
+                resubscribe_s=0.001,
             ),
         )
 
@@ -324,7 +348,7 @@ def test_over_the_delta_budget_the_hottest_unpinned_markets_are_held_out() -> No
 async def test_frames_become_items_and_recordings_and_keep_the_books(tmp_path: Path) -> None:
     rig = Rig(tmp_path, [market("M1"), market("M2")])
     await rig.source.start()
-    book_sid = rig.feed.sid_of("orderbook_delta")
+    book_sid = rig.feed.book_sid()
     assert set(rig.feed.subscriptions[book_sid][1] or []) == {"M1", "M2"}
     for event in (
         frame("orderbook_snapshot", SNAPSHOT_MSG, T0 + 1, seq=1, sid=book_sid),
@@ -371,13 +395,14 @@ async def test_a_reconnect_opens_a_gap_per_channel_from_its_last_frame(tmp_path:
 async def test_a_book_sequence_gap_asks_for_snapshots_and_a_broken_book_too(tmp_path: Path) -> None:
     rig = Rig(tmp_path, [market("M1")])
     await rig.source.start()
-    sid = rig.feed.sid_of("orderbook_delta")
+    sid = rig.feed.book_sid()
     await rig.feed.queue.put(SequenceGap(sid, 5, 9, 1))
     await rig.feed.queue.put(frame("orderbook_snapshot", SNAPSHOT_MSG, T0 + 1, seq=9, sid=sid))
     await rig.feed.queue.put(
         frame("orderbook_delta", {**DELTA_MSG, "delta_fp": "-99.00"}, T0 + 2, seq=10, sid=sid)
     )
     await rig.items(2)
+    await asyncio.sleep(0)  # the requests run beside the pump
     assert rig.feed.snapshots == [["M1"], ["M1"]]  # once for the gap, once for the broken book
     assert rig.state.gaps()[0].channel == "book" and rig.metrics.counters["kalshi.book.broken"] == 1
     await rig.feed.queue.put(ResubscribeFailed("trade", "refused", 2))
@@ -563,4 +588,170 @@ async def test_a_discovery_cycle_leaves_later_gaps_open(tmp_path: Path) -> None:
     rig.state.add_gap("lifecycle", "sequence", T0, T0 + 10**12, "discovery", T0)  # ends later
     await rig.source._discover()
     assert len(rig.state.gaps("open")) == 1
+    await rig.source.stop()
+
+
+# --- the M1.4b merge review's findings ----------------------------------------------------------
+
+HOUR_NS = 3_600 * 10**9
+
+
+async def test_snapshots_go_to_the_book_subscription_as_it_is_now(tmp_path: Path) -> None:
+    """Review 1: the book's sid changes with every reconnect; a remembered one is stale."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    old = rig.feed.sid_of("orderbook_delta")
+    assert old is not None
+    rig.feed.subscriptions[99] = rig.feed.subscriptions.pop(old)  # a reconnect renumbers it
+    await rig.feed.queue.put(SequenceGap(99, 5, 9, 1))
+    await rig.feed.queue.put(frame("ticker", TICKER_MSG, T0 + 3, sid=1))
+    await rig.items(1)
+    await asyncio.sleep(0)
+    assert rig.feed.snapshot_sids == [99]
+    await rig.source.stop()
+
+
+async def test_a_frame_that_fails_is_a_gap_and_the_feed_goes_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review 2: one bad frame used to end the pump without a word."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    real = rig.recorder.write
+
+    def failing(channel: str, row: dict[str, Any]) -> None:
+        if str(row.get("trade_id", "")).startswith("bad"):
+            raise ValueError("bad row")
+        real(channel, row)
+
+    monkeypatch.setattr(rig.recorder, "write", failing)
+    for trade_id in ("bad1", "bad2", "ok"):
+        await rig.feed.queue.put(
+            frame("trade", {**TRADE_MSG, "trade_id": trade_id}, T0 + 1, seq=1, sid=2)
+        )
+    items = await rig.items(1)
+    assert items[0].payload["trade_id"] == "ok"
+    assert rig.metrics.counters["kalshi.pump.errors"] == 2
+    errors = [g for g in rig.state.gaps() if g.reason == "processing error"]
+    assert [g.channel for g in errors] == ["trade"]  # at most one a minute per channel
+    await rig.source.stop()
+
+
+async def test_downtime_after_a_clean_stop_is_logged_too(tmp_path: Path) -> None:
+    """Review 3: a clean stop was a loss nobody logged, and a crash during start looked clean."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    await rig.feed.queue.put(frame("trade", TRADE_MSG, T0 + 5, seq=1, sid=2))
+    await rig.items(1)
+    await rig.source.stop()
+    assert rig.state.shut_down_cleanly()
+    later = Rig(tmp_path, [market("M1")])
+    later.clock.advance_to(T0 + 600 * 10**9)
+    await later.source.start()
+    assert not later.state.shut_down_cleanly()
+    stopped = [g for g in later.state.gaps() if g.reason == "stopped"]
+    assert [(g.channel, g.start_ns, g.end_ns) for g in stopped] == [
+        ("trade", T0 + 5, T0 + 600 * 10**9)
+    ]
+    await later.source.stop()
+
+
+async def test_a_market_is_asked_for_one_snapshot_until_it_comes(tmp_path: Path) -> None:
+    """Review 4: the request ran on the pump (stalling it) and was repeated for every gap."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    sid = rig.feed.sid_of("orderbook_delta")
+    assert sid is not None
+    await rig.feed.queue.put(SequenceGap(sid, 5, 9, 1))
+    await rig.feed.queue.put(SequenceGap(sid, 9, 12, 1))  # still waiting: not asked again
+    await rig.feed.queue.put(frame("orderbook_snapshot", SNAPSHOT_MSG, T0 + 1, seq=12, sid=sid))
+    await rig.items(1)
+    await rig.feed.queue.put(SequenceGap(sid, 13, 15, 1))  # it came: free to ask again
+    await rig.feed.queue.put(frame("ticker", TICKER_MSG, T0 + 3, sid=1))
+    await rig.items(1)
+    await asyncio.sleep(0)
+    assert rig.feed.snapshots == [["M1"], ["M1"]]
+    await rig.source.stop()
+
+
+async def test_a_repeated_backfill_never_stores_a_trade_twice(tmp_path: Path) -> None:
+    """Review 5: an earlier attempt's rows carry the time they were fetched, in a later hour."""
+    rig = Rig(tmp_path, [market("M1")])
+    rig.recorder = Recorder(tmp_path / "rec", flush_seconds=0)
+    rig.source.recorder = rig.recorder
+    await rig.source.start()
+    rig.kalshi.trades = [fixture("trade.json")]
+    rig.clock.advance_to(LATE + 2 * HOUR_NS)
+    assert await rig.source._backfill(LATE - 10 * 10**9, LATE) == 1
+    rig.clock.advance_to(LATE + 3 * HOUR_NS)  # the attempt is repeated an hour later
+    assert await rig.source._backfill(LATE - 10 * 10**9, LATE) == 0
+    await rig.source.stop()
+    assert read_rows(hours(tmp_path / "rec", "trade"), "trade").num_rows == 1
+
+
+async def test_a_quiet_channel_has_no_empty_loss(tmp_path: Path) -> None:
+    """Review 6: a channel with no frame yet had its loss start "now", an empty gap."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()  # live at T0
+    rig.clock.advance_to(T0 + 100 * 10**9)
+    await rig.feed.queue.put(Reconnected(2, "connection_lost", 3.0))
+    await rig.feed.queue.put(frame("ticker", TICKER_MSG, T0 + 101 * 10**9, sid=1))
+    await rig.items(1)
+    lifecycle = next(g for g in rig.state.gaps() if g.channel == "lifecycle")
+    assert (lifecycle.start_ns, lifecycle.end_ns) == (T0, T0 + 100 * 10**9)
+    await rig.source.stop()
+
+
+async def test_a_refused_subscription_is_sent_again_until_it_holds(tmp_path: Path) -> None:
+    """Review 7: a subscription refused after a reconnect was never sent again."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    rig.feed.refuse_resubscribe = 1
+    await rig.feed.queue.put(ResubscribeFailed("trade", "refused", 2))
+    await rig.feed.queue.put(ResubscribeFailed("trade", "refused", 2))  # already being retried
+    await rig.feed.queue.put(frame("ticker", TICKER_MSG, T0 + 3, sid=1))
+    await rig.items(1)
+    for _ in range(400):
+        if any(g.reason == "resubscribed" for g in rig.state.gaps()):
+            break
+        await asyncio.sleep(0.005)
+    assert rig.feed.resubscribed == ["trade", "trade"]  # refused once, then held
+    assert rig.metrics.counters["kalshi.resubscribe.errors"] == 1
+    assert [g.channel for g in rig.state.gaps() if g.reason == "resubscribed"] == ["trade"]
+    await rig.source.stop()
+
+
+async def test_the_rebalance_removes_before_it_adds_and_trusts_the_exchange(
+    tmp_path: Path,
+) -> None:
+    """Review 8: adding first went past the cap; a failed step left a set the exchange lacked."""
+    rig = Rig(tmp_path, [market("A", volume="10.00"), market("B", volume="5.00")])
+    await rig.source.start()
+    rig.feed.cap = 2
+    rig.kalshi.updated = [market("C", volume="99.00"), market("B", status="closed")]
+    await rig.source._discover()
+    await rig.source._rebalance()
+    assert [action for _, action, _ in rig.feed.updates] == ["delete_markets", "add_markets"]
+    assert rig.source.watched.current == {"A", "C"}
+    rig.feed.cap = 1
+    rig.kalshi.updated = [market("D", volume="999.00")]
+    await rig.source._discover()
+    with pytest.raises(FeedError):
+        await rig.source._rebalance()  # A goes; adding D is refused
+    assert rig.source.watched.current == {"C"}
+    await rig.source.stop()
+
+
+async def test_the_heartbeat_compacts_finished_hours_after_the_grace(tmp_path: Path) -> None:
+    """Review 9: compaction ran on the event loop, in the pump, at every hour boundary."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    await rig.feed.queue.put(frame("trade", TRADE_MSG, T0 + 5, seq=1, sid=2))
+    await rig.items(1)
+    rig.clock.advance_to(T0 + HOUR_NS + 60 * 10**9)
+    await rig.source._heartbeat()
+    assert hours(tmp_path / "rec", "trade") == []  # still in its grace period
+    rig.clock.advance_to(T0 + HOUR_NS + 120 * 10**9)
+    await rig.source._heartbeat()
+    assert len(hours(tmp_path / "rec", "trade")) == 1
     await rig.source.stop()
