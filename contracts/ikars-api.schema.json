@@ -564,6 +564,88 @@
       "title": "KeyStatus",
       "type": "object"
     },
+    "Layout": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "windows": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LayoutWindow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Layout",
+      "type": "object"
+    },
+    "LayoutStart": {
+      "additionalProperties": false,
+      "description": "``PUT /v1/layouts/start``: the layout ``ikars open`` restores (empty: one window).",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "LayoutStart",
+      "type": "object"
+    },
+    "LayoutWindow": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "default": 800,
+          "type": "integer"
+        },
+        "screen": {
+          "default": "/overview",
+          "type": "string"
+        },
+        "width": {
+          "default": 1280,
+          "type": "integer"
+        },
+        "x": {
+          "default": 0,
+          "type": "integer"
+        },
+        "y": {
+          "default": 0,
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "LayoutWindow",
+      "type": "object"
+    },
+    "LayoutsView": {
+      "description": "``GET /v1/layouts``: the saved layouts (each a set of IKARS windows; ``PUT /v1/layouts``\nsaves a ``Layout``) and the one ``ikars open`` restores (empty: one window).",
+      "properties": {
+        "layouts": {
+          "items": {
+            "$ref": "#/$defs/Layout"
+          },
+          "type": "array"
+        },
+        "start": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "layouts",
+        "start"
+      ],
+      "title": "LayoutsView",
+      "type": "object"
+    },
     "LedgerHealth": {
       "properties": {
         "errors": {

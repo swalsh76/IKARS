@@ -19,7 +19,7 @@ from ikars_core.fixedpoint import PrecisionError, to_e6
 
 from ikars_engine.files import backup_name, write_text_atomic
 
-VERSION = 4
+VERSION = 5
 
 # the terminal's built-in skins (PLAN G16 as amended): one list, here, for the settings, the API's
 # contracts and (generated from them) the terminal
@@ -68,6 +68,21 @@ class AlertSettings(msgspec.Struct, frozen=True, kw_only=True):
     digest_minutes: int = 60
 
 
+class LayoutWindow(msgspec.Struct, frozen=True, kw_only=True, forbid_unknown_fields=True):
+    # one IKARS window: its screen (an address in the terminal, like /markets?q=fed) and where it
+    # sits, in Windows' screen coordinates, so any monitor (G16)
+    screen: str = "/overview"
+    x: int = 0
+    y: int = 0
+    width: int = 1280
+    height: int = 800
+
+
+class Layout(msgspec.Struct, frozen=True, kw_only=True, forbid_unknown_fields=True):
+    name: str
+    windows: list[LayoutWindow] = []
+
+
 class TerminalSettings(msgspec.Struct, frozen=True, kw_only=True):
     # the loopback port the engine serves the web terminal and API on: fixed, so an open terminal
     # reconnects after a restart (review 1.R2 item 1); when it is taken, a free one and an alert
@@ -76,6 +91,8 @@ class TerminalSettings(msgspec.Struct, frozen=True, kw_only=True):
     skin: Skin = (
         "system"  # the terminal's colours: system (follow Windows) or a built-in skin (G16)
     )
+    layouts: list[Layout] = []  # saved sets of windows (G16; M1.8b-2)
+    start_layout: str = ""  # the one ikars open restores; empty: one window on the Overview
 
 
 class PluginDefaults(msgspec.Struct, frozen=True, kw_only=True):
@@ -165,9 +182,14 @@ def _v3_to_v4(data: dict[str, Any]) -> dict[str, Any]:
     return {**data, "version": 4}
 
 
+def _v4_to_v5(data: dict[str, Any]) -> dict[str, Any]:
+    # version 5 adds the terminal's saved layouts (none yet) and the one opened at start
+    return {**data, "version": 5}
+
+
 OLD_DEFAULT_ZONE = "America/New_York"
 MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
-    1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4,
+    1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5,
 }  # fmt: skip
 
 

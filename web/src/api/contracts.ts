@@ -17,6 +17,10 @@ GapView: GapView
 HealthView: HealthView
 Hello: Hello
 KeyStatus: KeyStatus
+Layout: Layout
+LayoutStart: LayoutStart
+LayoutWindow: LayoutWindow
+LayoutsView: LayoutsView
 LedgerHealth: LedgerHealth
 LedgerPage: LedgerPage
 LedgerRecordView: LedgerRecordView
@@ -175,6 +179,31 @@ id_set: boolean
 needs_restart: boolean
 owner_only: (boolean | null)
 path_set: boolean
+}
+export interface Layout {
+name: string
+windows?: LayoutWindow[]
+}
+export interface LayoutWindow {
+height?: number
+screen?: string
+width?: number
+x?: number
+y?: number
+}
+/**
+ * ``PUT /v1/layouts/start``: the layout ``ikars open`` restores (empty: one window).
+ */
+export interface LayoutStart {
+name: string
+}
+/**
+ * ``GET /v1/layouts``: the saved layouts (each a set of IKARS windows; ``PUT /v1/layouts``
+ * saves a ``Layout``) and the one ``ikars open`` restores (empty: one window).
+ */
+export interface LayoutsView {
+layouts: Layout[]
+start: string
 }
 export interface LedgerPage {
 before: (number | null)
