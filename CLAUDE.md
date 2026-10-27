@@ -117,7 +117,12 @@ slice still needs its own approved plan before code.
   **Platform review 1.R2 done** (owner approved placement 2026-10-27): items 1 to 5 go into M1.8a-web (stable
   port and session across restarts, typed health, 2^53 test, one time format, search key), 8 and 9 into M1.12,
   6 and 7 into the new **M1.13** replay slice, 10 parked.
-  **Next:** the **M1.8a-web** plan for approval, on branch `m1/8a-web`; then M1.8b. The owner allows `gh pr merge`
+  **M1.8a-web plan APPROVED** (owner 2026-10-27; BUILD-LOG 1.8a-web): four slices, **1a** engine side (serving,
+  sign-in with a fixed port and a 30-day sliding DPAPI-signed cookie, `ikars open`, contracts 2.0, made-up-data
+  mode), **1b** web foundation (Node 24, `web/`, types, client, hub, money, navigator, CI `web` job, Overview and
+  Health), **2a** Markets and Market, **2b** Ledger, Alerts, meter and load test. Answers: fixed port in settings,
+  30-day session, `vite build --watch`, validate every reply. **Now: M1.8a-web-1a** on branch `m1/8a-web-1a`;
+  then 1b, 2a, 2b, then M1.8b. The owner allows `gh pr merge`
   by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

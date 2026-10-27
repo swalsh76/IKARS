@@ -1842,3 +1842,72 @@ the web terminal, can M1.12 and M2 plug in, and does it stay up for weeks. **Pla
 checks, GPU detection. Bounded: metric names (per channel and plugin, never per market), the plugin gap list. Slow
 growth only: the alert log and the gap and exchange-status tables (a few rows a day). Shutdown, restart, damaged
 files and the feed were covered by M1.R.
+
+### 1.8a-web The TypeScript terminal, first part (plan APPROVED 2026-10-27; four slices)
+
+**Builds.**
+- **Engine (Python):**
+  1. Serves the built terminal at `/` (one loopback origin) with a strict Content Security Policy (scripts only from
+     the engine, no inline script or `eval`, no frames; AG Grid's inline styles, if needed, by a per-page nonce),
+     `nosniff`, no referrer and `no-store` on API replies; a plain page when the terminal is not built.
+  2. Sign-in that survives restarts (review 1.R2 item 1): a **fixed port** in settings (owner-changeable; when taken,
+     a random port and a Windows alert); an `HttpOnly`, `SameSite=Strict` cookie for **30 days, sliding**, signed with
+     a DPAPI-protected key in the data folder (D8); a **one-time code** (single use, 30 s) in the launch link's `#`
+     fragment, exchanged by the page and removed from the address bar; changing requests need the engine's own
+     `Origin` and `Sec-Fetch-Site: same-origin`. The per-start bearer token in `api.json` stays for the CLI.
+  3. `ikars open`: a code from the running engine, then Edge as an app window with its own profile under
+     `%LOCALAPPDATA%\IKARS\browser`, extensions off.
+  4. Contracts (review items 2 to 5; API 2.0): typed health fields (plus a free-form detail part); one time format
+     (`*_utc`, `*_local`; `AlertView.at` becomes `at_local`); a test that wire money, counts and ids fit 2^53 (`_ns`
+     documented as approximate in the browser); a lowercase search key per market; a made-up-data API mode for
+     Playwright and the load test.
+- **Web (`web/`, React, strict TypeScript):**
+  5. Types generated from `contracts/` (CI checks the committed copy); every reply and stream event validated with
+     unknown fields refused, by validators compiled at build time (no `eval`, so the CSP holds).
+  6. The client: request timeouts, the `fetch` stream reader, the four stream rules (behaviour 4), and the update
+     hub (10 Hz, subscription changes only on a change of the union; behaviour 3).
+  7. Money: a distinct type for money and counts, integer-only formatting, no arithmetic; 100% tested.
+  8. A small own URL navigator (`/overview`, `/markets?q=`, `/market/<ticker>`, `/health`, `/ledger`, `/alerts`),
+     breadcrumbs, the browser's back and forward; a screen left cancels its requests and subscriptions (behaviours
+     1 and 2).
+  9. Screens from the approved mock-ups (their CSS reused): Overview (later panels with "arrives in" notes),
+     Markets (AG Grid, debounced search, open first), Market (live quote, Lightweight Charts from the candles route,
+     the book, linked items), Health with the gap log, Ledger (paged), Alerts by priority.
+  10. The update-to-screen meter (D20 J; behaviour 6) in Health, and the load test (100 made-up markets at 10 Hz).
+- **CI and repository:**
+  11. A `web` job on Windows: frozen install, ESLint (with the injection bans), type checks, the generated-types
+      check, Vitest at 90% (thin screen components left to Playwright, as decided for WPF), build, Playwright on the
+      installed Edge, `pnpm audit`.
+  12. pnpm's `minimumReleaseAge` (7 days) and install-script allow-list; Dependabot's `npm` entry with a 7-day
+      cooldown; CodeQL adds `javascript-typescript`.
+  13. Playwright output and `.env*` ignored and refused by the data guard.
+  14. Docs: DEPENDENCIES, README, PLAN, this log, CLAUDE.md's dev commands.
+  15. A `/security-review` before the merges that carry the sign-in and the page.
+
+**Changes on this machine:** Node.js 24 LTS (`winget install OpenJS.NodeJS.LTS`, per user) and pnpm through
+Corepack (development only); no Playwright browser download (the installed Edge); the IKARS Edge profile folder; the
+DPAPI-protected session key; a settings migration adding the port (backup first); the engine restarted on new code.
+
+**New packages** (each at least 7 days old): react and react-dom 19.3.1, ag-grid-community and ag-grid-react 36.2.0,
+lightweight-charts 5.2.1 (TradingView's attribution logo kept) (MIT, MIT, Apache-2.0; these ship); vite 8.3.4,
+@vitejs/plugin-react 6.1.2, typescript **6.0.3** (typescript-eslint does not support 7 yet), vitest and
+@vitest/coverage-v8 5.0.5, @playwright/test 1.64.1, eslint 10.13.0, typescript-eslint 8.72.0,
+eslint-plugin-react-hooks 7.1.1, json-schema-to-typescript 16.0.0, ajv 8.20.0, pnpm 12.14.0 (build and test only).
+
+**Live checks:** `ikars open` shows the real Overview; a live market's quote, book and chart update; after a watchdog
+restart the window reconnects with no new sign-in; the ledger pages; a request from another origin is refused and an
+ordinary browser tab cannot read the API; no CSP violations; update to screen p99 <= 33 ms with 100 markets (the
+owner, at the console).
+
+**Owner's answers (2026-10-27):**
+1. **Split: four slices**, each merged on its own (the owner split each proposed half again):
+   | Slice | Builds | Gate |
+   |---|---|---|
+   | **M1.8a-web-1a** engine side | items 1 to 4, the made-up-data mode, a placeholder page | Python tests; `/security-review` |
+   | **M1.8a-web-1b** web foundation | items 5 to 8 and 11 to 13; Overview and Health | the `web` job (the owner adds it to the ruleset); `/security-review` |
+   | **M1.8a-web-2a** markets | Markets and Market | merge review |
+   | **M1.8a-web-2b** the rest | Ledger, Alerts, the meter and the load test | merge review; the console check |
+2. Port: a fixed default in settings, the owner can change it; a random fallback with an alert.
+3. Session: 30 days, sliding.
+4. Development: `vite build --watch`, served by the engine (one origin, production's CSP).
+5. Every reply and stream event validated in production.
