@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hub } from "../api/hub";
 import type { Route } from "../nav/route";
-import { TerminalContext, useRoute, useSnapshot, useTerminal, useValue } from "./hooks";
+import { TerminalContext, useMarkets, useRoute, useSnapshot, useTerminal, useValue } from "./hooks";
 import { Guarded } from "../screens/Guarded";
 import type { Terminal } from "./terminal";
 
@@ -23,6 +23,7 @@ function fakeTerminal(): { terminal: Terminal; setRoute: (r: Route) => void } {
     navigator: {
       current: () => route,
       go: () => undefined,
+      replace: () => undefined,
       listen: (l: () => void) => {
         listeners.add(l);
         return () => listeners.delete(l);
@@ -159,6 +160,42 @@ describe("useSnapshot", () => {
     }
     await show(terminal, <View />);
     expect(container.textContent).toBe("the engine cannot be reached");
+  });
+});
+
+describe("useMarkets", () => {
+  it("subscribes while shown, re-renders on its markets' changes and lets go when left", async () => {
+    const { terminal } = fakeTerminal();
+    const want = vi.spyOn(terminal.hub, "want");
+    function View() {
+      const changes = useMarkets(["KXA"], ["KXA"]);
+      return <p>{`${changes} ${terminal.hub.get("quote:KXA")?.yes_bid_e6 ?? "-"}`}</p>;
+    }
+    await show(terminal, <View />);
+    expect(want).toHaveBeenCalledWith(["KXA"], ["KXA"]);
+    expect(container.textContent).toBe("0 -");
+    await act(async () => {
+      terminal.hub.handle({ event: "quote", data: { ticker: "KXA", yes_bid_e6: 7, yes_ask_e6: null, last_price_e6: null, received_ns: 1 } });
+      terminal.hub.handle({ event: "book", data: { ticker: "KXA", ready: true, yes: [], no: [] } });
+      terminal.hub.flush();
+    });
+    expect(container.textContent).toBe("2 7");
+    await act(async () => root.render(<TerminalContext value={terminal}>{null}</TerminalContext>));
+    expect(terminal.hub.get("quote:KXA")).toBeUndefined(); // released: its value goes too
+  });
+});
+
+describe("a snapshot with nothing to ask yet", () => {
+  it("waits without a request", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const { terminal } = fakeTerminal();
+    function View() {
+      return <p>{useSnapshot(null, "GapPage").state}</p>;
+    }
+    await show(terminal, <View />);
+    expect(container.textContent).toBe("loading");
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 

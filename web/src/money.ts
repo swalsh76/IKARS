@@ -82,3 +82,9 @@ export function share(part: E6, total: E6): number {
   const percent = Number((p * 10_000n) / t) / 100;
   return Math.min(100, percent);
 }
+
+/** A price in cents as a plain number, for a chart's axis only (drawing, never money arithmetic;
+ * at most 0.0001-cent off, which no chart shows). */
+export function drawingCents(value: E6): number {
+  return Number(whole(value)) / 10_000;
+}

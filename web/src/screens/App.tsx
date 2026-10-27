@@ -1,10 +1,14 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { useRoute } from "../app/hooks";
-import { href, title } from "../nav/route";
+import { title, type Route } from "../nav/route";
 import { Guarded } from "./Guarded";
 import { Health } from "./Health";
 import { Overview } from "./Overview";
 import { Later, Link, Shell } from "./Shell";
+
+// the grid and chart libraries load only when their screens first open (a lighter start)
+const Markets = lazy(() => import("./Markets").then((m) => ({ default: m.Markets })));
+const Market = lazy(() => import("./Market").then((m) => ({ default: m.Market })));
 
 function Screen() {
   const route = useRoute();
@@ -17,8 +21,9 @@ function Screen() {
     case "health":
       return <Health />;
     case "markets":
+      return <Markets query={route.query} />;
     case "market":
-      return <Later title="Markets" slice="M1.8a-web-2a" />;
+      return <Market ticker={route.ticker} />;
     case "ledger":
     case "alerts":
       return <Later title={route.screen === "ledger" ? "Ledger" : "Alerts"} slice="M1.8a-web-2b" />;
@@ -33,13 +38,21 @@ function Screen() {
   }
 }
 
+/** The screen a route shows: a search typed on the Markets screen keeps the same screen. */
+function screenKey(route: Route): string {
+  return route.screen === "market" ? `market:${route.ticker}` : route.screen;
+}
+
 export function App() {
   const route = useRoute();
   return (
     <Shell>
-      {/* keyed by the address: a screen that failed does not keep the next one from drawing */}
-      <Guarded title="This screen" key={href(route)}>
-        <Screen />
+      {/* keyed by the screen: one that failed does not keep the next from drawing, and typing a
+          search (which changes the address) does not redraw the screen from scratch */}
+      <Guarded title="This screen" key={screenKey(route)}>
+        <Suspense fallback={<p className="muted">Loading…</p>}>
+          <Screen />
+        </Suspense>
       </Guarded>
     </Shell>
   );

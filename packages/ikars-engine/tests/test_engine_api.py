@@ -616,7 +616,11 @@ async def test_every_response_carries_the_browser_hardening(web: ApiContext) -> 
         ("/", {}, "no-cache"),
     ):
         response = await call(web, "GET", path, headers=headers)
-        assert "script-src 'self'" in response.headers["content-security-policy"]
+        policy = dict(
+            d.strip().split(" ", 1) for d in response.headers["content-security-policy"].split(";")
+        )
+        assert policy["script-src"] == "'self'" and policy["style-src"] == "'self'"
+        assert policy["font-src"] == "'self' data:"  # AG Grid's icon font; nothing else widened
         assert "unsafe" not in response.headers["content-security-policy"]
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["referrer-policy"] == "no-referrer"

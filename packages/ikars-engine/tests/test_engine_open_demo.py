@@ -186,3 +186,11 @@ def test_made_up_books_stay_valid_at_the_price_limits(bid: int) -> None:
     assert book.ready
     for side in ("yes", "no"):
         assert all(10_000 <= price <= 990_000 for price, _ in book.bids(side))
+
+
+def test_made_up_candles_are_kalshi_shaped_and_in_range() -> None:
+    from ikars_engine.demo_api import made_up_candles
+
+    rows = made_up_candles(0, 3_600, 1, "KXDEMO")
+    assert len(rows) == 60 and rows == made_up_candles(0, 3_600, 1, "KXDEMO")  # the same each time
+    assert all(r.price.close_e6 is not None and 20_000 <= r.price.close_e6 <= 970_000 for r in rows)

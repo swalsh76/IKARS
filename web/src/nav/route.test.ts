@@ -62,8 +62,14 @@ describe("the browser navigator", () => {
     window.dispatchEvent(new PopStateEvent("popstate"));
     expect(navigator.current()).toEqual({ screen: "alerts" });
     expect(heard).toHaveBeenCalledTimes(2);
+    const entries = window.history.length;
+    navigator.replace("/markets?q=rain");
+    expect(navigator.current()).toEqual({ screen: "markets", query: "rain" });
+    expect(window.history.length).toBe(entries); // no new history entry
+    navigator.replace("/markets?q=rain");
+    expect(heard).toHaveBeenCalledTimes(3);
     stop();
     navigator.go("/ledger");
-    expect(heard).toHaveBeenCalledTimes(2);
+    expect(heard).toHaveBeenCalledTimes(3);
   });
 });

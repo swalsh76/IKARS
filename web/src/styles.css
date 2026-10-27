@@ -100,3 +100,37 @@ pre { margin: 8px 0 0; max-height: 480px; overflow: auto; font-size: 12px; color
 .strip .level-problem { color: var(--problem); }
 .strip .level-watch { color: var(--neg); }
 .fatal { margin: 3rem auto; max-width: 40rem; padding: 0 1rem; }
+
+/* Markets and Market (M1.8a-web-2a). AG Grid's CSS-file theme, coloured from the tokens above. */
+.markets { min-height: 70vh; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.toolbar input, .toolbar select { height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; }
+.toolbar input { flex: 1 1 220px; }
+.grid-box { height: 62vh; min-height: 360px; } /* a definite height: the grid fills it (min-height alone collapses it) */
+.ag-theme-quartz {
+  --ag-background-color: var(--card);
+  --ag-header-background-color: var(--panel);
+  --ag-odd-row-background-color: var(--card);
+  --ag-row-hover-color: var(--nav-on);
+  --ag-foreground-color: var(--text);
+  --ag-data-color: var(--text);
+  --ag-header-foreground-color: var(--muted);
+  --ag-border-color: var(--line);
+  --ag-row-border-color: var(--line);
+  --ag-font-family: inherit;
+  --ag-font-size: 13px;
+}
+.ag-theme-quartz .num { text-align: right; font-variant-numeric: tabular-nums; }
+.ag-theme-quartz .ag-header-cell.num .ag-header-cell-label { justify-content: flex-end; }
+.ag-theme-quartz .clickable { cursor: pointer; }
+.stats.quote { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.span-2 > .card, .span-3 > .card { height: 100%; }
+.chart-card { min-height: 360px; }
+.chart { flex: 1; min-height: 300px; }
+.book-sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.book td, .book th { padding: 3px 6px; }
+.num { text-align: right; }
+.linked { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.linked > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+@media (max-width: 900px) { .linked, .stats.quote { grid-template-columns: minmax(0, 1fr); } }
+.credit { margin: 0; text-align: right; }

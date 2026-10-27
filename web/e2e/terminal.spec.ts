@@ -17,7 +17,8 @@ async function signInUrl(): Promise<string> {
 function watchPolicy(page: Page): string[] {
   const refused: string[] = [];
   page.on("console", (m) => {
-    if (/Content Security Policy|Refused to/i.test(m.text())) refused.push(m.text());
+    // a policy refusal, or any error a library logs (AG Grid's missing modules are errors in the console)
+    if (m.type() === "error" || /Content Security Policy|Refused to/i.test(m.text())) refused.push(m.text());
   });
   page.on("pageerror", (e) => refused.push(`page error: ${e.message}`));
   return refused;
@@ -59,8 +60,8 @@ test("drills into Health and back, with real addresses, and stays signed in on r
 
 test("a screen address opens directly, and an unknown one says so", async ({ page }) => {
   await page.goto(await signInUrl());
-  await page.goto(`${base()}/markets`);
-  await expect(page.getByRole("region", { name: "Markets" })).toContainText("Arrives in M1.8a-web-2a");
+  await page.goto(`${base()}/alerts`);
+  await expect(page.getByRole("region", { name: "Alerts" })).toContainText("Arrives in M1.8a-web-2b");
   await page.goto(`${base()}/no/such/screen`);
   await expect(page.getByRole("heading", { name: "Not found" })).toBeVisible();
 });
@@ -87,5 +88,37 @@ test("the status strip stays in view in a small window", async ({ page }) => {
   await expect(page.getByTestId("cash")).toBeVisible();
   await page.mouse.wheel(0, 2_000);
   await expect(page.getByLabel("Engine status")).toBeInViewport();
+});
+
+test("markets: the grid fills, a search narrows it and a row opens the market", async ({ page }) => {
+  const refused = watchPolicy(page);
+  await page.goto(await signInUrl());
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Markets" }).click();
+  await expect(page.getByTestId("market-count")).toHaveText("30 found");
+  await expect(page.locator(".ag-row").first()).toBeVisible();
+  await page.locator("#market-search").fill("market 12");
+  await expect(page.getByTestId("market-count")).toHaveText("1 found");
+  await expect(page).toHaveURL(/\/markets\?q=market(\+|%20)12$/);
+  await page.getByRole("row", { name: /Made-up market 12/ }).click();
+  await expect(page).toHaveURL(/\/market\/KXDEMO-26JAN01-T2$/);
+  await expect(page.getByRole("heading", { name: "Made-up market 12" })).toBeVisible();
+  expect(refused).toEqual([]);
+});
+
+test("market: the live quote, the chart, the book and the linked items", async ({ page }) => {
+  const refused = watchPolicy(page);
+  await page.goto(await signInUrl());
+  await page.goto(`${base()}/market/KXDEMO-26JAN00-T0`); // a watched market (it has a book)
+  await expect(page.getByRole("heading", { name: "Made-up market 0" })).toBeVisible();
+  await expect(page.getByTestId("bid")).toHaveText(/\d+(\.\d)?¢/);
+  await expect(page.getByTestId("price-chart").locator("canvas").first()).toBeVisible();
+  await expect(page.getByRole("table", { name: "YES bids" })).toContainText("¢");
+  const linked = page.getByRole("region", { name: "Linked" });
+  await expect(linked.getByRole("link", { name: "Made-up market 1", exact: true })).toBeVisible();
+  await expect(linked).toContainText("None.");
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toHaveText(/Overview\s*›\s*Markets\s*›\s*KXDEMO-26JAN00-T0/);
+  await page.goto(`${base()}/market/KXDEMO-26JAN02-T9`); // not watched: no book
+  await expect(page.getByRole("region", { name: "Order book" })).toContainText("not watched");
+  expect(refused).toEqual([]);
 });
 

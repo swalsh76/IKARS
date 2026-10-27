@@ -79,6 +79,8 @@ export function title(route: Route): string {
 export interface Navigator {
   current(): Route;
   go(to: string): void;
+  /** Moves without a new history entry (a search box as the owner types). */
+  replace(to: string): void;
   listen(listener: () => void): () => void;
 }
 
@@ -96,6 +98,11 @@ export function browserNavigator(win: Window = window): Navigator {
     go(to: string) {
       if (to === win.location.pathname + win.location.search) return;
       win.history.pushState(null, "", to);
+      changed();
+    },
+    replace(to: string) {
+      if (to === win.location.pathname + win.location.search) return;
+      win.history.replaceState(null, "", to);
       changed();
     },
     listen(listener) {

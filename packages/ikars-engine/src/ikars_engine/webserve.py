@@ -21,9 +21,12 @@ from pathlib import Path
 from starlette.requests import Request
 from starlette.responses import FileResponse, Response
 
+# font-src allows data: (M1.8a-web-2a): AG Grid's CSS theme embeds its icon font as a data: URI. A
+# font cannot run code; scripts and styles stay 'self' only (its CSS-file theme is used precisely so
+# that no inline style is needed).
 CSP = (
     "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-    "font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; "
+    "font-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; "
     "frame-ancestors 'none'"
 )
 SECURITY_HEADERS: tuple[tuple[bytes, bytes], ...] = (

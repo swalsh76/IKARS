@@ -24,6 +24,25 @@ export function useValue<K extends keyof Values>(key: K): Values[K] {
   return useSyncExternalStore(subscribe, read);
 }
 
+/** The markets a screen shows, live: subscribes their quotes (and books) while the screen is open and
+ * re-renders it when any of them changes (one render per hub flush). Returns a change count. */
+export function useMarkets(quotes: readonly string[], books: readonly string[] = []): number {
+  const { hub } = useTerminal();
+  const [changes, setChanges] = useState(0);
+  const key = JSON.stringify([quotes, books]);
+  useEffect(() => {
+    const [q, b] = JSON.parse(key) as [string[], string[]];
+    const release = hub.want(q, b);
+    const changed = () => setChanges((n) => n + 1);
+    const stops = [...q.map((t) => hub.listen(`quote:${t}`, changed)), ...b.map((t) => hub.listen(`book:${t}`, changed))];
+    return () => {
+      for (const stop of stops) stop();
+      release();
+    };
+  }, [hub, key]);
+  return changes;
+}
+
 export function useRoute(): Route {
   const { navigator } = useTerminal();
   return useSyncExternalStore(navigator.listen, navigator.current);
@@ -32,10 +51,12 @@ export function useRoute(): Route {
 /** ``stale``: a refresh failed and ``value`` is the last one that loaded (it is kept, not blanked). */
 export type Loaded<T> = { state: "loading" } | { state: "ready"; value: T; stale?: string } | { state: "failed"; message: string };
 
-/** ``GET path`` while the screen shows it; leaving the screen cancels the request (behaviour 2). */
-export function useSnapshot<K extends ContractName>(path: string, name: K, refreshMs = 0): Loaded<Contracts[K]> {
+/** ``GET path`` while the screen shows it; leaving the screen cancels the request (behaviour 2).
+ * ``path`` null: nothing to ask yet (it waits on something else). */
+export function useSnapshot<K extends ContractName>(path: string | null, name: K, refreshMs = 0): Loaded<Contracts[K]> {
   const [loaded, setLoaded] = useState<Loaded<Contracts[K]>>({ state: "loading" });
   useEffect(() => {
+    if (path === null) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
