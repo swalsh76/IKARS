@@ -271,6 +271,15 @@ class KalshiFeed:
                 sub.params = {**sub.params, "market_tickers": list(current)}
         return [str(ticker) for ticker in current]
 
+    async def get_snapshot(self, sid: int, market_tickers: list[str]) -> None:
+        """Ask for a fresh ``orderbook_snapshot`` of each market on an order-book subscription,
+        without changing the subscription (``update_subscription`` with ``get_snapshot``). The
+        snapshots arrive on the feed like any frame."""
+        await self._command(
+            "update_subscription",
+            {"sid": sid, "market_tickers": market_tickers, "action": "get_snapshot"},
+        )
+
     async def unsubscribe(self, sid: int) -> None:
         await self._command("unsubscribe", {"sids": [sid]})
         self._subscriptions = [s for s in self._subscriptions if s.sid != sid]

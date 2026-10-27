@@ -53,6 +53,7 @@ class Engine:
         self.skew = skew or SkewMonitor()
         self.deterministic = deterministic
         self.listeners: list[Listener] = []
+        self.health_parts: dict[str, Callable[[], dict[str, object]]] = {}  # e.g. the Kalshi source
         self._budget_paused: set[str] = set()
         self._pending: deque[Item] = deque()  # deterministic: emits waiting for their turn
         self._routing = False  # deterministic: a delivery is under way
@@ -122,6 +123,10 @@ class Engine:
             async for item in self.source.items():
                 received += 1
                 self.metrics.count("engine.received")
+                if not self.deterministic:  # how long the item waited between the feed and here
+                    self.metrics.observe(
+                        "engine.feed_to_route_ns", self.clock.now_ns() - item.received_ns
+                    )
                 stages = Stages(self.metrics, "engine.item", self.clock.monotonic_ns())
                 await self._route(item)
                 stages.finish(self.clock.monotonic_ns())
@@ -145,4 +150,5 @@ class Engine:
                 "monthly_e6": self.costs.monthly_e6,
             },
             "metrics": self.metrics.snapshot(),
+            **{name: part() for name, part in sorted(self.health_parts.items())},
         }

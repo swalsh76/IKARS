@@ -122,6 +122,8 @@ def configure(
     for each in target.handlers:
         protect(each, redactor)
     target.setLevel(level)
+    # httpx logs every request at INFO: noise in a feed that makes thousands (KAPS did the same)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     return handler
 
 
