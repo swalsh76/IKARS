@@ -1537,12 +1537,12 @@ MIT):
 | `Ikars.Client` | The engine connection: `api.json`, the version handshake, a typed API client with its own timeout, an SSE reader, and a stream watcher that subscribes, resumes after the last alert, backs off (a refusal keeps backing off) and drops a stream silent for 20 s. The connector starts the engine through its registered command when none runs. |
 | `Ikars.Terminal` | WPF (`ThemeMode=System`). One navigator: drill-down, breadcrumbs, back and forward (R9); a screen left while loading is cancelled and lets go of its subscriptions. An update hub hands the stream's changes to the screens once per 100 ms tick, and sends a subscription change only when the screens' union changed. |
 | Screens | **Overview** (cash, open cost, unrealised, positions, exposure, the newest alerts, a health strip, and the six later panels drawn with "arrives in" notes); **Markets** (search, paging, live bid and ask); **Market** (quote, both book sides, the day's price chart, and the linked panel: same-event markets and your ledger records for it); **Ledger** (status, pages newest first); **Alerts** (by priority); **Health** (every engine part, the week's gap log, frame time). |
-| Frame time (J) | Gaps between WPF's rendered frames, the last 600, as p50 and p99, on the status bar and the Health screen; pauses over a second are not frames. |
+| Frame time (J) | **Update to screen** (D20 J as amended): for each tick that changed the screen, the time until WPF starts the frame after the one that shows it (an upper bound, high by up to one refresh), and the UI work per update (the hand-over and its layout); the last 600 as p50 and p99, on the status bar and the Health screen. The window listens for frames only while a change waits. |
 | Start-up | `--data-folder <path>` points the terminal at another engine's folder (the load test; the portable install later). |
 
 **Verified.**
-- 1,279 Python tests pass (93.8% overall) and 68 .NET tests pass: `Ikars.Terminal` 97.6% of lines (views
-  excluded, as approved), `Ikars.Client` 94.9%, `Ikars.Contracts` 100%. ruff, mypy, dotnet format, the data guard
+- 1,279 Python tests pass (93.8% overall) and 69 .NET tests pass: `Ikars.Terminal` 97.7% of lines (views
+  excluded, as approved), `Ikars.Client` 93.7%, `Ikars.Contracts` 100%. ruff, mypy, dotnet format, the data guard
   and gitleaks are clean.
 - **Live**, against the background engine (driven through UI Automation; counts only):
 
@@ -1554,15 +1554,32 @@ MIT):
   | Market drill-down | quote, both book sides (10 levels each), the linked panel with the same-event market; ledger records by market correct once the engine ran the new routes |
   | Ledger paging | 223 records: 223 to 124, 123 to 24, 23 to 1 (Older then disabled), Newest back to the top; chain verified |
   | Health | 87 health rows and the gap log; the API token appears nowhere (only the request budget's `tokens_*` rates) |
-  | Frame time, idle | **p50 31 ms, p99 31 ms** |
-  | Frame time, 100 made-up markets changing every 100 ms (the engine's real API server over a synthetic context; Markets showing 50 live rows, or one market's book) | **p50 31 ms, p99 63 ms**: about one frame in four after a change waits one extra refresh |
 
-**The frame-time finding.** These measurements were taken over **Remote Desktop**. The remote display refreshes at
-about 32 Hz, and WPF there renders in **software (render tier 0)**. A trace showed the terminal's own work per
-100 ms tick at **p50 0.08 ms, p99 1.1 ms, at most 11 ms**, with no gen-2 collections. The UI thread is idle; each
-changed frame is simply presented one remote refresh late (62.5 ms is exactly two refreshes at 32 Hz). So 33 ms
-cannot be judged over this session: **the owner's check at the console** (59 Hz, the RTX 5070 Ti, hardware
-rendering) decides it. The terminal shows p50 and p99 on its status bar.
+**Frame time (J): how the target was settled.** The load for these checks was the engine's real API server over a
+made-up context: 100 watched markets whose quotes and books all change every 100 ms.
+1. **Over Remote Desktop** the first meter (gaps between rendered frames) read p50 31 ms, p99 63 ms. The remote
+   display runs at about 32 Hz with software rendering (render tier 0), so nothing could be judged there.
+2. **At the console** (59 Hz, the RTX 5070 Ti, hardware rendering) the owner read p99 34 ms idle and 48 to 49 ms
+   under load. Clearing and refilling lists every second was replaced by in-place updates (`144c5c4`); the readings
+   did not move.
+3. **A trace at the console** showed the terminal's UI work per update at p99 1.3 ms on Markets and 15 ms on a
+   market, so the gaps were not IKARS's work. A 1 ms Windows timer resolution changed nothing.
+4. **A bare WPF window** (no IKARS code) settled it: p99 46 ms when nothing changes, and p50 and p99 both
+   **16.7 ms** (2 gaps over 20 ms in 1,791 frames) when its text changes every frame. **WPF draws only when
+   something changed**, so frame gaps measure idling, not slowness. My earlier reading, that WPF's timing on this
+   machine was irregular, was wrong. Forcing the high-performance GPU changed nothing (every monitor is on the
+   5070 Ti, and WPF already rendered there); the two preference values were removed afterwards.
+5. **The owner amended D20 J** (2026-10-27): keep 33 ms, applied to **update to screen**. Measured at the console
+   with the new meter (`40e73ae`):
+
+   | Screen | To screen p50 / p99 | UI work p99 |
+   |---|---|---|
+   | Markets, 100 made-up markets at 10 Hz | 16 / **32 ms** | 2 ms |
+   | One market, same load | 16 / **32 ms** | 10 ms |
+   | Overview, same load | 15 / **30 ms** | 2 ms |
+   | Overview, real engine | 16 / **24 ms** | 2 ms |
+
+   **Within the target** on every screen, with an upper-bound measure.
 
 **Live findings, fixed (`a4fa061`).**
 1. **17 of the top 50 markets were closed.** A closed 15-minute market keeps its day's volume and sorted first.
@@ -1589,7 +1606,7 @@ rendering) decides it. The terminal shows p50 and p99 on its status bar.
   | 3 | A stream that stays open but silent was never noticed | Dropped after 20 s without an event (health comes every 5 s); tested |
   | 4 | A refused stream (too many) reset the backoff and retried every second | A refusal keeps backing off; tested |
   | 5 | Overlapping timer ticks could send an older subscription set last | One flush at a time |
-  | 6 | The frame meter counted a minimise or drag as a slow frame, and sorted the window twice per reading | Pauses over 1 s skipped; one sort per reading; tested. The always-on render callback is how D20 J is measured: kept |
+  | 6 | The frame meter counted a minimise or drag as a slow frame, and sorted the window twice per reading; its render callback ran always | Pauses skipped and one sort per reading (`db1676f`); then superseded by the update-to-screen meter (`40e73ae`), which listens for frames only while a change waits |
   | 7 | A failed candles read was asked of Kalshi again on every open | Failures cached for a minute too; the chart says why it is empty; tested |
   | 8 | A request timeout was taken for an engine restart: reconnect and a repeated Kalshi-backed request | A timeout is not retried (`TimedOut`); tested |
   | 9 | An alert arriving during a screen's snapshot appeared twice; the Alerts lists grew without a bound | Once each, newest first by line, at most 200 per priority; tested |
@@ -1597,6 +1614,8 @@ rendering) decides it. The terminal shows p50 and p99 on its status bar.
 
 - **Per commit (`db1676f`):** 1 fixed: disposing the old client on a reconnect would cancel calls still running on
   it. It is no longer disposed; it owns no sockets (one shared handler).
+- **Per commit (`144c5c4`):** none.
+- **Per commit (`40e73ae`):** 1 fixed: a duplicated doc comment on `TickAsync`.
 
 **Kept, changed and why.**
 - *Kept from KalTerm3:* WPF with the Windows 11 theme, ScottPlot for charts, the SSE stream client's shape.
@@ -1604,4 +1623,4 @@ rendering) decides it. The terminal shows p50 and p99 on its status bar.
   back/forward work the same everywhere (R9). Updates are coalesced twice: in the engine (100 ms per market) and in
   the terminal (one hand-over per tick), so a burst never reaches the UI thread as a burst.
 
-**M1.8a built**, subject to the owner's console frame-time check and merge.
+**M1.8a built**, subject to the owner's merge.
