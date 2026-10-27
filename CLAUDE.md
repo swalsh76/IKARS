@@ -91,9 +91,11 @@ slice still needs its own approved plan before code.
   file; check with `Test-Path` only; load into a single command's process. First use: M1.2's live tests.
 - **M1 slice list and gates approved (2026-10-26).** **M1.1 done:** PR #1 merged as `2f19222`, CI green on `main`
   (BUILD-LOG 1.1). **M1.2 done** (PR #3 merged as `3485b16`; BUILD-LOG 1.2). **M1.3 approved for now** (source in `docs/design/mockups/`).
-  **M1.4a done** (PR #4 merged as `b29a86e`). **M1.4b built and verified live** on `m1/4b-feeds` (BUILD-LOG 1.4b;
-  commits `b2cfe8c`, `71489fc`, `f2d57fb`): PR #5 open with CI green, waiting for the owner's merge; open question: where GPU
-  detection goes (recommended M1.6 or M2). Next after the merge: M1.5 (ledger) plan. The owner allows
+  **M1.4a done** (PR #4 merged as `b29a86e`). **M1.4b done** (PR #5 merged as `58abbe5`; BUILD-LOG 1.4b).
+  Owner 2026-10-27: GPU detection moved to M1.6; recording volume (about 2.1 GB a day) kept. **Keep
+  [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) current** in every slice that adds or drops a dependency (for the
+  install instructions). Branch `docs/m1-4b-close` carries these doc updates (PR to merge when the owner asks).
+  **Next:** the M1.5 (audit and tax ledger, portfolio) slice plan, for the owner's approval. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
