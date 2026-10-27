@@ -2137,4 +2137,19 @@ drawing): update to screen p50 9 ms, p99 19 ms; the page's own work p99 1.4 ms; 
   | 9 | The load test repeated the sign-in helper and did not check the answer | One shared helper (`e2e/demo.ts`) that checks it |
   | 10 | An alert heading showed the kept 200 as if it were the total | It says "the latest 200" |
 
-**M1.8a-web-2b built**, subject to the owner's console check and merge.
+**The owner's console check** (`pnpm load`, a visible window, 59 Hz 4K displays).
+- **First run: failed narrowly.** p50 11 ms, p99 33 ms (just over: the card read WATCH), the page's own work p99
+  17.5 ms, and only 101 screen updates (the window was likely covered part of the time; the meter skips frames Edge
+  does not draw). At 59 Hz two frames are about 34 ms, so any update whose work spilled past one frame landed near
+  the target. The owner chose to make the Markets screen faster before moving on.
+- **The fix (`ca59b71`):** each quote update re-rendered the screen through React and AG Grid compared every row.
+  Now `useQuoteChanges` hands each flush's changed tickers to the grid as one transaction (only those rows' cells
+  redraw), and React renders the grid only when the list of markets changes. Per-commit review: 2 fixed before
+  committing (a quote before the grid was ready was dropped until that market's next change: the grid takes every
+  current value when ready; a batch still queued when the list changed or the screen closed was delivered: dropped).
+  A screen test checks rows change live in the grid.
+- **Second run: passed.** Update to screen **p50 10 ms, p99 19 ms** (target <= 33 ms), the page's own work p99
+  **2.8 ms** (from 17.5), over 372 screen updates; engine to screen p50 159 ms, p99 216 ms (information: the 10 Hz
+  batching on both sides).
+
+**M1.8a-web-2b built and its console check passed**, subject to the owner's merge.
