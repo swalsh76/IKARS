@@ -8,48 +8,18 @@ whenever the engine does.
 """
 
 import asyncio
-import contextlib
 import logging
-import threading
-from collections.abc import Callable
-from typing import Any
 
 from ikars_engine.clocks import EventClock
 from ikars_engine.ledger import iso_utc
 from ikars_engine.paths import Paths
 from ikars_engine.share import BackupReport, Share, back_up
 from ikars_engine.store import StateStore
+from ikars_engine.threads import in_daemon_thread
 
 log = logging.getLogger("ikars_engine.backup")
 LAST_OK = "backup.last_ok_ns"
 NS = 1_000_000_000
-
-
-async def in_daemon_thread[T](work: Callable[..., T], *args: Any, **kwargs: Any) -> T:
-    """Run ``work`` in a daemon thread and await it. Unlike ``asyncio.to_thread``, a call stuck on
-    a NAS that stopped answering never holds up the engine's exit (a copy cut short leaves only a
-    temporary name on the share)."""
-    loop = asyncio.get_running_loop()
-    done: asyncio.Future[T] = loop.create_future()
-
-    def settle(result: T | None, error: BaseException | None) -> None:
-        if done.cancelled():
-            return
-        if error is not None:
-            done.set_exception(error)
-        else:
-            done.set_result(result)  # type: ignore[arg-type]
-
-    def run() -> None:
-        try:
-            result, error = work(*args, **kwargs), None
-        except BaseException as exc:  # handed to the awaiting coroutine
-            result, error = None, exc
-        with contextlib.suppress(RuntimeError):  # the loop is gone: the engine exited meanwhile
-            loop.call_soon_threadsafe(settle, result, error)
-
-    threading.Thread(target=run, name="ikars-backup", daemon=True).start()
-    return await done
 
 
 class BackupService:

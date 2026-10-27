@@ -53,6 +53,15 @@ class BackupSettings(msgspec.Struct, frozen=True, kw_only=True):
     share: str = ""
 
 
+class AlertSettings(msgspec.Struct, frozen=True, kw_only=True):
+    # workstation notifications only, no phone pushes (owner, 2026-10-27); in quiet hours only
+    # urgent alerts pop up, the rest wait for the digest (owner: 22:00 to 07:00, workstation time)
+    quiet_start: str = "22:00"
+    quiet_end: str = "07:00"
+    throttle_minutes: int = 10
+    digest_minutes: int = 60
+
+
 class PluginDefaults(msgspec.Struct, frozen=True, kw_only=True):
     queue_size: int = 10_000
     call_timeout_seconds: float = 30.0
@@ -69,6 +78,7 @@ class Settings(msgspec.Struct, frozen=True, kw_only=True):
     feed: FeedSettings = FeedSettings()
     plugins: PluginDefaults = PluginDefaults()
     backup: BackupSettings = BackupSettings()
+    alerts: AlertSettings = AlertSettings()
     plugin_settings: dict[str, dict[str, Any]] = {}
 
 

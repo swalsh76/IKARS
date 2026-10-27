@@ -553,7 +553,7 @@ def test_a_no_position_without_yes_offers_has_no_bid() -> None:
 
 async def test_a_daemon_thread_returns_and_raises() -> None:
     """Review 6: a stuck NAS copy must never hold up the engine's exit (a daemon thread)."""
-    from ikars_engine.backup_service import in_daemon_thread
+    from ikars_engine.threads import in_daemon_thread
 
     assert await in_daemon_thread(lambda a, b=0: a + b, 2, b=3) == 5
 

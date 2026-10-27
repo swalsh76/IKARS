@@ -106,15 +106,17 @@ def configure(
     max_bytes: int = 10_000_000,
     files_kept: int = 10,
     logger: logging.Logger | None = None,
+    filename: str = "ikars.jsonl",
 ) -> logging.Handler:
-    """Send ``logger`` (the root logger by default) to ``folder/ikars.jsonl``, rotated by size.
+    """Send ``logger`` (the root logger by default) to ``folder/<filename>``, rotated by size
+    (each process its own file: two processes rotating one file would clash on Windows).
 
     Redaction is a handler filter (a logger's own filters do not see records from child loggers),
     so it is put on **every** handler the logger has, not only this one. A handler added later must
     go through :func:`protect`."""
     folder.mkdir(parents=True, exist_ok=True)
     handler = logging.handlers.RotatingFileHandler(
-        folder / "ikars.jsonl", maxBytes=max_bytes, backupCount=files_kept, encoding="utf-8"
+        folder / filename, maxBytes=max_bytes, backupCount=files_kept, encoding="utf-8"
     )
     handler.setFormatter(JsonFormatter())
     target = logger or logging.getLogger()

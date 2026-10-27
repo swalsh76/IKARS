@@ -15,6 +15,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,7 +31,7 @@ from ikars_core.ratelimit import TokenBucket
 from ikars_core.rest import KalshiAccountClient, KalshiPublicClient
 from ikars_core.ws import FeedConfig, KalshiFeed
 
-from ikars_engine import taxzone
+from ikars_engine import gpu, taxzone
 from ikars_engine.backup_service import BackupService
 from ikars_engine.clocks import WallClock
 from ikars_engine.engine import Engine
@@ -51,9 +52,12 @@ from ikars_engine.settings import Settings
 from ikars_engine.share import configured, migration_copier
 from ikars_engine.skew import SkewMonitor
 from ikars_engine.store import StateStore
+from ikars_engine.threads import in_daemon_thread
 
 log = logging.getLogger("ikars_engine.kalshi.runner")
 SAMPLE_EVERY_S = 60.0
+TICK_S = 2.0  # how often the run loop looks for a stop request
+MINUTE_S = 60.0
 
 
 def clock_observer(skew: SkewMonitor) -> Callable[[float, float, Mapping[str, str]], None]:
@@ -97,6 +101,7 @@ class Live:
     ledger_service: LedgerService
     backup: BackupService
     account_client: KalshiAccountClient
+    gpu_task: asyncio.Task[None]
 
 
 def describer(index: MarketIndex) -> Describe:
@@ -163,6 +168,19 @@ async def build(paths: Paths, settings: Settings) -> Live:
         settings_sha256=settings_digest(settings),
     )
     engine = Engine(clock, source, metrics=metrics, skew=skew)
+    cards: dict[str, object] = {"device": None, "note": "detecting"}
+
+    async def detect_gpu() -> None:  # in the background: a hung driver never delays the start
+        try:
+            found = gpu.health(await in_daemon_thread(gpu.detect))
+        except Exception as exc:  # never "detecting" for ever: say it failed
+            log.warning("GPU detection failed", extra={"error": type(exc).__name__})
+            found = {"device": None, "note": "detection failed"}
+        cards.clear()
+        cards.update(found)
+
+    engine.health_parts["gpu"] = lambda: dict(cards)
+    gpu_task = asyncio.create_task(detect_gpu(), name="gpu")
     engine.health_parts["kalshi"] = source.health
     engine.health_parts["ledger"] = service.health
     backups = BackupService(share, paths, state, clock)
@@ -171,7 +189,7 @@ async def build(paths: Paths, settings: Settings) -> Live:
         ledger, source.quotes, index.fees.get, index.categories.get
     )
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
-    return Live(engine, source, state, ledger, service, backups, account_client)
+    return Live(engine, source, state, ledger, service, backups, account_client, gpu_task)
 
 
 class PortfolioHealth:
@@ -249,8 +267,16 @@ def summary(health: dict[str, object]) -> str:
 
 
 async def run(
-    paths: Paths, settings: Settings, minutes: float | None, out: Callable[[str], None] = print
+    paths: Paths,
+    settings: Settings,
+    minutes: float | None,
+    out: Callable[[str], None] = print,
+    should_stop: Callable[[], bool] | None = None,
+    on_minute: Callable[[dict[str, object]], None] | None = None,
 ) -> dict[str, object]:
+    """The live engine until ``minutes`` pass or ``should_stop`` says so (checked every two
+    seconds); each minute, a summary line to ``out`` and the health to ``on_minute`` (and once at
+    once, so a watchdog sees a fresh snapshot from the start)."""
     paths.create()
     redactor = Redactor.from_environment(
         [settings.kalshi.key_id_variable, settings.kalshi.key_path_variable]
@@ -281,12 +307,38 @@ async def run(
         stack.push_async_callback(live.backup.stop)
         await live.backup.start()
         running.append(asyncio.create_task(engine.run(), name="engine"))
-        elapsed = 0.0
-        while minutes is None or elapsed < minutes * 60:
-            await asyncio.sleep(min(60.0, minutes * 60 - elapsed) if minutes else 60.0)
-            elapsed += 60.0 if minutes is None else min(60.0, minutes * 60 - elapsed)
-            out(summary(engine.health()))
+        if on_minute is not None:
+            on_minute(engine.health())
+        started = last = time.monotonic()
+        while True:
+            await asyncio.sleep(TICK_S)
+            if running[0].done():  # the engine ended by itself: say so, so serve exits and the
+                raise EngineStopped(_ended(running[0]))  # watchdog sees it and restarts it
+            now = time.monotonic()
+            if now - last >= MINUTE_S:
+                last = now
+                current = engine.health()
+                out(summary(current))
+                if on_minute is not None:
+                    on_minute(current)
+            if (should_stop is not None and should_stop()) or (
+                minutes is not None and now - started >= minutes * 60
+            ):
+                if last != now:  # a last summary, unless this tick just printed one
+                    out(summary(engine.health()))
+                break
     return health
+
+
+class EngineStopped(RuntimeError):
+    """The engine's main task ended while nobody asked it to."""
+
+
+def _ended(task: asyncio.Task[object]) -> str:
+    if task.cancelled():
+        return "the engine's main task was cancelled"
+    error = task.exception()
+    return "the engine's main task ended" + ("" if error is None else f": {type(error).__name__}")
 
 
 async def _finish(tasks: list[asyncio.Task[object]]) -> None:
