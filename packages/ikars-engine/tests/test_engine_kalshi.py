@@ -969,6 +969,11 @@ def test_only_long_settled_markets_leave_the_index() -> None:
         ))  # fmt: skip
     assert "WAITING" in index.markets and "PAID" not in index.markets  # never re-added either
     assert index.prune(T0) == []
+    before = index.version
+    index.put(Market.model_validate(
+        {**market("WAITING", status="finalized"), "close_time": "2025-11-01T00:00:00Z"}
+    ))  # fmt: skip
+    assert "WAITING" not in index.markets and index.version > before  # the API list is rebuilt
 
 
 async def test_the_rebalance_removes_before_it_adds_and_trusts_the_exchange(

@@ -200,6 +200,26 @@ def test_the_governor_skips_a_file_that_goes_while_it_looks(
     assert report.state is Storage.WARN and report.used_bytes == 900
 
 
+def test_a_file_that_goes_while_pruning_is_not_counted_as_pruned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.8a-web-1a review: a Parquet set aside as damaged during a prune was counted as freed."""
+    old = make_file(tmp_path / "trade/2026-01-01/00.parquet", 600)
+    newer = make_file(tmp_path / "trade/2026-01-02/00.parquet", 600)
+    governor = StorageGovernor(tmp_path, budget_bytes=1_000)
+    real_unlink = Path.unlink
+
+    def renamed_first(self: Path, missing_ok: bool = False) -> None:
+        if self == old:
+            self.replace(self.with_name(self.name + ".damaged"))  # a compaction moved it
+            raise FileNotFoundError(self)
+        real_unlink(self, missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", renamed_first)
+    report = governor.check()
+    assert old not in report.pruned and newer in report.pruned
+
+
 def test_the_first_row_of_a_new_hour_is_never_lost(tmp_path: Path) -> None:
     """Found by the first run of these tests: the hour's flush took the pending list away, and the
     new hour's first row was appended to the orphaned list and lost."""

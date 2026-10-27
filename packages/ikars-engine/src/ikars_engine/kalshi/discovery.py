@@ -79,7 +79,8 @@ class MarketIndex:
             self.combos_skipped += 1
             return
         if _long_settled(market.status or "", market.close_time, self.now_ns()):
-            self.markets.pop(market.ticker, None)  # an update to a long-settled market: not kept
+            if self.markets.pop(market.ticker, None) is not None:  # long settled: not kept
+                self.version += 1  # a removal, so the API's sorted list is rebuilt
             return
         self.version += 1
         event = market.event_ticker or ""

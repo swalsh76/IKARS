@@ -88,7 +88,7 @@ class StorageGovernor:
             try:
                 path.unlink()
             except FileNotFoundError:
-                pass  # gone already
+                continue  # renamed or removed meanwhile: counted where it is now, next time
             except PermissionError:
                 continue  # held by a reader: pruned next time
             used -= sizes[path]
