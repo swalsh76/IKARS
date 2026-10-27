@@ -521,3 +521,12 @@ checked against the code, and all **fixed** in `ff5a13d`:
   ledger store and import (M1.5).
 - Interest is not exposed by Kalshi's API (a D18 gap): the ledger's reconciliation must show unexplained balance
   changes and the tax package must name them.
+
+**CI on PR #3 (first run): `python` failed, a real Windows difference.**
+- On GitHub's runner, files that `runneradmin` creates are owned by the Administrators group, so the user's own
+  access to its key was reported as another reader.
+- Fixed: the account running the process is an expected reader too, read from its access token. An undeclared
+  `GetCurrentProcess` handle was truncated to 32 bits at first; pointer-sized `ctypes` declarations fixed that.
+- The deny test now denies read-data only (`(RD)`): denying `(R)` also denies `READ_CONTROL`, and with it reading
+  the ACL.
+- The owner's own key file still passes.
