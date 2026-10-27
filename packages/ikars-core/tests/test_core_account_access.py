@@ -40,7 +40,9 @@ def clock(start: int = 1_000) -> Any:
 # --- the data key -------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("path", [*ACCOUNT_HISTORY, "/historical/fills/x", "/portfolio/balance"])
+@pytest.mark.parametrize(
+    "path", [*ACCOUNT_HISTORY, "/historical/fills/x", "/portfolio/balance", "/account/limits"]
+)
 def test_the_data_key_never_signs_account_data(path: str) -> None:
     assert not read_route("/trade-api/v2" + path)
     with pytest.raises(SigningRefused, match="data key does not sign"):
@@ -50,7 +52,7 @@ def test_the_data_key_never_signs_account_data(path: str) -> None:
 @pytest.mark.parametrize(
     "path",
     ["/historical/cutoff", "/historical/markets", "/historical/markets/T-1/candlesticks",
-     "/historical/trades", "/markets", "/account/limits"],
+     "/historical/trades", "/markets"],
 )  # fmt: skip
 def test_the_data_key_still_signs_the_public_reads(path: str) -> None:
     assert read_route("/trade-api/v2" + path)
@@ -160,3 +162,17 @@ async def test_the_public_client_sends_no_signature() -> None:
     )
     await client.get_json("/markets")
     assert "KALSHI-ACCESS-SIGNATURE" not in seen[0].headers
+
+
+def test_the_account_client_refuses_any_other_signer() -> None:
+    with pytest.raises(TypeError, match="AccountSigner only"):
+        KalshiAccountClient(CONFIG, DataSigner("k", KEY))  # type: ignore[arg-type]
+
+
+async def test_the_data_key_feed_refuses_private_channels() -> None:
+    from ikars_core.ws import FeedError, KalshiFeed
+
+    feed = KalshiFeed(DataSigner("k", KEY))
+    for channel in ("fill", "market_positions", "user_orders", "order_group_updates"):
+        with pytest.raises(FeedError, match="market-data channels only"):
+            await feed.subscribe(channel, ["T"])

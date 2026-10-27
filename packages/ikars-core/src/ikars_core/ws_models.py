@@ -45,6 +45,11 @@ ORDERBOOK_SNAPSHOT = "orderbook_snapshot"
 ORDERBOOK_DELTA = "orderbook_delta"
 ORDERBOOK_CHANNEL = "orderbook_delta"  # the channel name; it carries both message types
 RESPONSE_TYPES = frozenset({"subscribed", "ok", "unsubscribed", "error"})
+# The channels the data key may subscribe to: market data only. The private channels (fills,
+# orders, positions and the like) carry account data and are never subscribed with this key.
+MARKET_DATA_CHANNELS = frozenset(
+    {TICKER, TRADE, MARKET_LIFECYCLE, EVENT_LIFECYCLE, COMBO_LIFECYCLE, ORDERBOOK_CHANNEL}
+)
 
 
 WsModel = Model  # the WebSocket messages share the REST models' base
@@ -142,7 +147,10 @@ def _levels(value: Any) -> Any:
         price, count = entry
         if not isinstance(price, str) or not isinstance(count, str):
             raise ValueError(f"a level's price and count must be text, got {entry!r}")
-        levels.append((to_e6(price), to_e2(count)))
+        level = (to_e6(price), to_e2(count))
+        if level[0] <= 0 or level[1] < 0:
+            raise ValueError(f"a level needs a positive price and a size of at least 0: {entry!r}")
+        levels.append(level)
     return tuple(levels)
 
 
@@ -269,6 +277,7 @@ __all__ = [
     "COMBO_LIFECYCLE",
     "EVENT_LIFECYCLE",
     "Frame",
+    "MARKET_DATA_CHANNELS",
     "MARKET_LIFECYCLE",
     "ORDERBOOK_CHANNEL",
     "ORDERBOOK_DELTA",

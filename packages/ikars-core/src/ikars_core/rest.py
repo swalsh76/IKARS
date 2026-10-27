@@ -15,7 +15,6 @@ import asyncio
 import json
 import logging
 import random
-import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from types import TracebackType
@@ -24,18 +23,13 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ikars_core.auth import ACCOUNT_READS, AccountSigner
+from ikars_core.auth import ACCOUNT_READS, API_PREFIX, AccountSigner, public_route
 from ikars_core.config import KalshiConfig
 from ikars_core.ratelimit import TokenBucket, backoff
 
 log = logging.getLogger("ikars_core")
 
 _RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
-# The public families; under /historical only cutoff, markets and trades (fills, orders and
-# positions there are account data, read only by the account client).
-_ALLOWED_PATH = re.compile(
-    r"/(?:markets|series|events|exchange|historical/(?:cutoff|markets|trades))(?:/[A-Za-z0-9_.\-]+)*"
-)
 
 
 class KalshiError(Exception):
@@ -65,10 +59,9 @@ class ReadOnlyViolation(KalshiError):
 
 
 def path_allowed(path: str) -> bool:
-    """Whether ``path`` (relative to the API base, no query string) is in an allowed family."""
-    if not _ALLOWED_PATH.fullmatch(path):
-        return False
-    return all(segment not in {".", ".."} for segment in path.split("/"))
+    """Whether ``path`` (relative to the API base, no query string) is a public market-data read:
+    the same table the data key's signer uses (:func:`ikars_core.auth.public_route`)."""
+    return public_route(API_PREFIX + path)
 
 
 def account_path_allowed(path: str) -> bool:
@@ -219,29 +212,26 @@ class KalshiPublicClient:
             raise KalshiResponseError(f"GET {path}: expected a JSON object")
         return payload
 
-    async def pages(
+    async def payloads(
         self,
         path: str,
-        items_key: str,
         params: Mapping[str, Any] | None = None,
         *,
         cursor: str | None = None,
-    ) -> AsyncIterator[Page]:
-        """Follow Kalshi's cursor paging, yielding each page with the cursors on either side.
+    ) -> AsyncIterator[tuple[dict[str, Any], str | None, str | None]]:
+        """Follow Kalshi's cursor paging, yielding each whole response with the cursors on either
+        side. The one paging loop: :meth:`pages` and readers of responses with several lists use it.
 
-        Start from ``cursor`` to resume a listing that was interrupted. A repeated cursor is an
-        error (the listing would never end).
+        Start from ``cursor`` to resume a listing that was interrupted. A cursor that is not text,
+        or one that repeats, is an error (the listing would never end).
         """
         seen: set[str] = set()
         while True:
             payload = await self.get_json(path, {**(params or {}), "cursor": cursor})
-            items = payload.get(items_key)
-            if not isinstance(items, list) or not all(isinstance(i, dict) for i in items):
-                raise KalshiResponseError(f"GET {path}: {items_key!r} is not a list of objects")
             next_cursor = payload.get("cursor") or None
             if next_cursor is not None and not isinstance(next_cursor, str):
                 raise KalshiResponseError(f"GET {path}: the cursor is not text")
-            yield Page(items, cursor, next_cursor)
+            yield payload, cursor, next_cursor
             if next_cursor is None:
                 return
             if next_cursor == cursor or next_cursor in seen:
@@ -250,6 +240,21 @@ class KalshiPublicClient:
                 )
             seen.add(next_cursor)
             cursor = next_cursor
+
+    async def pages(
+        self,
+        path: str,
+        items_key: str,
+        params: Mapping[str, Any] | None = None,
+        *,
+        cursor: str | None = None,
+    ) -> AsyncIterator[Page]:
+        """Each page of the list under ``items_key``, with the cursors on either side."""
+        async for payload, before, after in self.payloads(path, params, cursor=cursor):
+            items = payload.get(items_key)
+            if not isinstance(items, list) or not all(isinstance(i, dict) for i in items):
+                raise KalshiResponseError(f"GET {path}: {items_key!r} is not a list of objects")
+            yield Page(items, before, after)
 
 
 class KalshiAccountClient(KalshiPublicClient):
@@ -265,6 +270,8 @@ class KalshiAccountClient(KalshiPublicClient):
         transport: httpx.AsyncBaseTransport | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
+        if not isinstance(signer, AccountSigner):
+            raise TypeError("the account client signs with an AccountSigner only")
         super().__init__(
             config,
             bucket=bucket,

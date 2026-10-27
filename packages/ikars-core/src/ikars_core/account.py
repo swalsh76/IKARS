@@ -13,7 +13,7 @@ are. Nothing here is logged: these are account values.
 """
 
 from collections.abc import AsyncIterator, Mapping
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import AwareDatetime, BeforeValidator, Field, model_validator
 
@@ -34,10 +34,11 @@ from ikars_core.models import (
     Text,
     check_prices_add_to_a_dollar,
 )
-from ikars_core.rest import KalshiAccountClient, KalshiResponseError
+from ikars_core.rest import KalshiAccountClient
 
 CENTS_TO_E6 = 10_000
 SETTLEMENT_STATUSES = frozenset({"unsettled", "settled", "all"})
+BUY_SELL = ("buy", "sell")
 TRANSFER_PAGE_SIZE = 500  # deposits, withdrawals and transfers page at most 500
 
 
@@ -49,6 +50,16 @@ def _cents(value: Any) -> int | None:
     return value * CENTS_TO_E6
 
 
+def _dollar_text(value: Any) -> Any:
+    # Kalshi sends dollars as text; a bare number could be cents (as on deposits) and would be read
+    # as whole dollars, a 100-fold error in the ledger, so it is refused
+    if not isinstance(value, str):
+        raise ValueError(f"expected dollars as text, got {type(value).__name__}")
+    return value
+
+
+Dollars = Annotated[RequiredDollarsE6, BeforeValidator(_dollar_text)]
+"""Dollars in millionths, from Kalshi's dollar text only."""
 CentsAsE6 = Annotated[int, BeforeValidator(_cents)]
 """An amount Kalshi gives in cents, as dollars in millionths."""
 OptCentsAsE6 = Annotated[int | None, BeforeValidator(_cents)]
@@ -56,7 +67,7 @@ OptCentsAsE6 = Annotated[int | None, BeforeValidator(_cents)]
 
 class Balance(Model):
     balance_e6: CentsAsE6 = Field(validation_alias="balance")  # available balance
-    balance_dollars_e6: RequiredDollarsE6 = Field(validation_alias="balance_dollars")
+    balance_dollars_e6: Dollars = Field(validation_alias="balance_dollars")
     portfolio_value_e6: CentsAsE6 = Field(validation_alias="portfolio_value")
     updated_ts: int  # Unix time; the unit is not documented
 
@@ -73,20 +84,20 @@ class MarketPosition(Model):
     ticker: str
     exchange_index: int
     position_e2: RequiredCountE2 = Field(validation_alias="position_fp")  # negative: NO contracts
-    total_traded_e6: RequiredDollarsE6 = Field(validation_alias="total_traded_dollars")
-    market_exposure_e6: RequiredDollarsE6 = Field(validation_alias="market_exposure_dollars")
-    realized_pnl_e6: RequiredDollarsE6 = Field(validation_alias="realized_pnl_dollars")
-    fees_paid_e6: RequiredDollarsE6 = Field(validation_alias="fees_paid_dollars")
+    total_traded_e6: Dollars = Field(validation_alias="total_traded_dollars")
+    market_exposure_e6: Dollars = Field(validation_alias="market_exposure_dollars")
+    realized_pnl_e6: Dollars = Field(validation_alias="realized_pnl_dollars")
+    fees_paid_e6: Dollars = Field(validation_alias="fees_paid_dollars")
     last_updated_ts: AwareDatetime
 
 
 class EventPosition(Model):
     event_ticker: str
-    total_cost_e6: RequiredDollarsE6 = Field(validation_alias="total_cost_dollars")
+    total_cost_e6: Dollars = Field(validation_alias="total_cost_dollars")
     total_cost_shares_e2: RequiredCountE2 = Field(validation_alias="total_cost_shares_fp")
-    event_exposure_e6: RequiredDollarsE6 = Field(validation_alias="event_exposure_dollars")
-    realized_pnl_e6: RequiredDollarsE6 = Field(validation_alias="realized_pnl_dollars")
-    fees_paid_e6: RequiredDollarsE6 = Field(validation_alias="fees_paid_dollars")
+    event_exposure_e6: Dollars = Field(validation_alias="event_exposure_dollars")
+    realized_pnl_e6: Dollars = Field(validation_alias="realized_pnl_dollars")
+    fees_paid_e6: Dollars = Field(validation_alias="fees_paid_dollars")
 
 
 class Positions(Model):
@@ -99,12 +110,13 @@ class Fill(Model):
     order_id: str
     ticker: str
     exchange_index: int | None = None
-    outcome_side: Text = None  # yes or no: the exposure this fill adds
-    book_side: Text = None  # bid or ask, on the YES book
+    # the direction, required: a fill without one could not be costed in the ledger
+    outcome_side: Literal["yes", "no"]  # the exposure this fill adds (buy YES or sell NO: yes)
+    book_side: Literal["bid", "ask"]  # the same direction on the YES book (bid: yes)
     count_e2: RequiredCountE2 = Field(validation_alias="count_fp")
-    yes_price_e6: RequiredDollarsE6 = Field(validation_alias="yes_price_dollars")
-    no_price_e6: RequiredDollarsE6 = Field(validation_alias="no_price_dollars")
-    fee_e6: RequiredDollarsE6 = Field(validation_alias="fee_cost")
+    yes_price_e6: Dollars = Field(validation_alias="yes_price_dollars")
+    no_price_e6: Dollars = Field(validation_alias="no_price_dollars")
+    fee_e6: Dollars = Field(validation_alias="fee_cost")
     is_taker: bool
     created_time: AwareDatetime
     subaccount_number: int | None = None
@@ -112,14 +124,29 @@ class Fill(Model):
     @model_validator(mode="before")
     @classmethod
     def _legacy_names(cls, data: Any) -> Any:
-        # ``trade_id`` is the legacy name of ``fill_id``
-        if isinstance(data, dict) and not data.get("fill_id") and data.get("trade_id"):
-            data = {**data, "fill_id": data["trade_id"]}
+        # ``trade_id`` is the legacy name of ``fill_id``; the deprecated ``side`` and ``action``
+        # give the direction when the newer ``outcome_side`` and ``book_side`` are missing
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        if not data.get("fill_id") and data.get("trade_id"):
+            data["fill_id"] = data["trade_id"]
+        outcome, book = data.get("outcome_side"), data.get("book_side")
+        if not outcome and data.get("side") in ("yes", "no") and data.get("action") in BUY_SELL:
+            buying = data["action"] == "buy"
+            outcome = data["side"] if buying else ("no" if data["side"] == "yes" else "yes")
+        if not outcome and book in ("bid", "ask"):
+            outcome = "yes" if book == "bid" else "no"
+        if not book and outcome in ("yes", "no"):
+            book = "bid" if outcome == "yes" else "ask"
+        data["outcome_side"], data["book_side"] = outcome, book
         return data
 
     @model_validator(mode="after")
-    def _prices_add_to_a_dollar(self) -> "Fill":
+    def _consistent(self) -> "Fill":
         check_prices_add_to_a_dollar(self.yes_price_e6, self.no_price_e6)
+        if (self.outcome_side == "yes") != (self.book_side == "bid"):
+            raise ValueError("outcome_side and book_side disagree")
         return self
 
 
@@ -129,11 +156,11 @@ class Settlement(Model):
     exchange_index: int
     market_result: str  # yes, no or scalar
     yes_count_e2: RequiredCountE2 = Field(validation_alias="yes_count_fp")
-    yes_total_cost_e6: RequiredDollarsE6 = Field(validation_alias="yes_total_cost_dollars")
+    yes_total_cost_e6: Dollars = Field(validation_alias="yes_total_cost_dollars")
     no_count_e2: RequiredCountE2 = Field(validation_alias="no_count_fp")
-    no_total_cost_e6: RequiredDollarsE6 = Field(validation_alias="no_total_cost_dollars")
+    no_total_cost_e6: Dollars = Field(validation_alias="no_total_cost_dollars")
     revenue_e6: CentsAsE6 = Field(validation_alias="revenue")
-    fee_e6: RequiredDollarsE6 = Field(validation_alias="fee_cost")
+    fee_e6: Dollars = Field(validation_alias="fee_cost")
     settled_time: AwareDatetime
     value_e6: OptCentsAsE6 = Field(default=None, validation_alias="value")  # one YES contract
 
@@ -159,7 +186,7 @@ class InstanceTransfer(Model):
     destination: str
     source_exchange_shard: int
     destination_exchange_shard: int
-    amount_e6: RequiredDollarsE6 = Field(validation_alias="amount")
+    amount_e6: Dollars = Field(validation_alias="amount")
     status: str  # pending or complete
     created_ts: int  # Unix time; the unit is not documented
 
@@ -221,18 +248,10 @@ class Account(Reader):
             )
         markets: list[MarketPosition] = []
         events: list[EventPosition] = []
-        seen: set[str] = set()
-        cursor: str | None = None
-        while True:
-            payload = await self._client.get_json(path, {**params, "cursor": cursor})
+        async for payload, _, _ in self._client.payloads(path, params):
             markets += _rows(MarketPosition, payload, "market_positions", f"GET {path}")
             events += _rows(EventPosition, payload, "event_positions", f"GET {path}")
-            cursor = payload.get("cursor") or None
-            if cursor is None:
-                return Positions(market_positions=markets, event_positions=events)
-            if cursor in seen:
-                raise KalshiResponseError(f"GET {path}: the cursor repeated")
-            seen.add(cursor)
+        return Positions(market_positions=markets, event_positions=events)
 
     def fills(
         self,

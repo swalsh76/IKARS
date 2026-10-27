@@ -37,7 +37,7 @@ from websockets.exceptions import ConnectionClosed, WebSocketException
 from ikars_core.auth import DataSigner
 from ikars_core.config import WS_URLS, Environment
 from ikars_core.ratelimit import backoff
-from ikars_core.ws_models import Frame, parse_frame
+from ikars_core.ws_models import MARKET_DATA_CHANNELS, Frame, parse_frame
 
 log = logging.getLogger("ikars_core")
 
@@ -224,8 +224,14 @@ class KalshiFeed:
     async def subscribe(self, channel: str, market_tickers: list[str] | None = None) -> int:
         """Subscribe to a channel (all markets if no tickers); returns the subscription id.
 
-        The subscription is remembered and restored after every reconnect.
+        The subscription is remembered and restored after every reconnect. Only the market-data
+        channels are allowed: the connection is signed with the data key, which never reaches
+        account data, so a private channel is refused here before anything is sent.
         """
+        if channel not in MARKET_DATA_CHANNELS:
+            raise FeedError(
+                f"the data key subscribes to market-data channels only, not {channel!r}"
+            )
         params: dict[str, Any] = {"channels": [channel]}
         if market_tickers:
             params["market_tickers"] = list(market_tickers)

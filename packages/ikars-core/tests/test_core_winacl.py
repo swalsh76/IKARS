@@ -94,3 +94,13 @@ def test_a_missing_file_is_reported(tmp_path: Path) -> None:
 def test_an_unreadable_acl_is_reported(tmp_path: Path) -> None:
     with pytest.raises(winacl.AclError):
         winacl.other_readers(tmp_path / "absent.pem")
+
+
+def test_the_right_to_change_the_acl_counts_as_reading(private_file: Path) -> None:
+    icacls(private_file, "/grant", f"*{USERS}:(WDAC)")
+    assert readers(private_file) == [USERS]
+
+
+def test_the_right_to_take_ownership_counts_as_reading(private_file: Path) -> None:
+    icacls(private_file, "/grant", f"*{USERS}:(WO)")
+    assert readers(private_file) == [USERS]

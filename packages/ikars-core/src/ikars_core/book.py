@@ -47,8 +47,8 @@ class OrderBook:
     def apply_snapshot(self, msg: OrderbookSnapshotMsg) -> Applied:
         if msg.market_ticker != self.market_ticker:
             return Applied.WRONG_MARKET
-        self.yes = _side(msg.yes)
-        self.no = _side(msg.no)
+        yes, no = _side(msg.yes), _side(msg.no)  # both built before anything is replaced
+        self.yes, self.no = yes, no
         self.snapshot_clock = self.clock = msg.clock
         self.has_snapshot = True
         self.broken = False

@@ -13,6 +13,7 @@ from ikars_core.auth import (
     HEADER_KEY,
     HEADER_SIGNATURE,
     HEADER_TIMESTAMP,
+    AccountSigner,
     AuthError,
     DataSigner,
     SigningRefused,
@@ -26,6 +27,10 @@ VECTORS: dict[str, Any] = json.loads(
 )
 SEED = bytes.fromhex(VECTORS["seedHex"])
 posix_only = pytest.mark.skipif(os.name != "posix", reason="file modes are a POSIX matter")
+
+
+# Routes the reference's data key signs that IKARS gives to the account reader instead.
+MOVED_TO_THE_ACCOUNT_READER = frozenset({"/trade-api/v2/account/limits"})
 
 
 def signer(**kwargs: Any) -> DataSigner:
@@ -61,7 +66,14 @@ def test_signatures_match_the_reference_and_everything_else_is_refused(
         with pytest.raises(SigningRefused):
             signer().headers(case["method"], case["path"], timestamp_ms=case["timestampMs"])
         return
-    headers = signer().headers(case["method"], case["path"], timestamp_ms=case["timestampMs"])
+    use: DataSigner | AccountSigner = signer()
+    if case["path"].split("?")[0] in MOVED_TO_THE_ACCOUNT_READER:
+        # IKARS by design: the data key no longer signs it (account data); the account reader
+        # does, and must give exactly the reference signature
+        with pytest.raises(SigningRefused):
+            use.headers(case["method"], case["path"], timestamp_ms=case["timestampMs"])
+        use = AccountSigner(VECTORS["keyId"], Ed25519PrivateKey.from_private_bytes(SEED))
+    headers = use.headers(case["method"], case["path"], timestamp_ms=case["timestampMs"])
     assert headers[HEADER_SIGNATURE] == case["expect"] == case["reference"]
     assert headers[HEADER_TIMESTAMP] == str(case["timestampMs"])
     assert headers[HEADER_KEY] == VECTORS["keyId"]
@@ -78,7 +90,7 @@ def test_the_vectors_cover_both_outcomes_in_quantity() -> None:
 @pytest.mark.parametrize(
     "path",
     ["/trade-api/v2/markets", "/trade-api/v2/historical/markets/ABC-1/candlesticks",
-     "/trade-api/v2/account/limits", "/trade-api/ws/v2"],
+     "/trade-api/ws/v2"],
 )  # fmt: skip
 def test_read_routes_are_allowed(path: str) -> None:
     assert read_route(path)
@@ -86,7 +98,8 @@ def test_read_routes_are_allowed(path: str) -> None:
 
 @pytest.mark.parametrize(
     "path",
-    ["/trade-api/v2/portfolio/orders", "/trade-api/v2/account", "/trade-api/v2/account/limits/x",
+    ["/trade-api/v2/portfolio/orders", "/trade-api/v2/account", "/trade-api/v2/account/limits",
+     "/trade-api/v2/account/limits/x",
      "/trade-api/v2/markets/../portfolio", "/trade-api/v2/markets/.hidden",
      "/trade-api/v2/markets/", "/trade-api/v2/markets//x", "/trade-api/v2/markets/a b",
      "/trade-api/v2/markets/a%2Fb", ""],
@@ -189,8 +202,9 @@ def test_a_key_that_is_not_an_unencrypted_ed25519_pem_is_refused(
 
 
 def test_a_missing_key_file_is_reported_without_a_traceback(tmp_path: Path) -> None:
-    with pytest.raises(AuthError, match="cannot read private key file"):
+    with pytest.raises(AuthError, match="cannot read the private key file") as caught:
         load_private_key(tmp_path / "absent.pem")
+    assert str(tmp_path) not in str(caught.value)  # never the key path
 
 
 def test_the_environment_supplies_the_key_id_and_the_path(tmp_path: Path) -> None:
@@ -207,7 +221,8 @@ KEY_ID = "00000000-1111-2222-3333-444444444444"  # made up, shaped like a Kalshi
 @pytest.mark.parametrize(
     ("value", "reason"),
     [(f'"{KEY_ID}"', "quotes or spaces"), (f"{KEY_ID[:8]} {KEY_ID[9:]}", "quotes or spaces"),
-     ("abc", "it is 3 characters"), (KEY_ID + "0", "it is 37 characters")],
+     ("abc", "it is 3 characters"), (KEY_ID + "0", "it is 37 characters"),
+     ("g" + KEY_ID[1:], "not in the 8-4-4-4-12 hex form")],
 )  # fmt: skip
 def test_a_malformed_key_id_from_the_environment_is_refused_without_showing_it(
     tmp_path: Path, value: str, reason: str

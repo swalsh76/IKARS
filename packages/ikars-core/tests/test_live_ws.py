@@ -25,7 +25,7 @@ from typing import Any
 
 import httpx
 import pytest
-from ikars_core.auth import AuthError, DataSigner
+from ikars_core.auth import AccountSigner, AuthError, DataSigner
 from ikars_core.book import Applied, OrderBook
 from ikars_core.config import REST_URLS, WS_URLS, Environment
 from ikars_core.ws import Data, FeedConfig, KalshiFeed, Reconnected, SequenceGap
@@ -68,10 +68,16 @@ def busiest_markets(count: int) -> list[str]:
     return [ticker for ticker, _ in counts.most_common(count)]
 
 
-def test_the_data_key_is_accepted_for_a_read(signer: DataSigner) -> None:
+def test_the_key_is_accepted_for_a_signed_read() -> None:
+    """The account limits are account data, so the account reader signs this read (the data key's
+    own signature is proved by the WebSocket handshake in the tests below)."""
+    try:
+        reader = AccountSigner.from_environment()
+    except AuthError:
+        pytest.skip("no usable key in IKARS_KALSHI_KEY_ID and IKARS_KALSHI_PRIVATE_KEY_PATH")
     path = "/trade-api/v2/account/limits"
     response = httpx.get(
-        "https://external-api.kalshi.com" + path, headers=signer.headers("GET", path), timeout=30
+        "https://external-api.kalshi.com" + path, headers=reader.headers("GET", path), timeout=30
     )
     LINES.append(f"signed GET {path}: HTTP {response.status_code}")
     if response.status_code == 200:

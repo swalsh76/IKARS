@@ -40,11 +40,12 @@ WS_PATH = "/trade-api/ws/v2"
 
 # A path segment may not start with a dot, so ``.`` and ``..`` can never appear in a signed path.
 _SEGMENT = r"[A-Za-z0-9_\-][A-Za-z0-9_.\-]*"
-# The public historical families only: /historical/fills, /orders and /positions are account data.
+# The public market-data families: under /historical only cutoff, markets and trades, since
+# /historical/fills, /orders and /positions are account data. This is the one table of public read
+# routes: the signer and the public client's transport guard both use it.
 _READ_ROUTES = re.compile(
-    rf"{re.escape(API_PREFIX)}/(?:(?:markets|events|series|exchange"
+    rf"{re.escape(API_PREFIX)}/(?:markets|events|series|exchange"
     rf"|historical/(?:cutoff|markets|trades))(?:/{_SEGMENT})*"
-    r"|account/limits)"
 )
 # Exactly these account reads (list endpoints, no sub-paths), for the ledger import and the limits.
 ACCOUNT_READS = frozenset(
@@ -68,6 +69,15 @@ _KEY_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{
 _QUOTES_OR_INNER_SPACE = re.compile(r"[\"'`\s]")
 
 
+def _key_id_problem(key_id: str) -> str:
+    """What is wrong with a key id that is not a UUID, without showing it."""
+    if _QUOTES_OR_INNER_SPACE.search(key_id):
+        return "it has quotes or spaces in it"
+    if len(key_id) != 36:
+        return f"it is {len(key_id)} characters"
+    return "it is 36 characters but not in the 8-4-4-4-12 hex form"
+
+
 class AuthError(Exception):
     """Credentials are missing or unusable."""
 
@@ -78,7 +88,12 @@ class SigningRefused(AuthError):
 
 def read_route(path: str) -> bool:
     """Is ``path`` (query string removed) a route the data key may sign for a GET?"""
-    return path == WS_PATH or _READ_ROUTES.fullmatch(path) is not None
+    return path == WS_PATH or public_route(path)
+
+
+def public_route(path: str) -> bool:
+    """Is ``path`` (query string removed) a public market-data read?"""
+    return _READ_ROUTES.fullmatch(path) is not None
 
 
 def account_route(path: str) -> bool:
@@ -104,7 +119,7 @@ def parse_private_key(data: bytes, source: str) -> Ed25519PrivateKey:
     return key
 
 
-def _refuse_if_shared(target: Path, shown: Path) -> None:
+def _refuse_if_shared(target: Path) -> None:
     """Refuse a key file that anyone but its owner can read: by file mode on POSIX, by ACL on
     Windows (where SYSTEM and Administrators are allowed too, as they can read any file). Checked
     before the key's bytes are read."""
@@ -112,20 +127,23 @@ def _refuse_if_shared(target: Path, shown: Path) -> None:
         try:
             readers = winacl.other_readers(target)
         except OSError as exc:
-            raise AuthError(f"cannot check who can read private key file {shown}: {exc}") from exc
+            raise AuthError(
+                f"cannot check who can read the private key file: {exc.strerror}"
+            ) from exc
         if readers:
             raise AuthError(
-                f"{shown} is readable by other users ({', '.join(readers)}); run: "
-                f'icacls "{shown}" /inheritance:r /grant:r "%USERNAME%:R"'
+                f"the private key file is readable by other users ({', '.join(readers)}); run: "
+                'icacls "%IKARS_KALSHI_PRIVATE_KEY_PATH%" /inheritance:r /grant:r "%USERNAME%:R"'
             )
         return
     try:
         mode = stat.S_IMODE(target.stat().st_mode)
     except OSError as exc:
-        raise AuthError(f"cannot read private key file {shown}: {exc.strerror}") from exc
+        raise AuthError(f"cannot read the private key file: {exc.strerror}") from exc
     if mode & 0o077:
         raise AuthError(
-            f"{shown} is readable by other users (mode {mode:03o}); run: chmod 600 {shown}"
+            f"the private key file is readable by other users (mode {mode:03o}); run: "
+            'chmod 600 "$IKARS_KALSHI_PRIVATE_KEY_PATH"'
         )
 
 
@@ -133,13 +151,13 @@ def load_private_key(path: Path) -> Ed25519PrivateKey:
     """Load an unencrypted PEM Ed25519 private key from a file only its owner can read."""
     target = path.expanduser()
     if not target.is_file():
-        raise AuthError(f"cannot read private key file {path}: no such file")
-    _refuse_if_shared(target, path)
+        raise AuthError("cannot read the private key file: no such file")
+    _refuse_if_shared(target)
     try:
         data = target.read_bytes()
     except OSError as exc:
-        raise AuthError(f"cannot read private key file {path}: {exc.strerror}") from exc
-    return parse_private_key(data, str(path))
+        raise AuthError(f"cannot read the private key file: {exc.strerror}") from exc
+    return parse_private_key(data, "the private key file")
 
 
 def _now_ms() -> int:
@@ -189,11 +207,7 @@ class _Signer:
             # the value is never shown: only what is wrong with it
             raise AuthError(
                 "IKARS_KALSHI_KEY_ID is not a Kalshi key id (36 characters, 8-4-4-4-12 hex): "
-                + (
-                    "it has quotes or spaces in it"
-                    if _QUOTES_OR_INNER_SPACE.search(key_id.strip())
-                    else f"it is {len(key_id.strip())} characters"
-                )
+                + _key_id_problem(key_id.strip())
             )
         return cls(key_id, load_private_key(Path(path)))
 

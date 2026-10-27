@@ -2,7 +2,8 @@
 
 POSIX file modes do not exist on Windows, so "readable by its owner alone" is decided from the
 file's discretionary ACL instead. A principal counts as a reader when an *allow* entry that applies
-to the file itself (not an inherit-only entry) grants it any read right. The owner (also as OWNER
+to the file itself (not an inherit-only entry) grants it any read right, or the right to change
+the ACL or take ownership (which lets it grant itself read). The owner (also as OWNER
 RIGHTS), SYSTEM and the Administrators group are expected readers; anyone else (Users, Everyone,
 Authenticated Users, another account) is reported. A file with no DACL is readable by everyone.
 """
@@ -20,10 +21,12 @@ if sys.platform == "win32":
     _SE_FILE_OBJECT = 1
     _OWNER_SECURITY_INFORMATION = 0x1
     _DACL_SECURITY_INFORMATION = 0x4
-    _ACCESS_ALLOWED_ACE_TYPE = 0x0
+    # ACCESS_ALLOWED and ACCESS_ALLOWED_CALLBACK (conditional): the same layout up to the SID
+    _ALLOW_TYPES = frozenset({0x0, 0x9})
     _INHERIT_ONLY_ACE = 0x8
-    # FILE_READ_DATA, GENERIC_READ, GENERIC_ALL, MAXIMUM_ALLOWED: any of them lets a principal read.
-    _READ_RIGHTS = 0x1 | 0x80000000 | 0x10000000 | 0x02000000
+    # FILE_READ_DATA, GENERIC_READ, GENERIC_ALL, MAXIMUM_ALLOWED read directly; WRITE_DAC and
+    # WRITE_OWNER let a principal give itself read. Any of them counts as being able to read.
+    _READ_RIGHTS = 0x1 | 0x80000000 | 0x10000000 | 0x02000000 | 0x40000 | 0x80000
 
     class _AceHeader(ctypes.Structure):
         _fields_ = [
@@ -99,7 +102,7 @@ def other_readers(path: Path) -> list[str]:
             if not _advapi32.GetAce(dacl, index, ctypes.byref(ace)):
                 raise AclError(ctypes.get_last_error(), f"cannot read the ACL of {path}")
             entry = ctypes.cast(ace, ctypes.POINTER(_AccessAllowedAce)).contents
-            if entry.Header.AceType != _ACCESS_ALLOWED_ACE_TYPE:
+            if entry.Header.AceType not in _ALLOW_TYPES:
                 continue  # deny entries only take rights away; other types do not apply to files
             if entry.Header.AceFlags & _INHERIT_ONLY_ACE or not entry.Mask & _READ_RIGHTS:
                 continue

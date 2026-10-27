@@ -210,3 +210,20 @@ def test_a_delta_with_a_clock_after_a_snapshot_without_one_applies() -> None:
     book.apply_snapshot(snapshot(clock=None, **BOOK))
     assert book.apply_delta(delta("0.3000", "1.00", clock=5)) is Applied.APPLIED
     assert book.clock == 5
+
+
+def test_a_negative_snapshot_size_is_refused_by_the_parser() -> None:
+    bad = {"market_ticker": M, "no_dollars_fp": [["0.5000", "-1.00"]]}
+    result = parse_frame(frame(ORDERBOOK_SNAPSHOT, bad))
+    assert result.payload is None and "size of at least 0" in (result.error or "")
+
+
+def test_a_failed_snapshot_leaves_the_book_as_it_was() -> None:
+    book = OrderBook(M)
+    book.apply_snapshot(snapshot(**BOOK))
+    broken = OrderbookSnapshotMsg.model_construct(
+        market_ticker=M, clock=None, yes=((100_000, 1),), no=((500_000, -1),)
+    )
+    with pytest.raises(ValueError, match="negative size"):
+        book.apply_snapshot(broken)
+    assert book.best_bid("yes") == (220_000, 33_300) and book.ready

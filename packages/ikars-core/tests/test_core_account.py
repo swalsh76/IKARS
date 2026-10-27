@@ -279,3 +279,49 @@ def test_transfer_listings_page_at_most_500() -> None:
         account.deposits(limit=501)
     with pytest.raises(ParameterError):
         account.fills(min_ts=20, max_ts=10)
+
+
+DIRECTIONLESS = {k: v for k, v in FILL.items() if k not in ("outcome_side", "book_side")}
+
+
+@pytest.mark.parametrize(
+    ("side", "action", "outcome", "book"),
+    [("yes", "buy", "yes", "bid"), ("no", "sell", "yes", "bid"),
+     ("no", "buy", "no", "ask"), ("yes", "sell", "no", "ask")],
+)  # fmt: skip
+def test_a_fill_takes_its_direction_from_the_legacy_fields(
+    side: str, action: str, outcome: str, book: str
+) -> None:
+    fill = Fill.model_validate({**DIRECTIONLESS, "side": side, "action": action})
+    assert (fill.outcome_side, fill.book_side) == (outcome, book)
+
+
+def test_one_direction_field_gives_the_other() -> None:
+    assert Fill.model_validate({**DIRECTIONLESS, "book_side": "ask"}).outcome_side == "no"
+    assert Fill.model_validate({**DIRECTIONLESS, "outcome_side": "yes"}).book_side == "bid"
+
+
+def test_a_fill_without_a_direction_is_refused() -> None:
+    with pytest.raises(ValidationError, match="outcome_side"):
+        Fill.model_validate(DIRECTIONLESS)
+
+
+def test_a_fill_whose_directions_disagree_is_refused() -> None:
+    with pytest.raises(ValidationError, match="disagree"):
+        Fill.model_validate({**FILL, "outcome_side": "yes", "book_side": "ask"})
+
+
+@pytest.mark.parametrize("bad", [2550, 25.5, True])
+def test_a_dollar_amount_must_be_text(bad: object) -> None:
+    transfer = {
+        "transfer_id": "t",
+        "source": "event_contract",
+        "destination": "margined",
+        "source_exchange_shard": 0,
+        "destination_exchange_shard": 1,
+        "amount": bad,
+        "status": "complete",
+        "created_ts": 1,
+    }
+    with pytest.raises(ValidationError, match="dollars as text"):
+        InstanceTransfer.model_validate(transfer)
