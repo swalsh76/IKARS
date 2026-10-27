@@ -187,6 +187,7 @@ async def test_markets_search_page_and_quote(ctx: ApiContext) -> None:
     second = await get(ctx, "/v1/markets?limit=1&offset=1", c.MarketPage)
     assert [m.ticker for m in second.items] == ["KXA"] and second.offset == 1
     ctx.index.markets["KXDONE"] = replace(info("KXDONE", 9_999), status="closed")
+    ctx.index.version += 1  # as put() does
     closed_last = await get(ctx, "/v1/markets?category=Demo", c.MarketPage)
     assert [m.ticker for m in closed_last.items] == ["KXB", "KXA", "KXDONE"]  # open ones first
     one = await get(ctx, "/v1/markets/KXA", c.MarketView)
@@ -419,6 +420,16 @@ async def test_stopping_the_server_ends_an_open_stream(ctx: ApiContext, tmp_path
     await asyncio.wait_for(server.stop(), 10)
     assert clock.monotonic() - began < 5 and ctx.streams == {}
     await asyncio.wait_for(asyncio.gather(reader, return_exceptions=True), 5)
+
+
+def test_the_markets_list_is_sorted_once_per_index_change(ctx: ApiContext) -> None:
+    """M1.R 16: every markets request sorted the whole index."""
+    from ikars_engine.api import sorted_markets
+
+    first = sorted_markets(ctx)
+    assert sorted_markets(ctx) is first  # unchanged index: the same list, not sorted again
+    ctx.index.version += 1
+    assert sorted_markets(ctx) is not first
 
 
 def test_a_dropped_book_is_announced_once_as_not_ready(ctx: ApiContext) -> None:

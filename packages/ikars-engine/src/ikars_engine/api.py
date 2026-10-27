@@ -101,6 +101,8 @@ class ApiContext:
     streams: dict[str, "Stream"] = field(default_factory=dict)
     # (loop time, body, status): successes and failures alike, for CANDLE_CACHE_S
     candle_cache: dict[tuple[str, int, int], tuple[float, bytes, int]] = field(default_factory=dict)
+    # the index in the markets list's order, and the index version it was sorted at (M1.R 16)
+    sorted_index: tuple[int, list[MarketInfo]] = (-1, [])
     closing: bool = False  # set at stop: every stream ends
     alert_index: "AlertIndex | None" = None
 
@@ -225,6 +227,19 @@ def gap_view(gap: Gap) -> c.GapView:
         id=gap.id, channel=gap.channel, reason=gap.reason, start_utc=utc_text(gap.start_ns),
         end_utc=utc_text(gap.end_ns), recovery=gap.recovery, status=gap.status, detail=gap.detail,
     )  # fmt: skip
+
+
+def sorted_markets(ctx: "ApiContext") -> list[MarketInfo]:
+    """The index, open markets first (closed ones keep their day's volume for a while), then by
+    volume; sorted again only when the index changed, not on every request."""
+    version, ordered = ctx.sorted_index
+    if version != ctx.index.version:
+        ordered = sorted(
+            ctx.index.markets.values(),
+            key=lambda m: (m.status not in OPEN_STATUSES, -m.volume_24h_e2, m.ticker),
+        )
+        ctx.sorted_index = (ctx.index.version, ordered)
+    return ordered
 
 
 def book_view(ticker: str, book: OrderBook) -> c.BookView:
@@ -381,12 +396,10 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         offset = _int(request, "offset", 0, 0, 10**7) or 0
         limit = _int(request, "limit", 100, 1, MAX_PAGE) or 100
         found = [
-            m for m in ctx.index.markets.values()
+            m for m in sorted_markets(ctx)
             if (not query or query in m.ticker.lower() or query in m.title.lower())
             and (category is None or m.category == category)
         ]  # fmt: skip
-        # open markets first (closed ones keep their day's volume for a while), then by volume
-        found.sort(key=lambda m: (m.status not in OPEN_STATUSES, -m.volume_24h_e2, m.ticker))
         page = [market_view(ctx, m) for m in found[offset : offset + limit]]
         return _json(c.MarketPage(items=page, total=len(found), offset=offset))
 

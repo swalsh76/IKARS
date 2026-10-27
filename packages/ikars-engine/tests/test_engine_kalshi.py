@@ -60,6 +60,8 @@ class FakeKalshi:
         self.requests: list[httpx.Request] = []
         self.fail = False  # every request answers 404
         self.on_markets: Any = None  # called on each market listing (to let time pass)
+        self.trade_asks: list[str] = []  # each trades request's min_ts
+        self.fail_trade_ask: int | None = None  # this trades request (1 is the first) fails
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -94,6 +96,9 @@ class FakeKalshi:
         elif path == "/historical/cutoff":
             body = fixture("cutoff.json")
         elif path in ("/markets/trades", "/historical/trades"):
+            self.trade_asks.append(params["min_ts"])
+            if len(self.trade_asks) == self.fail_trade_ask:
+                return httpx.Response(400)
             body = {"trades": self.trades, "cursor": ""}
         else:
             return httpx.Response(404)
@@ -691,9 +696,9 @@ async def test_a_repeated_backfill_never_stores_a_trade_twice(tmp_path: Path) ->
     await rig.source.start()
     rig.kalshi.trades = [fixture("trade.json")]
     rig.clock.advance_to(LATE + 2 * HOUR_NS)
-    assert await rig.source._backfill(LATE - 10 * 10**9, LATE) == 1
+    assert await rig.source._backfill(LATE - 10 * 10**9, LATE, gap_id=7) == 1
     rig.clock.advance_to(LATE + 3 * HOUR_NS)  # the attempt is repeated an hour later
-    assert await rig.source._backfill(LATE - 10 * 10**9, LATE) == 0
+    assert await rig.source._backfill(LATE - 10 * 10**9, LATE, gap_id=7) == 0
     await rig.source.stop()
     assert read_rows(hours(tmp_path / "rec", "trade"), "trade").num_rows == 1
 
@@ -873,6 +878,49 @@ async def test_the_shutdown_waits_for_the_engine_only_so_long() -> None:
         runner.FINISH_S = original
     assert stuck.cancelled()
     await runner._finish([])
+
+
+async def test_a_failed_backfill_resumes_at_the_slice_it_failed(tmp_path: Path) -> None:
+    """M1.R 17: a failure restarted the whole window, and every trade id of it was held at once."""
+    rig = Rig(tmp_path, [market("M1")])
+    rig.recorder = Recorder(tmp_path / "rec", flush_seconds=0)
+    rig.source.recorder = rig.recorder
+    await rig.source.start()
+    rig.kalshi.trades = [fixture("trade.json")]
+    rig.kalshi.fail_trade_ask = 2  # the second slice fails, once
+    asked = rig.kalshi.trade_asks
+    gap = rig.state.add_gap("trade", "reconnect", LATE - 3 * HOUR_NS, LATE, "backfill", LATE)
+    rig.clock.advance_to(LATE + HOUR_NS)
+    await rig.source._backfill_open_gaps()
+    assert rig.state.gaps("open")[0].id == gap  # failed: tried again later
+    first_attempt = list(asked)
+    await rig.source._backfill_open_gaps()
+    resumed = asked[len(first_attempt) :]
+    assert resumed[0] == first_attempt[1]  # the finished first slice is not fetched again
+    assert rig.state.gaps("done")[0].detail == "0 trades fetched"  # nothing stored twice
+    await rig.source.stop()
+    assert read_rows(hours(tmp_path / "rec", "trade"), "trade").num_rows == 1
+
+
+async def test_long_closed_markets_are_forgotten_and_unknown_tickers_kept_nowhere(
+    tmp_path: Path,
+) -> None:
+    """M1.R 16: every market Kalshi ever listed (and every combo's quote) stayed in memory."""
+    closed = {**market("OLD", status="finalized"), "close_time": "2025-12-01T00:00:00Z"}
+    rig = Rig(tmp_path, [market("M1"), closed])
+    await rig.source.start()
+    rig.source.quotes["OLD"] = (1, 2)
+    rig.source.last_price_e6["OLD"] = 1
+    await rig.feed.queue.put(frame("ticker", {**TICKER_MSG, "market_ticker": "KXMVE-X"}, T0 + 1))
+    await rig.feed.queue.put(frame("ticker", TICKER_MSG, T0 + 2, sid=1))
+    await rig.items(2)
+    assert "KXMVE-X" not in rig.source.quotes and "M1" in rig.source.quotes
+    version = rig.discovery.index.version
+    await rig.source._discover()
+    assert "OLD" not in rig.discovery.index.markets and "OLD" not in rig.source.quotes
+    assert "OLD" not in rig.source.last_price_e6 and rig.discovery.index.version > version
+    assert "M1" in rig.discovery.index.markets
+    await rig.source.stop()
 
 
 async def test_the_rebalance_removes_before_it_adds_and_trusts_the_exchange(

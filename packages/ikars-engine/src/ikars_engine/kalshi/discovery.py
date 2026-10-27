@@ -31,6 +31,7 @@ from ikars_engine.store import StateStore
 BOOKMARK = "discovery.updated_s"
 OVERLAP_SECONDS = 120
 OPEN_STATUSES = frozenset({"active", "open"})  # Kalshi's REST and WebSocket names for trading
+CLOSED_KEPT_NS = 3 * 86_400 * 1_000_000_000  # a closed market stays in the index this long
 log = logging.getLogger("ikars_engine.kalshi.discovery")
 
 
@@ -54,11 +55,14 @@ class MarketIndex:
         self.fees: dict[str, FeeSchedule | None] = {}  # series -> fee terms (None: not modelled)
         self.rejects = 0
         self.combos_skipped = 0
+        self.version = 0  # moves whenever a market is added, changed or removed
+        # (change ``markets`` only through put and prune, so the version stays true)
 
     def put(self, market: Market) -> None:
         if is_combo(market.ticker):
             self.combos_skipped += 1
             return
+        self.version += 1
         event = market.event_ticker or ""
         series = series_ticker_of(event) or ""
         self.markets[market.ticker] = MarketInfo(
@@ -72,6 +76,23 @@ class MarketIndex:
             result=market.result,
             volume_24h_e2=market.volume_24h_e2 or 0,
         )
+
+    def prune(self, now_ns: int, keep_ns: int = CLOSED_KEPT_NS) -> list[str]:
+        """Forget markets that closed more than ``keep_ns`` ago (the index otherwise keeps every
+        market Kalshi ever listed, M1.R 16); returns their tickers."""
+        gone = [
+            m.ticker
+            for m in self.markets.values()
+            if m.status not in OPEN_STATUSES
+            and m.status != "unopened"
+            and m.close_time is not None
+            and now_ns - int(m.close_time.timestamp()) * 1_000_000_000 > keep_ns
+        ]
+        for ticker in gone:
+            del self.markets[ticker]
+        if gone:
+            self.version += 1
+        return gone
 
     def open_markets(self) -> list[MarketInfo]:
         return [m for m in self.markets.values() if m.status in OPEN_STATUSES]
