@@ -103,8 +103,13 @@ slice still needs its own approved plan before code.
   **M1.5a done** (PR #7 merged as `087b819`): reconciles **exactly** with Kalshi.
   **M1.5 done** (PR #8 merged as `5b6f702`): the real ledger lives in `%LOCALAPPDATA%\IKARS\ledger`; share backups
   and the restore drill pass. **M1.6 done** (PR #9 merged as `2efc95f`): the engine runs in the background with the watchdog task and
-  auto-start (the owner's sign-out check pending). **M1.7 done** (PR #10 merged as `0ba5d83`): token-guarded loopback API with an SSE stream. **M1.8 plan APPROVED** (BUILD-LOG 1.8: split a/b, later panels drawn with notes, ScottPlot + candles route, p99
-  frame <= 33 ms, views out of the coverage gate). **M1.8a built** on `m1/8-terminal` (BUILD-LOG 1.8a; merge review done, itemized): PR #11 open. D20 J amended by the owner (2026-10-27): **update to screen p99 <= 33 ms** (frame gaps measure WPF idling, not slowness); met at the console (p99 24 to 32 ms under the 100-market load). **M1.8a done** (PR #11 merged as `77849e3`). **Direction change (owner, 2026-10-27):** the terminal becomes a **TypeScript web app** (D1, D3, D11, D12 amended; BUILD-LOG 1.8w; all recommended answers approved: engine-served Edge app window, one-time code to an HttpOnly cookie, React). PR #12 merged (`d73921b`); tag `wpf-terminal-final` pushed. **In progress:** branch `m1/8-prune-wpf` (decision record, then the WPF prune). Next: the **M1.8a-web** plan for approval, then M1.8b. The owner's M1.6 auto-start sign-out check is still pending. The owner allows
+  auto-start (the owner's sign-out check pending). **M1.7 done** (PR #10 merged as `0ba5d83`): token-guarded loopback API with an SSE stream. **M1.8a (WPF) done** (PR #11 merged as `77849e3`; BUILD-LOG 1.8a); D20 J amended by the owner: **update to screen
+  p99 <= 33 ms**. **Direction change (owner, 2026-10-27):** the terminal becomes a **TypeScript web app** (D1, D3,
+  D11, D12 amended; BUILD-LOG 1.8w; all recommended answers approved: engine-served Edge app window, one-time code to
+  an HttpOnly cookie, React with Vite and pnpm). PR #12 merged (`d73921b`); tag `wpf-terminal-final` pushed. **WPF
+  pruned** on branch `m1/8-prune-wpf` (`2ce5d1e` decision record, `371d646` prune, merge-review fixes): PR open. **Blocked until the owner removes `dotnet` from the `main protection` ruleset's
+  required checks** (GitHub settings; Claude was not permitted to change it). Then the owner's merge. Next: the
+  **M1.8a-web** plan for approval (it adds the `web` CI job and makes `web` a required check), then M1.8b. The owner's M1.6 auto-start sign-out check is still pending. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

@@ -3,9 +3,9 @@
 Every payload is a ``msgspec`` struct. ``python -m ikars_engine contracts export`` writes their JSON
 Schema to ``contracts/ikars-api.schema.json`` and a made-up **golden example** of each to
 ``contracts/examples/<Name>.json``; a test fails when the committed files differ from what this
-module produces. The terminal's types are generated from that schema, and its own test reads every
-example with unknown fields refused (D3 as amended 2026-10-27), so neither side can drift without a
-test failing.
+module produces. From M1.8a-web the web terminal's types are generated from that schema and its own
+test reads every example with unknown fields refused (D3 as amended 2026-10-27), so neither side can
+drift without a test failing; until then only this engine-side test guards the contracts.
 
 Money is in dollar millionths (``_e6``) and counts in contract hundredths (``_e2``), integers as
 everywhere in IKARS; times are UTC ISO text or integer nanoseconds (``_ns``). Field names are

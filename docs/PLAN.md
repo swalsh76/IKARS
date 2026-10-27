@@ -118,7 +118,8 @@ and approved in M1 before any screen is built:
 
 - Engine serves `127.0.0.1` only: HTTP for snapshots and commands, one **Server-Sent Events** stream for pushed
   **deltas** (markets, source items, recommendations, health), with subscriptions changed over HTTP (owner,
-  2026-10-27: amended from one WebSocket, so KalTerm3's tested SSE client and reconnect code carry over). Server: Starlette/uvicorn; serialisation with `msgspec` (fastest
+  2026-10-27: amended from one WebSocket, then so KalTerm3's tested SSE client and reconnect code could carry over; since
+  the D1 amendment the web terminal reads the stream with `fetch` and keeps that client's rules, not its code). Server: Starlette/uvicorn; serialisation with `msgspec` (fastest
   validated JSON in Python).
 - The terminal coalesces updates and repaints at a fixed rate (about 5 to 10 Hz) so the UI stays light under bursts.
 - Contracts are defined once in the engine and exported as JSON Schema. *Amended 2026-10-27:* the TypeScript types
@@ -133,7 +134,7 @@ and approved in M1 before any screen is built:
     origin. Loopback only, as before.
   - The stream is read with `fetch` (not `EventSource`), so reconnects and the alert resume work as in M1.8a.
 - *Alternative:* gRPC with Protocol Buffers (strong cross-language typing and streaming, but more tooling and it
-  discards KalTerm3's stream client).
+  discards KalTerm3's stream client; that client is no longer used either way since the D1 amendment).
 
 ### D4. Local storage (APPROVED 2026-10-26: option C)
 
@@ -258,7 +259,7 @@ CPU fallback, so the app also runs without CUDA.
 | A local first-pass news classifier (optional) | Saves LLM calls | Small fine-tuned classifier first. *Note:* a local LLM was trialled for dev tooling in KalTerm3 (2026-10-18) and removed. This would be a product use, raised only because the owner asked about the GPU. |
 
 - **Not on the GPU:** the real-time event loop, order-book upkeep, fees and P&L (exact integers, tiny), and the UI
-  (WPF already renders through DirectX).
+  (the browser already renders on the GPU; WPF, the terminal until 2026-10-27, rendered through DirectX).
 - **Checks first:** PyTorch needs CUDA 12.8 or later for Blackwell (`sm_120`). RAPIDS (cuDF, the Polars GPU
   engine) has no native Windows support, so Polars and DuckDB stay on the CPU.
 - **Deployment:** the GPU packages are an **optional extra** (CUDA wheels run to gigabytes), installed only on
@@ -373,10 +374,11 @@ arithmetic. For each recommendation:
 
 ### D11. Quality gates (APPROVED 2026-10-26)
 
-- Python: `ruff`, `mypy --strict`, `pytest` (90% coverage; 95% for money and fees). C#: warnings as errors, xUnit v3,
-  same coverage rule. *Amended 2026-10-27 (web terminal):* TypeScript `strict`, ESLint, Vitest with **90% coverage**
-  enforced by its thresholds, Playwright for whole screens, `pnpm audit` and a frozen lockfile in CI. The C# gates
-  retire with the C# code. CI on GitHub Actions **windows-latest** (the target platform). Live Kalshi tests GET-only, as
+- Python: `ruff`, `mypy --strict`, `pytest` (90% coverage; 95% for money and fees).
+- **Web terminal (amended 2026-10-27):** TypeScript `strict`, ESLint, Vitest with **90% coverage** enforced by its
+  thresholds, Playwright for whole screens, `pnpm audit` and a frozen lockfile in CI, as a required `web` check.
+  They start with M1.8a-web, the first terminal code since the prune.
+- *Retired 2026-10-27 with the C# code:* C# warnings as errors, xUnit v3 and its coverage gate (CI's `dotnet` job). CI on GitHub Actions **windows-latest** (the target platform). Live Kalshi tests GET-only, as
   in KAPS.
 - **Rolling mini code reviews (R14, owner instruction 2026-10-26, APPROVED):** besides tests and CI, every commit
   and every merge gets a small, focused review, so large periodic whole-codebase reviews are rarely needed.
@@ -628,7 +630,7 @@ only through a milestone proposal approved by the owner.
 | **M1.4b Kalshi feeds and recording** | Kalshi WebSocket (ticker, trades, lifecycle for all markets; order books for a watched set, `seq`-gap resync); exchange status and schedule (E); in-memory state; feed-to-alert latency measured live against the target (J); raw feeds to hourly Parquet with a gap log; the storage governor (G11); the **Kalshi request and subscription budget** that protects KAPS's ingest (D21-3). *(GPU detection moved to M1.6 by the owner, 2026-10-27.)* | Uses IKARS's read-only key. |
 | **M1.5 Audit and tax ledger, portfolio** | D18's store, hash chain, checkpoints, `verify`. Account import (fills, settlements, fees, transfers, funding, interest) with reconciliation. Positions and exposure marked to market (G1). The paper stream kept apart. **Versioned schema migrations with a backup before each one** (G). Nightly backup to the share's `ikars\` subtree; `ledger restore-drill` (G14). | Reads the owner's account (GET only). **Creates `ikars\` and its marker on the NAS share** (owner's go-ahead at the slice plan). |
 | **M1.6 Run mode and alerts** | The engine as a background process independent of the terminal; auto-start at login; keep-awake while running; a scheduled watchdog that restarts it (G5). The **alert framework**: priority levels, de-duplication, throttling, quiet hours, digest (H). **Windows notifications on the workstation** for engine down, feed stale and backup failed (G6; no phone pushes, owner 2026-10-27). **GPU detection** (D15): the device, driver and CUDA version in health, CPU paths when there is none (moved from M1.4b, owner 2026-10-27). | Adds a per-user logon task and a scheduled watchdog task (no admin); shows test notifications on the workstation. |
-| **M1.7 Loopback API and contracts** | Starlette/uvicorn on `127.0.0.1` with a per-session token and a **version handshake** (G). Snapshots over HTTP, deltas over one WebSocket (markets, books, portfolio, ledger, alerts, health). `msgspec` contracts exported as JSON Schema; the C# contract test. | None. |
+| **M1.7 Loopback API and contracts** | Starlette/uvicorn on `127.0.0.1` with a per-session token and a **version handshake** (G). Snapshots over HTTP, deltas over one WebSocket (markets, books, portfolio, ledger, alerts, health). `msgspec` contracts exported as JSON Schema; the C# contract test (retired 2026-10-27 with the D1 amendment; the TypeScript golden test replaces it in M1.8a-web). | None. |
 | **M1.8 Terminal shell** | *Replanned 2026-10-27 (D1 amended):* **M1.8a-web** (the engine serves the app with the one-time-code sign-in and an `open` command; generated types and golden tests; the stream reader, update hub and URL navigator; the screens from the mock-ups with Lightweight Charts and AG Grid; the update-to-screen meter and its load test) and **M1.8b** (hotkeys, layouts, themes, settings and wizard, support bundle). The original text: from KalTerm3, stripped of the SQL Server and multi-user parts. The navigation service, the Overview per the approved mock-ups (portfolio included), the linked-items panel, the health view, hotkeys, layouts, themes. Live markets and a ledger view. Versioned settings and the first-run wizard (G15, G). A redacted **support bundle** (I). Frame time measured (J). Connects to the running engine or starts it. | None. |
 | **M1.9 Packaging** | Velopack `Setup.exe` and the portable zip with the standalone Python engine and the terminal. Per-user install on a clean Windows 11 account. The first-run wizard on a fresh install. An auto-update from one release to the next **with migrations**, and a tested **rollback** (G). Signing decided (G12). | A test pre-release on GitHub. |
 | **M1.10 Perp research** | Read-only: perp endpoints, fees, funding schedule, margin and liquidation rules; `docs/research/perps.md`. | Live GET requests. |
