@@ -148,7 +148,7 @@ async def build(paths: Paths, settings: Settings) -> Live:
     account_client = KalshiAccountClient(config, account_signer, bucket=bucket)  # opened last
     service = LedgerService(
         ledger,
-        AccountImporter(ledger, Account(account_client), clock, describer(index)),
+        AccountImporter(ledger, Account(account_client), clock, describer(index), data),
         paths.ledger / "checkpoints",
         clock,
         zone,

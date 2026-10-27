@@ -10,16 +10,25 @@ run any number of times. Manual trades are fills like any other.
 dollar millionths. Kalshi nets YES and NO in a market, so a fill that adds YES exposure while NO is
 held **closes** NO contracts (the account receives the NO price for each) before it **opens** YES
 contracts (paying the YES price), and the other way round; the fee is paid on top. A settlement pays
-its revenue less its fee and closes the market's position; a deposit adds its amount less its fee;
-a withdrawal takes its amount and fee from when it is requested, and a failed or returned one is
-reversed by a new record. A transfer counts only when it moves money into or out of the
-event-contract instance.
+its revenue and closes the market's position (its ``fee_cost`` repeats fees already paid on the
+fills, so it is kept as a field, not charged again: checked live against Kalshi's realised P&L); a
+deposit adds its amount less its fee; a withdrawal takes its amount and fee from when it is
+requested, and a failed or returned one is reversed by a new record. A transfer counts only when it
+moves money into or out of the event-contract instance.
 
 **Reconciliation.** After each import the cash the ledger explains is compared with Kalshi's
 balance, and its positions with Kalshi's. A difference is never fixed: it is written to the ledger
 as a reconciliation record (only when the result changes) and shown in health as a count. Kalshi
 reports no interest (M1.2), so interest arrives as an unexplained difference until the owner labels
 it with ``ledger annotate``.
+
+**Archived settlements.** Kalshi moves settled positions to an archive and then no longer lists
+their settlement records, and it has no archived equivalent (its documentation says so). For a
+market the ledger still holds but Kalshi shows flat and archived, the settlement is **derived** from
+the market's result (contracts held, $1 each on the winning side) and appended only when the
+ledger's realised result for that market then equals Kalshi's archived realised P&L exactly; it is
+marked ``derived`` and keeps Kalshi's archived row and the market's result as its evidence. A market
+that does not check out is left as a difference.
 
 Logs carry counts only; amounts, tickers and ids stay in the ledger.
 """
@@ -31,8 +40,18 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from ikars_core.account import Account, Fill, InstanceTransfer, Settlement, Transfer
-from ikars_core.endpoints import TypedPage
+from ikars_core.account import (
+    Account,
+    Fill,
+    InstanceTransfer,
+    MarketPosition,
+    Positions,
+    Settlement,
+    Transfer,
+)
+from ikars_core.endpoints import MarketData, TypedPage
+from ikars_core.models import Market
+from ikars_core.rest import KalshiAPIError
 
 from ikars_engine.clocks import EventClock
 from ikars_engine.ledger import Entry, Ledger, LedgerError
@@ -131,11 +150,13 @@ class AccountImporter:
         account: Account,
         clock: EventClock,
         describe: Describe | None = None,
+        markets: MarketData | None = None,
     ) -> None:
         self._ledger = ledger
         self._account = account
         self._clock = clock
         self._describe = describe
+        self._markets = markets  # market results, for archived settlements; None: not derived
 
     async def run_once(self) -> ImportReport:
         first = self._ledger.bookmark(FIRST_DONE) is None
@@ -155,11 +176,95 @@ class AccountImporter:
             self._move(entry, positions)
             entries.append(entry)
         self._ledger.append_all(entries)
+        held = await self._account.positions()
+        derived = await self._derive_archived(held)
+        self._ledger.append_all(derived)
         if first:
             self._ledger.set_bookmark(FIRST_DONE, str(self._clock.now_ns()))
-        reconciliation = await self.reconcile()
-        log.info("ledger import", extra={"added": len(entries), "exact": reconciliation.exact})
-        return ImportReport(Counter(e.kind for e in entries), reconciliation)
+        reconciliation = await self.reconcile(held)
+        log.info(
+            "ledger import",
+            extra={"added": len(entries) + len(derived), "derived": len(derived),
+                   "exact": reconciliation.exact},
+        )  # fmt: skip
+        return ImportReport(Counter(e.kind for e in [*entries, *derived]), reconciliation)
+
+    # --- archived settlements ----------------------------------------------------------------
+
+    async def _derive_archived(self, live: Positions) -> list[Entry]:
+        if self._markets is None:
+            return []
+        ours, _ = replay(self._ledger)
+        held_live = {p.ticker for p in live.market_positions if p.position_e2}
+        candidates = {t for t in ours if t not in held_live}
+        if not candidates:
+            return []
+        archived = await self._account.positions(historical=True)
+        derived: list[Entry] = []
+        for position in archived.market_positions:
+            if position.ticker not in candidates:
+                continue
+            market = await self._market(self._markets, position.ticker)
+            entry = (
+                None if market is None else self._settle(position, market, ours[position.ticker])
+            )
+            if entry is None:
+                log.warning(
+                    "ledger: an archived settlement does not check out; left as a difference"
+                )
+            else:
+                derived.append(entry)
+        return derived
+
+    @staticmethod
+    async def _market(markets: MarketData, ticker: str) -> Market | None:
+        for read in (markets.market, markets.historical_market):
+            try:
+                return await read(ticker)
+            except KalshiAPIError as exc:
+                if exc.status != 404:
+                    raise
+        return None
+
+    def _settle(self, position: MarketPosition, market: Market, held_e2: int) -> Entry | None:
+        """The derived settlement, or None unless Kalshi's realised P&L confirms it exactly."""
+        if market.result not in ("yes", "no"):
+            return None  # a scalar or undetermined result is never guessed
+        wins = (market.result == "yes") == (held_e2 > 0)
+        payout = value_e6(1_000_000, abs(held_e2)) if wins else 0
+        traded = sum(
+            int(b["cash_e6"]) + int(b["fields"]["fee_e6"])
+            for b in self._ledger.records(kind="fill")
+            if b["ticker"] == position.ticker
+        )
+        if traded + payout != position.realized_pnl_e6:
+            return None
+        moment = market.settlement_ts or position.last_updated_ts
+        evidence = {
+            "archived_position": position.model_dump(mode="json"),
+            "market": {"ticker": market.ticker, "status": market.status, "result": market.result,
+                       "settlement_ts": None if market.settlement_ts is None
+                       else market.settlement_ts.isoformat()},
+        }  # fmt: skip
+        return Entry(
+            kind="settlement",
+            at_ns=ns_of(moment),
+            source="settlement_archived",
+            source_id=position.ticker,
+            ticker=position.ticker,
+            fields={
+                "derived": True,
+                "market_result": market.result,
+                "held_e2": held_e2,
+                "payout_e6": payout,
+                "kalshi_realized_pnl_e6": position.realized_pnl_e6,
+                "kalshi_fees_paid_e6": position.fees_paid_e6,
+            },
+            cash_e6=payout,
+            raw=evidence,
+            context=self._context(position.ticker),
+            note="derived: Kalshi archived this settlement; its realised P&L confirms the payout",
+        )
 
     async def _read(self, first: bool) -> list[Found]:
         """Everything to consider, as (time, order within a time, model, raw JSON)."""
@@ -252,7 +357,7 @@ class AccountImporter:
                 "fee_e6": s.fee_e6,
                 "value_e6": s.value_e6,
             },
-            cash_e6=s.revenue_e6 - s.fee_e6,
+            cash_e6=s.revenue_e6,
             raw=raw,
             context=self._context(s.ticker),
         )
@@ -302,9 +407,9 @@ class AccountImporter:
 
     # --- reconciliation ----------------------------------------------------------------------
 
-    async def reconcile(self) -> Reconciliation:
+    async def reconcile(self, held: Positions | None = None) -> Reconciliation:
         balance = await self._account.balance()
-        held = await self._account.positions()
+        held = held if held is not None else await self._account.positions()
         kalshi = {p.ticker: p.position_e2 for p in held.market_positions if p.position_e2}
         ours, explained = replay(self._ledger)
         differ = {

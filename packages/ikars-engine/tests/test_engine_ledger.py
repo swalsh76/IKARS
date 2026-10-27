@@ -198,6 +198,7 @@ class FakeAccount:
         self.moves: list[dict[str, Any]] = []
         self.balance_cents = 0
         self.held: list[dict[str, Any]] = []
+        self.archived: list[dict[str, Any]] = []
         self.calls: list[tuple[str, Any]] = []
 
     def fills_(self, rows: list[dict[str, Any]]) -> AsyncIterator[TypedPage[Fill]]:
@@ -227,10 +228,10 @@ class FakeAccount:
         return Balance.model_validate({"balance": cents, "balance_dollars": f"{cents / 100:.2f}",
                                        "portfolio_value": 0, "updated_ts": 1})  # fmt: skip
 
-    async def positions(self) -> Positions:
+    async def positions(self, *, historical: bool = False) -> Positions:
+        rows = self.archived if historical else self.held
         return Positions(
-            market_positions=[MarketPosition.model_validate(p) for p in self.held],
-            event_positions=[],
+            market_positions=[MarketPosition.model_validate(p) for p in rows], event_positions=[]
         )
 
 
@@ -324,7 +325,7 @@ async def test_settlements_transfers_and_reversals(tmp_path: Path) -> None:
     account.settled = [{
         "ticker": "KXT-26JAN01-A", "event_ticker": "KXT-26JAN01", "exchange_index": 0,
         "market_result": "yes", "yes_count_fp": "6.00", "yes_total_cost_dollars": "2.40",
-        "no_count_fp": "0.00", "no_total_cost_dollars": "0", "revenue": 600, "fee_cost": "0",
+        "no_count_fp": "0.00", "no_total_cost_dollars": "0", "revenue": 600, "fee_cost": "0.0400",
         "settled_time": "2026-01-01T12:00:00Z",
     }]  # fmt: skip
     account.withdrawals_ = [transfer("w-1", 1_000, "pending")]
@@ -491,3 +492,82 @@ def test_the_runner_describes_markets_and_digests_settings() -> None:
     assert describer(index)("NONE") is None
     assert settings_digest(Settings()) == settings_digest(Settings())
     assert settings_digest(Settings()) != settings_digest(Settings(tax_time_zone="UTC"))
+
+
+class FakeMarkets:
+    """Market results: a 404 on the live route sends the importer to the archive."""
+
+    def __init__(self, result: str) -> None:
+        self.result = result
+
+    async def market(self, ticker: str) -> Any:
+        from ikars_core.rest import KalshiAPIError
+
+        raise KalshiAPIError(404, "not found")
+
+    async def historical_market(self, ticker: str) -> Any:
+        from datetime import UTC, datetime
+        from types import SimpleNamespace
+
+        return SimpleNamespace(ticker=ticker, status="finalized", result=self.result,
+                               settlement_ts=datetime(2026, 1, 1, 12, tzinfo=UTC))  # fmt: skip
+
+
+def archived(realized: str) -> dict[str, Any]:
+    return {**position("KXT-26JAN01-A", "0.00"), "realized_pnl_dollars": realized,
+            "fees_paid_dollars": "0.04"}  # fmt: skip
+
+
+async def test_an_archived_settlement_is_derived_only_when_kalshi_confirms_it(
+    tmp_path: Path,
+) -> None:
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    account.held = []  # Kalshi: flat, and the settlement is archived (no settlement record)
+    # traded: -4.00 + 2.20 before fees; 6 YES win $6.00: realised 4.20
+    account.archived = [archived("4.20")]
+    account.balance_cents = 9_816 + 600
+    importer = AccountImporter(ledger, account, VirtualClock(T0), markets=FakeMarkets("yes"))  # type: ignore[arg-type]
+    report = await importer.run_once()
+    assert report.added["settlement"] == 1
+    assert report.reconciliation is not None and report.reconciliation.exact
+    body = ledger.last("settlement")
+    assert body is not None and body["fields"]["derived"] and body["cash_e6"] == 6_000_000
+    assert json.loads(body["raw"])["market"]["result"] == "yes"
+    assert (await importer.run_once()).added == {}  # once
+    ledger.close()
+
+
+@pytest.mark.parametrize(
+    ("result", "realized", "markets"),
+    [("yes", "4.19", True), ("scalar", "4.20", True), ("yes", "4.20", False)],
+)
+async def test_an_unconfirmed_archived_settlement_stays_a_difference(
+    tmp_path: Path, result: str, realized: str, markets: bool
+) -> None:
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    account.held, account.archived = [], [archived(realized)]
+    account.balance_cents = 9_816 + 600
+    fake = FakeMarkets(result) if markets else None
+    importer = AccountImporter(ledger, account, VirtualClock(T0), markets=fake)  # type: ignore[arg-type]
+    report = await importer.run_once()
+    assert "settlement" not in report.added
+    assert report.reconciliation is not None and not report.reconciliation.exact
+    assert report.reconciliation.positions == {"KXT-26JAN01-A": (600, 0)}
+    ledger.close()
+
+
+async def test_a_settlement_s_fee_is_not_charged_twice(tmp_path: Path) -> None:
+    """Live finding: a settlement's fee_cost repeats the fills' fees; its cash is the revenue."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    account.settled = [{
+        "ticker": "KXT-26JAN01-A", "event_ticker": "KXT-26JAN01", "exchange_index": 0,
+        "market_result": "yes", "yes_count_fp": "6.00", "yes_total_cost_dollars": "2.40",
+        "no_count_fp": "0.00", "no_total_cost_dollars": "0", "revenue": 600,
+        "fee_cost": "0.0400", "settled_time": "2026-01-01T12:00:00Z",
+    }]  # fmt: skip
+    account.held, account.balance_cents = [], 9_816 + 600
+    report = await AccountImporter(ledger, account, VirtualClock(T0)).run_once()  # type: ignore[arg-type]
+    assert report.reconciliation is not None and report.reconciliation.exact
+    body = ledger.last("settlement")
+    assert body is not None and body["cash_e6"] == 6_000_000 and body["fields"]["fee_e6"] == 40_000
+    ledger.close()

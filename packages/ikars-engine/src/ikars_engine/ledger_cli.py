@@ -18,8 +18,9 @@ from typing import Any
 from ikars_core.account import Account
 from ikars_core.auth import AccountSigner
 from ikars_core.config import Environment, KalshiConfig
+from ikars_core.endpoints import MarketData
 from ikars_core.fixedpoint import to_e6
-from ikars_core.rest import KalshiAccountClient
+from ikars_core.rest import KalshiAccountClient, KalshiPublicClient
 
 from ikars_engine import taxzone
 from ikars_engine.clocks import WallClock
@@ -101,8 +102,12 @@ async def _import(ledger: Ledger, settings: Settings) -> int:
     config = KalshiConfig(environment=Environment(settings.kalshi.environment))
     signer = AccountSigner.from_environment()
     bucket, _ = await request_bucket(config, settings.feed.read_share_percent, signer)
-    async with KalshiAccountClient(config, signer, bucket=bucket) as client:
-        report = await AccountImporter(ledger, Account(client), WallClock()).run_once()
+    async with (
+        KalshiAccountClient(config, signer, bucket=bucket) as client,
+        KalshiPublicClient(config, bucket=bucket) as public,
+    ):
+        importer = AccountImporter(ledger, Account(client), WallClock(), markets=MarketData(public))
+        report = await importer.run_once()
     result = report.reconciliation
     _print({
         "added": dict(report.added),
