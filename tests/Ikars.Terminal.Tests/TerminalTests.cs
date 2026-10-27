@@ -215,6 +215,23 @@ public class HubRetryTests
     }
 }
 
+public class RowsTests
+{
+    [Fact]
+    public void OnlyChangedRowsAreReplaced()
+    {
+        var shown = new System.Collections.ObjectModel.ObservableCollection<Fact> { new("a", "1"), new("b", "2") };
+        var changes = new List<System.Collections.Specialized.NotifyCollectionChangedAction>();
+        shown.CollectionChanged += (_, e) => changes.Add(e.Action);
+        Rows.Sync(shown, [new Fact("a", "1"), new Fact("b", "2")]);
+        Assert.Empty(changes);   // the same content: nothing for WPF to lay out
+        Rows.Sync(shown, [new Fact("a", "1"), new Fact("b", "3"), new Fact("c", "4")]);
+        Assert.Equal([System.Collections.Specialized.NotifyCollectionChangedAction.Replace, System.Collections.Specialized.NotifyCollectionChangedAction.Add], changes);
+        Rows.Sync(shown, [new Fact("a", "1")]);
+        Assert.Equal([new Fact("a", "1")], shown);
+    }
+}
+
 public class FormattingTests
 {
     [Fact]

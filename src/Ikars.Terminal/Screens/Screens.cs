@@ -35,6 +35,36 @@ internal sealed record PlannedPanel(string Title, string ArrivesIn);
 /// <summary>A label and a value.</summary>
 internal sealed record Fact(string Label, string Value, bool Good = true);
 
+/// <summary>
+/// Updates a shown list in place (D20 J): only rows whose content changed are replaced, so a list refreshed every second or every tick does not make WPF
+/// lay out every row again. A cleared and refilled list cost the console a missed refresh at idle (M1.8a).
+/// </summary>
+internal static class Rows
+{
+    public static void Sync<T>(ObservableCollection<T> shown, IEnumerable<T> wanted)
+    {
+        var at = 0;
+        foreach (var row in wanted)
+        {
+            if (at == shown.Count)
+            {
+                shown.Add(row);
+            }
+            else if (!EqualityComparer<T>.Default.Equals(shown[at], row))
+            {
+                shown[at] = row;
+            }
+
+            at++;
+        }
+
+        while (shown.Count > at)
+        {
+            shown.RemoveAt(shown.Count - 1);
+        }
+    }
+}
+
 /// <summary>The Overview: portfolio and exposure, alerts and health are live now; the other panels are drawn with when they arrive.</summary>
 internal sealed class OverviewScreen(ScreenContext ctx) : Screen(Ref.Overview)
 {
@@ -95,17 +125,9 @@ internal sealed class OverviewScreen(ScreenContext ctx) : Screen(Ref.Overview)
         Cash = Formatting.Dollars(portfolio.CashE6);
         OpenCost = Formatting.Dollars(portfolio.CostE6);
         Unrealised = portfolio.Positions.Count == 0 ? "no open positions" : portfolio.UnrealisedE6 is null ? "not all priced" : Formatting.Signed(portfolio.UnrealisedE6);
-        Positions.Clear();
-        foreach (var p in portfolio.Positions)
-        {
-            Positions.Add(new LinkRow(Ref.Market(p.Ticker), p.Title.Length > 0 ? p.Title : p.Ticker, $"{p.Side.ToUpperInvariant()} {Formatting.Contracts(p.CountE2)} · cost {Formatting.Dollars(p.CostE6)}", Formatting.Signed(p.UnrealisedE6)));
-        }
-
-        Exposure.Clear();
-        foreach (var (category, cost) in portfolio.ExposureByCategory)
-        {
-            Exposure.Add(new Fact(category, Formatting.Dollars(cost)));
-        }
+        Rows.Sync(Positions, portfolio.Positions.Select(p => new LinkRow(
+            Ref.Market(p.Ticker), p.Title.Length > 0 ? p.Title : p.Ticker, $"{p.Side.ToUpperInvariant()} {Formatting.Contracts(p.CountE2)} · cost {Formatting.Dollars(p.CostE6)}", Formatting.Signed(p.UnrealisedE6))));
+        Rows.Sync(Exposure, portfolio.ExposureByCategory.Select(e => new Fact(e.Key, Formatting.Dollars(e.Value))));
 
         ctx.Hub.Want(this, portfolio.Positions.Select(p => p.Ticker), []);
     }
@@ -114,16 +136,18 @@ internal sealed class OverviewScreen(ScreenContext ctx) : Screen(Ref.Overview)
 
     internal void ShowHealth(HealthView health)
     {
-        HealthStrip.Clear();
         var parts = health.Parts;
         var connected = Read(parts, "kalshi", "feed", "connected");
-        HealthStrip.Add(new Fact("Feed", connected == "True" ? "connected" : "not connected", connected == "True"));
         var exact = Read(parts, "ledger", "reconciled_exact");
-        HealthStrip.Add(new Fact("Ledger", exact == "True" ? "reconciles exactly" : exact is null ? "checking" : "differs from Kalshi", exact != "False"));
         var backupHours = Read(parts, "backup", "hours_since");
-        HealthStrip.Add(new Fact("Backup", backupHours is null ? "none yet" : $"{backupHours} h ago", backupHours is not null && int.TryParse(backupHours, out var h) && h <= 36));
-        HealthStrip.Add(new Fact("Open gaps", Read(parts, "kalshi", "open_gaps") ?? "—", Read(parts, "kalshi", "open_gaps") is "0" or null));
-        HealthStrip.Add(new Fact("Frame time", ctx.Frames.Text, ctx.Frames.Count == 0 || ctx.Frames.WithinTarget));
+        Rows.Sync(HealthStrip,
+        [
+            new Fact("Feed", connected == "True" ? "connected" : "not connected", connected == "True"),
+            new Fact("Ledger", exact == "True" ? "reconciles exactly" : exact is null ? "checking" : "differs from Kalshi", exact != "False"),
+            new Fact("Backup", backupHours is null ? "none yet" : $"{backupHours} h ago", backupHours is not null && int.TryParse(backupHours, out var h) && h <= 36),
+            new Fact("Open gaps", Read(parts, "kalshi", "open_gaps") ?? "—", Read(parts, "kalshi", "open_gaps") is "0" or null),
+            new Fact("Frame time", ctx.Frames.Text, ctx.Frames.Count == 0 || ctx.Frames.WithinTarget),
+        ]);
     }
 
     /// <summary>A value deep in the health parts as text, or <see langword="null"/>.</summary>
@@ -370,14 +394,8 @@ internal sealed class MarketScreen(ScreenContext ctx, string ticker) : Screen(Re
         BookNote = book.Ready ? string.Empty : "rebuilding (waiting for a snapshot)";
     }
 
-    private static void Replace(ObservableCollection<BookLevel> rows, IReadOnlyList<Level> levels)
-    {
-        rows.Clear();
-        foreach (var level in levels.Take(BookDepth))
-        {
-            rows.Add(new BookLevel(Formatting.Cents(level.PriceE6), Formatting.Contracts(level.CountE2)));
-        }
-    }
+    private static void Replace(ObservableCollection<BookLevel> rows, IReadOnlyList<Level> levels) =>
+        Rows.Sync(rows, levels.Take(BookDepth).Select(level => new BookLevel(Formatting.Cents(level.PriceE6), Formatting.Contracts(level.CountE2))));
 
     private async Task LoadChartAsync(CancellationToken cancellationToken)
     {
@@ -539,27 +557,28 @@ internal sealed class HealthScreen(ScreenContext ctx) : Screen(Ref.Health)
 
     internal void Show(HealthView health)
     {
-        Rows.Clear();
+        var facts = new List<Fact>();
         foreach (var (part, element) in health.Parts.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
-            Flatten(part, element);
+            Flatten(facts, part, element);
         }
 
+        Screens.Rows.Sync(Rows, facts);
         Raise(nameof(FrameTime));
     }
 
-    private void Flatten(string path, JsonElement element)
+    private static void Flatten(List<Fact> facts, string path, JsonElement element)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
             foreach (var property in element.EnumerateObject())
             {
-                Flatten($"{path}.{property.Name}", property.Value);
+                Flatten(facts, $"{path}.{property.Name}", property.Value);
             }
 
             return;
         }
 
-        Rows.Add(new Fact(path, element.ValueKind == JsonValueKind.String ? element.GetString() ?? string.Empty : element.GetRawText()));
+        facts.Add(new Fact(path, element.ValueKind == JsonValueKind.String ? element.GetString() ?? string.Empty : element.GetRawText()));
     }
 }
