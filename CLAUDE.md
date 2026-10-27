@@ -94,8 +94,14 @@ slice still needs its own approved plan before code.
   **M1.4a done** (PR #4 merged as `b29a86e`). **M1.4b done** (PR #5 merged as `58abbe5`; BUILD-LOG 1.4b).
   Owner 2026-10-27: GPU detection moved to M1.6; recording volume (about 2.1 GB a day) kept. **Keep
   [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) current** in every slice that adds or drops a dependency (for the
-  install instructions). Branch `docs/m1-4b-close` carries these doc updates (PR to merge when the owner asks).
-  **Next:** the M1.5 (audit and tax ledger, portfolio) slice plan, for the owner's approval. The owner allows
+  install instructions). Those docs merged as PR #6 (`a8ff41a`).
+  **M1.5 plan APPROVED** (owner 2026-10-27: all 6 as recommended: split a/b, NAS go-ahead for M1.5b, tax zone =
+  workstation's (America/Denver), REST import each minute, owner labels unexplained money, FIFO).
+  **M1.5a built and verified live** on `m1/5a-ledger` (BUILD-LOG 1.5a; commits `3b272fb`, `8314c9e`, `1072db0`):
+  reconciles **exactly** with Kalshi (18 settlements derived from Kalshi's archive, confirmed by its realised P&L);
+  PR open, waiting for the owner's merge. The real ledger starts at `%LOCALAPPDATA%\IKARS\ledger` on the first
+  normal engine run (live checks used scratch folders). **Next:** M1.5b (share backups, restore drill, portfolio) on
+  its own branch. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
@@ -116,6 +122,9 @@ slice still needs its own approved plan before code.
   Before each merge, review the branch diff against `main` plus the touched modules and their callers. Use
   `/code-review` (a low effort level per commit, medium per merge) and a reuse pass. Fix each finding or park it in
   PLAN §9, and list it under **Review** in the slice's BUILD-LOG entry.
+- **Show the merge review as an itemized list (owner, 2026-10-27).** When reporting a merge review to the owner,
+  list every finding, one per line: what was wrong, and what was done (fixed, with the commit; parked; or no change,
+  with why). Never only a count.
 - **Scope is frozen at D1 to D21 (owner, 2026-10-26).** New ideas go to PLAN §9 by default and come back only
   through a milestone proposal the owner approves. Name scope creep explicitly when it appears.
 - Machines by role (workstation, server host, analytics node); real host names and paths stay out of the repository.

@@ -7,6 +7,9 @@ folder, nothing touches the network, and the result is the same on every run.
 
 ``python -m ikars_engine run [--minutes N] [--root PATH]``: the live engine on Kalshi, in the
 foreground (M1.4b), with IKARS's read-only key from its two environment variables.
+
+``python -m ikars_engine ledger {verify,status,import,annotate}``: the audit ledger (M1.5a; see
+:mod:`ikars_engine.ledger_cli`).
 """
 
 import argparse
@@ -82,6 +85,9 @@ def main(argv: list[str]) -> int:
     live.add_argument(
         "--root", type=Path, default=None, help="the data folder (default: the usual)"
     )
+    from ikars_engine import ledger_cli
+
+    ledger_cli.add_parser(commands)
     try:
         args = parser.parse_args(argv[1:])
     except SystemExit as exc:
@@ -102,6 +108,12 @@ def main(argv: list[str]) -> int:
             return 0
         print(json.dumps(health.get("kalshi"), indent=2, default=str))
         return 0
+    if args.command == "ledger":
+        from ikars_engine.kalshi.runner import default_paths
+        from ikars_engine.settings import load
+
+        paths = default_paths(Path(args.root) if args.root else None)
+        return ledger_cli.run(args, paths, load(paths.settings))
     parser.print_usage(sys.stderr)
     return 2
 

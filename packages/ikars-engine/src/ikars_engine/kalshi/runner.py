@@ -11,11 +11,15 @@ health line every minute. The background run mode (start at login, keep awake, w
 """
 
 import asyncio
+import contextlib
+import hashlib
 import json
 import logging
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
+import msgspec
 from ikars_core.account import Account
 from ikars_core.auth import AccountSigner, DataSigner
 from ikars_core.clock import ClockCheckError, sample_from_response
@@ -25,6 +29,7 @@ from ikars_core.ratelimit import TokenBucket
 from ikars_core.rest import KalshiAccountClient, KalshiPublicClient
 from ikars_core.ws import FeedConfig, KalshiFeed
 
+from ikars_engine import taxzone
 from ikars_engine.clocks import WallClock
 from ikars_engine.engine import Engine
 from ikars_engine.governor import GB, StorageGovernor
@@ -32,6 +37,9 @@ from ikars_engine.kalshi.discovery import Discovery, MarketIndex
 from ikars_engine.kalshi.exchange import ExchangeWatch
 from ikars_engine.kalshi.source import KalshiSource
 from ikars_engine.kalshi.watched import WatchedSet
+from ikars_engine.ledger import Ledger
+from ikars_engine.ledger_import import AccountImporter, Describe
+from ikars_engine.ledger_service import LedgerService
 from ikars_engine.logs import Redactor, configure
 from ikars_engine.metrics import Metrics
 from ikars_engine.paths import Paths
@@ -60,10 +68,9 @@ def clock_observer(skew: SkewMonitor) -> Callable[[float, float, Mapping[str, st
 
 
 async def request_bucket(
-    config: KalshiConfig, share_percent: int
+    config: KalshiConfig, share_percent: int, signer: AccountSigner
 ) -> tuple[TokenBucket, dict[str, object]]:
     """A token bucket of ``share_percent`` of the account's read bucket (read once at start)."""
-    signer = AccountSigner.from_environment()
     async with KalshiAccountClient(config, signer) as client:
         limits = await Account(client).limits()
     rate = limits.read.refill_rate * share_percent / 100
@@ -75,12 +82,43 @@ async def request_bucket(
     }
 
 
-async def build(paths: Paths, settings: Settings) -> tuple[Engine, KalshiSource, StateStore]:
+@dataclass(slots=True)
+class Live:
+    """Everything ``run`` starts and stops."""
+
+    engine: Engine
+    source: KalshiSource
+    state: StateStore
+    ledger: Ledger
+    ledger_service: LedgerService
+    account_client: KalshiAccountClient
+
+
+def describer(index: MarketIndex) -> Describe:
+    """A market's title, event, series and category from the discovery index, for the ledger."""
+
+    def describe(ticker: str) -> dict[str, str] | None:
+        info = index.markets.get(ticker)
+        if info is None:
+            return None
+        return {"title": info.title, "event_ticker": info.event_ticker,
+                "series_ticker": info.series_ticker, "category": info.category}  # fmt: skip
+
+    return describe
+
+
+def settings_digest(settings: Settings) -> str:
+    return hashlib.sha256(msgspec.json.encode(settings)).hexdigest()
+
+
+async def build(paths: Paths, settings: Settings) -> Live:
     config = KalshiConfig(environment=Environment(settings.kalshi.environment))
+    zone = taxzone.resolve(settings.tax_time_zone)  # a bad setting fails before anything opens
     clock = WallClock()
     metrics = Metrics()
     skew = SkewMonitor()
-    bucket, budget = await request_bucket(config, settings.feed.read_share_percent)
+    account_signer = AccountSigner.from_environment()
+    bucket, budget = await request_bucket(config, settings.feed.read_share_percent, account_signer)
     log.info("request budget", extra=budget)
     client = KalshiPublicClient(config, bucket=bucket, observe=clock_observer(skew))
     data = MarketData(client)
@@ -92,10 +130,11 @@ async def build(paths: Paths, settings: Settings) -> tuple[Engine, KalshiSource,
         max_deltas_per_second=settings.feed.watched_max_deltas_per_second,
         pinned=set(settings.feed.watch),
     )
+    index = MarketIndex()
     source = KalshiSource(
         feed=feed,
         data=data,
-        discovery=Discovery(data, MarketIndex(), state, clock),
+        discovery=Discovery(data, index, state, clock),
         exchange=ExchangeWatch(data, state, clock),
         state=state,
         recorder=Recorder(paths.recordings),
@@ -106,10 +145,22 @@ async def build(paths: Paths, settings: Settings) -> tuple[Engine, KalshiSource,
         governor=StorageGovernor(paths.recordings, settings.feed.storage_budget_gb * GB),
         signer=signer,
     )
+    ledger = Ledger(paths.ledger / "ledger.sqlite", zone.zone)
+    account_client = KalshiAccountClient(config, account_signer, bucket=bucket)  # opened last
+    service = LedgerService(
+        ledger,
+        AccountImporter(ledger, Account(account_client), clock, describer(index), data),
+        paths.ledger / "checkpoints",
+        clock,
+        zone,
+        key_fingerprint=account_signer.fingerprint,
+        settings_sha256=settings_digest(settings),
+    )
     engine = Engine(clock, source, metrics=metrics, skew=skew)
     engine.health_parts["kalshi"] = source.health
+    engine.health_parts["ledger"] = service.health
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
-    return engine, source, state
+    return Live(engine, source, state, ledger, service, account_client)
 
 
 def requests_used(
@@ -150,6 +201,8 @@ def summary(health: dict[str, object]) -> str:
             "feed_to_route_p50_ms": ms("p50"),
             "feed_to_route_p99_ms": ms("p99"),
             "rest_tokens_spent": _at(health, "request_budget", "tokens_spent"),
+            "ledger_records": _at(health, "ledger", "records"),
+            "ledger_exact": _at(health, "ledger", "reconciled_exact"),
             "clock": health.get("clock"),
         },
         default=str,
@@ -170,21 +223,33 @@ async def run(
         max_bytes=settings.logs.max_bytes,
         files_kept=settings.logs.files_kept,
     )
-    engine, source, state = await build(paths, settings)
-    await source.start()
-    running = asyncio.create_task(engine.run(), name="engine")
-    try:
+    live = await build(paths, settings)
+    engine = live.engine
+    health: dict[str, object] = {}
+    running: list[asyncio.Task[object]] = []
+    # every step of the shutdown runs even when one before it fails, in the reverse of this order
+    async with contextlib.AsyncExitStack() as stack:
+        stack.push_async_callback(live.account_client.aclose)
+        stack.callback(live.state.close)
+        stack.callback(live.ledger.close)
+        stack.callback(lambda: health.update(engine.health()))
+        stack.push_async_callback(_finish, running)
+        live.ledger_service.check()  # before the feed: a long walk never delays a frame
+        stack.push_async_callback(live.source.stop)
+        await live.source.start()
+        stack.push_async_callback(live.ledger_service.stop)
+        await live.ledger_service.start()  # after discovery, so records get market titles
+        running.append(asyncio.create_task(engine.run(), name="engine"))
         elapsed = 0.0
         while minutes is None or elapsed < minutes * 60:
             await asyncio.sleep(min(60.0, minutes * 60 - elapsed) if minutes else 60.0)
             elapsed += 60.0 if minutes is None else min(60.0, minutes * 60 - elapsed)
             out(summary(engine.health()))
-    finally:
-        await source.stop()
-        await running
-        health = engine.health()
-        state.close()
     return health
+
+
+async def _finish(tasks: list[asyncio.Task[object]]) -> None:
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def default_paths(root: Path | None = None) -> Paths:

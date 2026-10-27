@@ -891,3 +891,161 @@ recording volume stays as is. A dependencies register, [DEPENDENCIES.md](DEPENDE
 needs installed now and later, for the install instructions; each slice keeps it current.
 
 **M1.4b done.**
+
+### 1.5 Audit and tax ledger, portfolio (plan APPROVED 2026-10-27, all six answers as recommended; branches `m1/5a-ledger`, then M1.5b's)
+
+**Proposed split** (like M1.4): **M1.5a** the ledger (store, chain, import, reconciliation, `verify`); **M1.5b**
+the share (backups, restore drill) and the portfolio (positions and exposure, G1). Each is reviewed and merged on its
+own. The tax-year package stays in M5 (D18).
+
+**M1.5a builds** (a new `ledger` module in `ikars-engine`, on M1.2's `Account` reader and M1.4b's migrator):
+1. **The ledger store:** `ledger.sqlite`, separate from `state.sqlite` (WAL, `synchronous=FULL`), versioned migrations
+   with a backup first (G). Append-only: SQLite triggers refuse `UPDATE` and `DELETE`; corrections are adjustment
+   records pointing to the record they correct.
+2. **The record** (D18): sequence; kind (fill, settlement, deposit, withdrawal, transfer, fee, funding, interest,
+   adjustment, app action); UTC time and the tax-zone time; Kalshi ids; tickers and the market title at the time;
+   side, action, contracts (10^-2); price, fee, cash amount and balance after where given (dollars at 10^-6);
+   Kalshi's raw JSON verbatim; IKARS context ids; `prev_hash` and `hash`.
+3. **The hash chain:** SHA-256 over a defined canonical encoding (sorted keys, no whitespace, UTF-8, integers only,
+   no floats), checked at every start and by `python -m ikars_engine ledger verify`; a daily checkpoint file with the
+   day's last hash.
+4. **The import:** the account's whole history on first run (fills live and historical, settlements, deposits,
+   withdrawals, instance transfers), then new records every minute while the engine runs. Idempotent: a Kalshi id is
+   never imported twice; records are added in Kalshi's time order within each import. Manual trades are included.
+5. **Reconciliation** after each import: the cash the ledger explains against Kalshi's balance, and the contracts it
+   explains against Kalshi's positions. A difference is shown in health and logged as a **reconciliation
+   record**; it is never fixed silently. Interest has no API endpoint (M1.2): an unexplained balance change stays
+   unexplained until the owner labels it (`ledger annotate`, which appends an adjustment record of the chosen kind).
+6. **App actions** in the same chain: engine start and stop, settings changed, key loaded (its fingerprint only,
+   never the id or path).
+7. **The paper stream:** its own table and chain, clearly marked, never read by the tax package. Empty until the
+   paper executor (M3/M4).
+8. **Privacy:** the test deferred from M1.4a: account models and ledger rows never reach a log; replies, health and
+   logs show counts and status, never amounts.
+
+**M1.5b builds:**
+1. **Backups to the share** (D18 tree under `ikars\`): nightly while the engine runs, and at start if the last one is
+   older than a day. SQLite online backup to a temporary name, hash-checked, then renamed; `SHA256SUMS` and the
+   checkpoint beside it. Every path is resolved under `<share>\ikars\` and anything outside is refused; nothing is
+   written without `.ikars-backup-marker`. Retention as D18 (ledger dailies 90 days, monthlies and checkpoints forever,
+   state dailies 30 days). The ledger is also backed up before every ledger migration (G).
+2. **`ledger restore-drill`** (G14): restore the newest copy from the share to a scratch file, verify its chain, compare
+   its head with the local ledger's.
+3. **Portfolio (G1, model only; the view is M1.8):** positions from the ledger, cross-checked with Kalshi's positions;
+   FIFO lots for cost basis; marked to market from the live feed's last prices; unrealised P&L **after exit costs**
+   (D7 fees on exit); exposure by event, series and category (from the discovery index); balance.
+
+**Changes on this machine and the network:**
+- `ledger.sqlite`, checkpoints and the paper ledger under `%LOCALAPPDATA%\IKARS\data`.
+- **On the NAS share: creates `ikars\` and `.ikars-backup-marker`** (owner's go-ahead needed), then the D18 tree inside
+  it. Nothing outside `ikars\` is read, listed or written. Access uses the owner's saved Windows credential.
+- The share's real path goes only in the local settings file, never in the repository.
+- No scheduled task (M1.6 adds the logon task, so backups run while the engine runs).
+
+**New packages:** `tzdata` (Apache-2.0): Windows Python has no time-zone database, so `zoneinfo` needs it for the tax
+time zone. Added to DEPENDENCIES.md.
+
+**Tests:** canonical encoding and hash vectors; a broken, reordered or edited chain is caught; the triggers refuse edits;
+idempotent import against a fake account (made-up records, per docs/TESTING.md); reconciliation exact, short and
+over; annotation; migration with backup; the share guard (outside paths, a missing marker,
+`\127.0.0.1\ikars-no-such-share`); interrupted backup copies; the restore drill; FIFO lots and unrealised P&L in
+integers; nothing from the account in logs.
+
+**Live checks** (GET only; results reported as counts and pass or fail, never amounts):
+- the full history imports; a second import adds nothing; `verify` passes;
+- reconciliation is **exact** against Kalshi's balance and positions (the M1 gate), or every difference is shown;
+- M1.5b: a backup lands on the share inside `ikars\`, a second run is idempotent, the restore drill passes; the
+  portfolio's positions match Kalshi's.
+
+**Open questions.**
+1. **Split into M1.5a and M1.5b?** *Recommended:* yes, as above; each about the size of M1.4a.
+2. **Go-ahead to create `ikars\` and its marker on the NAS share** (the one in memory), in M1.5b. *Recommended:* yes.
+3. **The tax time zone** (year boundaries and the local time on each record). *Recommended:* the workstation's zone
+   as the default setting; please confirm which zone you file in.
+4. **Import cadence:** *recommended:* REST every minute while the engine runs (portfolio reads are allowed for the
+   read-only key; M1.2 confirmed them). *Alternative:* Kalshi's private fill and position WebSocket channels for
+   real time; that relaxes M1.2's market-data-only guard, and is better left for M7.
+5. **Unexplained balance changes (interest, incentives):** *recommended:* shown and recorded as differences, and
+   classified only by you (`ledger annotate`), never guessed.
+6. **Lot method for the portfolio's cost basis:** *recommended:* FIFO, the same default as D18's tax package.
+
+**Owner's answers (2026-10-27):** all six as recommended: split into M1.5a and M1.5b; go-ahead to create `ikars\`
+and its marker on the share (in M1.5b); the tax zone is the workstation's (`America/Denver`); REST import every
+minute; unexplained money labelled by the owner; FIFO.
+
+#### 1.5a built (2026-10-27)
+
+**Built** (`ikars-engine`; commits `3b272fb`, `8314c9e`, `1072db0`):
+
+| Area | What |
+|---|---|
+| Store | `ledger.sqlite` through the versioned migrator (backup first); SQLite triggers refuse `UPDATE` and `DELETE`; real and paper chains; a unique key per Kalshi record, so imports are idempotent. The migrator now runs trigger bodies (statements split with `sqlite3.complete_statement`). |
+| Chain | Canonical JSON bodies (sorted keys, no spaces, no floats; Kalshi's raw JSON kept verbatim as one text field), SHA-256 linked by `prev_hash`; `verify` walks sequence, hash, link and indexed columns, and compares the newest daily checkpoint (so cut-off records or an older copy are caught). |
+| Import | The whole history first (live and archived fills, settlements, deposits, withdrawals, instance transfers), then every minute from a day before each source's newest record; live and archived fills every time. Market titles from the live index or, failing that, market data (once per market). |
+| Cash | Kalshi's netting in exact millionths: a fill closes the opposite side at its price before opening; fees on top; a settlement pays its revenue; deposits, withdrawals (from request, reversed if failed or returned) and event-contract transfers. |
+| Archived settlements | Kalshi stops listing settlements once positions are archived and has no archived equivalent. The ledger derives each from the market's result, only when its realised result then equals Kalshi's archived realised P&L exactly; marked `derived`, with Kalshi's archived row and the result as evidence. A listed settlement for a market already derived is skipped. |
+| Reconciliation | Cash against Kalshi's balance, positions against Kalshi's; a reconciliation record when the result changes; health shows counts and booleans only. |
+| App actions | Engine start and stop, key loaded (public-key fingerprint only), settings changed (a hash), in the same chain. |
+| Service | Checks the chain before the feed starts; a broken chain stops every append; the import each minute; a checkpoint after each. |
+| Commands | `python -m ikars_engine ledger verify | status | import | annotate`; `import` and `annotate` refuse a broken chain. |
+| Tax zone | `taxzone.py`: the setting, else the workstation's zone (Windows name mapped by CLDR's table), else UTC with a health flag; settings v3. New package `tzdata` (Apache-2.0). |
+
+**Verified.**
+- 1,198 tests pass; coverage 94.9%; ruff, mypy, data guard and gitleaks clean. Made-up records only.
+- Tests cover: canonical text and float refusal; tampering (edited, deleted, reordered, rebuilt with a valid hash,
+  a float slipped in, cut back behind the checkpoint); the triggers; the netting cash rule; idempotent imports;
+  reconciliation exact and not; reversals; derived settlements confirmed and not (a cent off, scalar, no market
+  data); the double-settlement guard; app actions; a broken chain; the commands; the tax zone and the settings
+  migration; **account values never in a log** (the test deferred from M1.4a).
+- **Live** (GET only; results as counts):
+
+  | Check | Result |
+  |---|---|
+  | First import | 4 deposits, 147 fills, 25 settlements (7 listed, 18 derived from the archive), 1 withdrawal, 6 transfers |
+  | Reconciliation | **exact**: cash to the millionth and every position |
+  | Second import | adds nothing |
+  | `verify` | passes, with the checkpoint; 188 records after the engine's app actions |
+  | Engine, 2 minutes | ledger checked before the feed, imports each minute, still exact, clean shutdown |
+  | Titles | every fill and settlement record (172 of 172) |
+
+  The first live import was **not** exact. A diagnosis that printed only counts compared each market with Kalshi's
+  position records:
+  - fees matched on all 41 markets;
+  - the netting rule matched all 16 markets closed before settlement;
+  - all 18 differences were finalized markets that had moved to Kalshi's archive, with no settlement record;
+  - the 7 listed settlements were off because their `fee_cost` repeats the fills' fees.
+
+  Both were fixed (`8314c9e`) and the import has reconciled exactly since.
+
+**Review (R14).**
+- **Per commit (`3b272fb`):** 3 fixed: the commands appended on a broken chain; a float in a tampered body crashed
+  `verify`; a client could be opened before a bad tax-zone setting failed. gitleaks flagged a made-up 16-hex
+  fingerprint in a test; the value was changed, not allow-listed.
+- **Per commit (`8314c9e`):** one candidate (a flat market as an archive candidate); no change: flat markets are
+  left out of the replay and the derived record is keyed by ticker.
+- **Per merge (medium):** 10 candidates; 9 fixed in `1072db0`:
+  1. later imports never read archived fills;
+  2. a failure after the history kept every run in first-import mode;
+  3. one start time for fills and settlements;
+  4. three replays per import, and the chain walk after the feed started;
+  5. a fragile shutdown;
+  6. a possible double settlement;
+  7. records without titles;
+  8. truncation undetected by `verify`;
+  9. a stale resume point.
+
+  The tenth (the v2 settings migration) needs no change: no v2 file was ever written, and the old value was only
+  the default.
+- **Per commit (`1072db0`):** none. That review ran just after the commit, not before it: a slip in the order,
+  noted here.
+
+**Kept, changed and why.**
+- *New:* neither KAPS nor SPARQ has a money ledger (SPARQ's `ledger.py` is a database-durability log).
+- *Kept:* M1.2's account reader and its cents-to-millionths rules; M1.4b's migrator.
+
+**Problems and fixes.**
+- Kalshi's settlement `fee_cost` is not a separate charge, and archived settlements have no records; both found
+  live, confirmed against Kalshi's realised P&L, and recorded in the module's notes.
+- A long inline shell script failed to parse twice; long edits now go through script files or whole-file writes.
+
+**M1.5a done**, subject to the owner's merge. Next: M1.5b (backups to the share, the restore drill, the portfolio).

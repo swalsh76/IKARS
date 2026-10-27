@@ -17,6 +17,7 @@ POSIX machine, by ACL on Windows (``winacl``).
 """
 
 import base64
+import hashlib
 import os
 import re
 import stat
@@ -190,6 +191,15 @@ class _Signer:
         self._key = private_key
         self._now_ms = now_ms
         self.offset_ms = offset_ms
+
+    @property
+    def fingerprint(self) -> str:
+        """The first 16 hex digits of the SHA-256 of the **public** key: names the key in the audit
+        ledger without its id, path or anything secret."""
+        public = self._key.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
+        )
+        return hashlib.sha256(public).hexdigest()[:16]
 
     @classmethod
     def from_environment(cls, environ: Mapping[str, str] | None = None) -> Self:

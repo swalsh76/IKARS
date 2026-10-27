@@ -19,7 +19,7 @@ import msgspec
 import tomli_w
 from ikars_core.fixedpoint import PrecisionError, to_e6
 
-VERSION = 2
+VERSION = 3
 
 
 class KalshiSettings(msgspec.Struct, frozen=True, kw_only=True):
@@ -56,7 +56,7 @@ class PluginDefaults(msgspec.Struct, frozen=True, kw_only=True):
 
 class Settings(msgspec.Struct, frozen=True, kw_only=True):
     version: int = VERSION
-    tax_time_zone: str = "America/New_York"
+    tax_time_zone: str = ""  # an IANA name; empty: the workstation's zone (owner, 2026-10-27)
     kalshi: KalshiSettings = KalshiSettings()
     logs: LogSettings = LogSettings()
     budget: BudgetSettings = BudgetSettings()
@@ -118,7 +118,15 @@ def _v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
     return {**data, "budget": budget, "version": 2}
 
 
-MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {1: _v1_to_v2}
+def _v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
+    # version 2's tax zone defaulted to America/New_York before the owner chose "the workstation's
+    # zone"; a file still holding that default follows the workstation, any other choice is kept
+    zone = data.get("tax_time_zone")
+    return {**data, "tax_time_zone": "" if zone == OLD_DEFAULT_ZONE else zone or "", "version": 3}
+
+
+OLD_DEFAULT_ZONE = "America/New_York"
+MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {1: _v1_to_v2, 2: _v2_to_v3}
 
 
 def _version(data: dict[str, Any]) -> int:
