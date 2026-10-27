@@ -734,6 +734,53 @@ async def test_the_fixed_port_and_its_fallback(
     await free.stop()
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/%5C%5Cattacker.example%5Cshare%5Cx.json",  # \\host\share: SMB, the owner's NTLM hash
+        "/C:/Windows/win.ini",
+        "/a/../../x.json",
+        "/signin.js:hidden",  # an NTFS stream
+    ],
+)
+async def test_no_request_path_reaches_the_filesystem_unchecked(
+    web: ApiContext, path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.8a-web-1a security review: the public file route resolved the request's path before
+    checking it, so a UNC path made Windows contact the host it named."""
+    from ikars_engine.webserve import PLACEHOLDER
+
+    touched: list[str] = []
+    real = Path.is_file
+
+    def watched(self: Path) -> bool:
+        touched.append(str(self))
+        return real(self)
+
+    monkeypatch.setattr(Path, "is_file", watched)
+    monkeypatch.setattr(Path, "resolve", lambda self, strict=False: pytest.fail(f"resolved {self}"))
+    response = await call(web, "GET", path, headers={})
+    assert response.status_code == 404
+    assert all(Path(t).is_relative_to(PLACEHOLDER) for t in touched)  # only inside the folder
+
+
+@pytest.mark.parametrize(
+    "relative",
+    ["//attacker.example/share/x.json", r"\\h\s\x.js", "a//b.js", "./a.js", "a/..", "C:x", ""],
+)
+def test_only_plain_names_pass(relative: str) -> None:
+    from ikars_engine.webserve import safe_parts
+
+    assert safe_parts(relative) is None
+    assert safe_parts("assets/app.js") == ("assets", "app.js")
+    assert safe_parts("market/KXA/") == ("market", "KXA")
+
+
+async def test_screen_addresses_with_a_trailing_slash_still_open_the_app(web: ApiContext) -> None:
+    page = await call(web, "GET", "/market/KXA/", headers={})
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+
+
 def test_the_built_terminal_is_served_when_it_exists(tmp_path: Path) -> None:
     from ikars_engine.webserve import PLACEHOLDER, terminal_root
 

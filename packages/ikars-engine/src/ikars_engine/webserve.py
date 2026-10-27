@@ -57,17 +57,33 @@ def terminal_root(repository: Path | None = None) -> Path:
     return built if (built / "index.html").is_file() else PLACEHOLDER
 
 
+def safe_parts(relative: str) -> tuple[str, ...] | None:
+    """The path's parts when every one is a plain name, else None. Checked on the text alone,
+    before any filesystem call: a UNC path (``\\\\host\\share`` or ``//host/share``) handed to
+    ``resolve`` or ``is_file`` would make Windows connect to that host and send the owner's NTLM
+    credentials (M1.8a-web-1a security review). No backslash, colon (drives, streams), empty part,
+    ``.`` or ``..``."""
+    if "\\" in relative or ":" in relative:
+        return None
+    parts = tuple(relative.removesuffix("/").split("/"))  # a screen's address may end in /
+    if any(part in ("", ".", "..") for part in parts):
+        return None
+    return parts
+
+
 def files_route(root: Path) -> Callable[[Request], Awaitable[Response]]:
     """The handler for every path outside ``/v1/``: a file under ``root``, or its ``index.html``."""
-    root = root.resolve()
 
     async def serve(request: Request) -> Response:
         relative = request.path_params.get("path", "")
         if relative == "v1" or relative.startswith("v1/"):  # an unknown API route, not a screen
             return Response(b'{"error":"not_found","detail":"no such route"}', 404,
                             media_type="application/json")  # fmt: skip
-        target = (root / relative).resolve()
-        if target.is_relative_to(root) and target.is_file() and target.suffix in CONTENT_TYPES:
+        parts = safe_parts(relative) if relative else ()
+        if parts is None:
+            return Response(b"not found", 404, media_type="text/plain")
+        target = root.joinpath(*parts)  # plain names only: it cannot leave root
+        if parts and target.suffix in CONTENT_TYPES and target.is_file():
             return FileResponse(target, media_type=CONTENT_TYPES[target.suffix])
         if "." in relative.rsplit("/", 1)[-1]:  # a file that is not there
             return Response(b"not found", 404, media_type="text/plain")
