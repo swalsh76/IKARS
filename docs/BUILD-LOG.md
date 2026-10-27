@@ -1793,5 +1793,25 @@ ledger holds no flagged fill; the warning now comes only for a fill actually add
   | 9 | `_free_name` repeated the name loop item 25 consolidated | One `files.first_free`, used by both |
   | 10 | The resume point did not mention M1.R | Updated |
 
-**M1.R built**, subject to the owner's merge (and the resting-order check when convenient).
+**M1.R done:** PR #14 merged as `fca7941` (2026-10-27), CI green on `main`. The resting-order check stays pending.
 
+#### 1.8w-sec Review and security posture for the web terminal (owner, 2026-10-27)
+
+**Why.** In WPF a hostile market title was only text; in a browser, text that runs as script holds the page's API
+session (and, from M7, could reach orders), and the engine becomes a web server any open site can try to reach. The
+key, GET-only rule and Python checks are unchanged: the engine alone talks to Kalshi and the page never sees the key.
+
+**Decided** (owner: "fold the relevant ones into M1.8a-web and add CodeQL"; PLAN D3, D11, G12, the M1.8 row):
+- Browser hardening (D3): a strict CSP and protective headers; a single-use sign-in code that expires in seconds;
+  `Origin` and `Sec-Fetch-Site` checks on changing requests; extensions off in the IKARS Edge profile; outside links
+  through the engine, `https:` only.
+- Checks (D11): ESLint bans on markup injection and `eval`; npm supply-chain rules (Dependabot for npm, install
+  scripts allow-listed, a 7-day waiting period, also for CI actions); no money arithmetic in TypeScript; Playwright
+  output and `.env*` kept out of the repository.
+- Review: two per-commit checklist items (outside text drawn only as text; a new dependency's licence, age and
+  install scripts) and the render path as the terminal's hot path; a `/security-review` before the M1.8a-web merge
+  and before M7.
+- **CodeQL added now** (`.github/workflows/codeql.yml`): `security-extended` queries for Python and the CI workflows
+  on every pull request, on `main` and weekly; TypeScript joins with the first terminal code (CodeQL fails a
+  language with no source). Pinned to v4.39.0 (12 days old) rather than v4.39.1 (6 days), by the new waiting rule.
+  It is not a required check; whether to require it is the owner's ruleset decision.

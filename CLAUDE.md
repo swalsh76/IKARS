@@ -107,13 +107,15 @@ slice still needs its own approved plan before code.
   p99 <= 33 ms**. **Direction change (owner, 2026-10-27):** the terminal becomes a **TypeScript web app** (D1, D3,
   D11, D12 amended; BUILD-LOG 1.8w; all recommended answers approved: engine-served Edge app window, one-time code to
   an HttpOnly cookie, React with Vite and pnpm). PR #12 merged (`d73921b`); tag `wpf-terminal-final` pushed. **WPF
-  pruned:** PR #13 merged as `1b92d49`. The owner edited the `main protection` ruleset, which now requires **no**
-  status checks (to restore: `python`, `hygiene`, and `web` once it exists; Claude is not permitted to change it).
+  pruned:** PR #13 merged as `1b92d49`. The `main protection` ruleset requires `python` and `hygiene`
+  (strict); the owner adds `web` once that job exists (Claude is not permitted to change it).
   **M1.R Base hardening** (owner 2026-10-27: a whole-code-base review before the web terminal; items 1 to 26
-  approved): built on branch `m1/r-hardening` (BUILD-LOG 1.R; merge review itemized); PR open, waiting for the
-  owner's merge. Pending from the owner: a resting order to confirm the reconciliation rule live (GET only). Next:
-  the **M1.8a-web** plan for approval; then M1.8b. The owner's M1.6 auto-start sign-out check is still pending. The owner allows
-  `gh pr merge` by a local permission rule; merge only when asked.
+  approved): **done** (PR #14 merged as `fca7941`, CI green on `main`; BUILD-LOG 1.R). Pending from the owner: a
+  resting order to confirm the reconciliation rule live (GET only), and the M1.6 auto-start sign-out check.
+  **Web review and security posture decided** (owner 2026-10-27; BUILD-LOG 1.8w-sec): browser hardening and npm
+  rules fold into M1.8a-web; **CodeQL** added (`codeql.yml`, PR pending, not a required check).
+  **Next:** the **M1.8a-web** plan for approval, on branch `m1/8a-web`; then M1.8b. The owner allows `gh pr merge`
+  by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 

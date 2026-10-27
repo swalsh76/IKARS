@@ -133,6 +133,16 @@ and approved in M1 before any screen is built:
     accepts that cookie or the bearer token, and a browser `Origin` only when it is the engine's own loopback
     origin. Loopback only, as before.
   - The stream is read with `fetch` (not `EventSource`), so reconnects and the alert resume work as in M1.8a.
+  - **Browser hardening (owner, 2026-10-27).** Text from outside (market titles, and from M2 news and LLM output)
+    is drawn in a page holding the API session, so script injection is the main threat:
+    - A strict **Content Security Policy** from the engine: scripts only from the engine's own origin (no inline
+      script, no `eval`), no frames or plugins, `connect-src 'self'`, `frame-ancestors 'none'`; any style
+      exception a library needs (AG Grid's inline styles, if so) is named in the slice's BUILD-LOG. Also
+      `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `Cache-Control: no-store` on API replies.
+    - The sign-in code is **single-use and expires in seconds**. A request that changes anything must carry the
+      engine's own `Origin` and `Sec-Fetch-Site: same-origin`.
+    - The IKARS Edge profile runs with **extensions off** (they can read the page).
+    - Outside links (news, from M2) open through the engine, `https:` only.
 - *Alternative:* gRPC with Protocol Buffers (strong cross-language typing and streaming, but more tooling and it
   discards KalTerm3's stream client; that client is no longer used either way since the D1 amendment).
 
@@ -377,7 +387,18 @@ arithmetic. For each recommendation:
 - Python: `ruff`, `mypy --strict`, `pytest` (90% coverage; 95% for money and fees).
 - **Web terminal (amended 2026-10-27):** TypeScript `strict`, ESLint, Vitest with **90% coverage** enforced by its
   thresholds, Playwright for whole screens, `pnpm audit` and a frozen lockfile in CI, as a required `web` check.
-  They start with M1.8a-web, the first terminal code since the prune.
+  They start with M1.8a-web, the first terminal code since the prune. *Added by the owner 2026-10-27:*
+  - ESLint **bans** `dangerouslySetInnerHTML`, `innerHTML`/`outerHTML`/`insertAdjacentHTML`, `eval` and
+    `new Function`.
+  - **npm supply chain:** Dependabot for npm; pnpm's install-script block with a named allow-list
+    (`onlyBuiltDependencies`); a **7-day waiting period** before a new release is used (`minimumReleaseAge`, and the
+    same rule for CI actions); few runtime libraries, each with its licence in DEPENDENCIES.md.
+  - **Money in TypeScript:** JavaScript numbers are floats, so the terminal does **no** money arithmetic; it formats
+    integers through a distinct money type, with a test.
+  - Playwright traces, screenshots and reports, and `.env*` files, are ignored and refused by the data guard (they
+    can hold live data).
+- **CodeQL** (owner, 2026-10-27): static security analysis (`security-extended`) on every pull request, on `main`
+  and weekly, for Python and the CI workflows; TypeScript joins with M1.8a-web's first code.
 - *Retired 2026-10-27 with the C# code:* C# warnings as errors, xUnit v3 and its coverage gate (CI's `dotnet` job). CI on GitHub Actions **windows-latest** (the target platform). Live Kalshi tests GET-only, as
   in KAPS.
 - **Rolling mini code reviews (R14, owner instruction 2026-10-26, APPROVED):** besides tests and CI, every commit
@@ -386,10 +407,12 @@ arithmetic. For each recommendation:
     - correctness and edge cases
     - money stays in fixed-point integers
     - reuse: no duplicate of existing code, and shared code goes in the shared module
-    - efficiency on the hot path
+    - efficiency on the hot path (in the terminal, the render path: re-renders and allocations per update)
     - simplification
     - tests cover the change
     - no secrets, keys, real host names or paths
+    - *(terminal, 2026-10-27)* outside text is drawn only as text, never as markup or a link it chose
+    - *(2026-10-27)* a new dependency: licence, release age, install scripts
   - **Per merge:** review the whole branch diff against `main`, plus the modules it touches and their callers,
     checking:
     - consistency across the slice
@@ -398,6 +421,8 @@ arithmetic. For each recommendation:
     - docs and guides are current
   - **How:** the `/code-review` skill on the diff (a low effort level per commit, medium per merge) plus a reuse
     and simplification pass.
+  - **Security reviews (owner, 2026-10-27):** a `/security-review` before merging M1.8a-web (the sign-in and the
+    file serving), and again before M7.
   - **Findings:** each finding is fixed in the same branch or parked in §9 with its reason. The BUILD-LOG slice
     entry gets a **Review** heading listing the findings and what was done about each.
   - A full-codebase review is still held at each milestone's close-out, and should then be short.
@@ -553,7 +578,7 @@ shown.
 | G9 | **Recommendation lifecycle and owner feedback:** expiry, invalidation, de-duplication; taken, ignored or dismissed; the ledger links the owner's fills back to the recommendation. | M4 |
 | G10 | **Clock and latency:** server-time skew (KAPS's clock module) and feed-to-alert latency in the health view. | M1.4 |
 | G11 | **Storage budget on the workstation:** a governor with a budget, compaction and a health warning. | M1.4 |
-| G12 | **Public-repository security:** secret scanning in CI (gitleaks); hash-pinned dependencies with Dependabot; signed release builds; the loopback API token; read-only key rotation. | M1.1, M1.8, M1.9 |
+| G12 | **Public-repository security:** secret scanning in CI (gitleaks); hash-pinned dependencies with Dependabot; signed release builds; the loopback API token; read-only key rotation; *(2026-10-27)* CodeQL and the web terminal's browser hardening (D3, D11). | M1.1, M1.8, M1.9 |
 | G13 | **Interest and other income in the ledger** as their own record kinds (likely 1099-INT), if Kalshi pays them. | M1.5 (amends D18) |
 | G14 | **Ledger restore drill:** `ledger restore-drill` restores from the share into a scratch file and checks the hash chain. | M1.5 |
 | G15 | **Settings and a first-run wizard:** key environment variables (checked, never shown), the share path, LLM choice, GPU extras, quiet hours, tax time zone. | M1.8, M1.9 |
@@ -631,7 +656,8 @@ only through a milestone proposal approved by the owner.
 | **M1.5 Audit and tax ledger, portfolio** | D18's store, hash chain, checkpoints, `verify`. Account import (fills, settlements, fees, transfers, funding, interest) with reconciliation. Positions and exposure marked to market (G1). The paper stream kept apart. **Versioned schema migrations with a backup before each one** (G). Nightly backup to the share's `ikars\` subtree; `ledger restore-drill` (G14). | Reads the owner's account (GET only). **Creates `ikars\` and its marker on the NAS share** (owner's go-ahead at the slice plan). |
 | **M1.6 Run mode and alerts** | The engine as a background process independent of the terminal; auto-start at login; keep-awake while running; a scheduled watchdog that restarts it (G5). The **alert framework**: priority levels, de-duplication, throttling, quiet hours, digest (H). **Windows notifications on the workstation** for engine down, feed stale and backup failed (G6; no phone pushes, owner 2026-10-27). **GPU detection** (D15): the device, driver and CUDA version in health, CPU paths when there is none (moved from M1.4b, owner 2026-10-27). | Adds a per-user logon task and a scheduled watchdog task (no admin); shows test notifications on the workstation. |
 | **M1.7 Loopback API and contracts** | Starlette/uvicorn on `127.0.0.1` with a per-session token and a **version handshake** (G). Snapshots over HTTP, deltas over one WebSocket (markets, books, portfolio, ledger, alerts, health). `msgspec` contracts exported as JSON Schema; the C# contract test (retired 2026-10-27 with the D1 amendment; the TypeScript golden test replaces it in M1.8a-web). | None. |
-| **M1.8 Terminal shell** | *Replanned 2026-10-27 (D1 amended):* **M1.8a-web** (the engine serves the app with the one-time-code sign-in and an `open` command; generated types and golden tests; the stream reader, update hub and URL navigator; the screens from the mock-ups with Lightweight Charts and AG Grid; the update-to-screen meter and its load test) and **M1.8b** (hotkeys, layouts, themes, settings and wizard, support bundle). The original text: from KalTerm3, stripped of the SQL Server and multi-user parts. The navigation service, the Overview per the approved mock-ups (portfolio included), the linked-items panel, the health view, hotkeys, layouts, themes. Live markets and a ledger view. Versioned settings and the first-run wizard (G15, G). A redacted **support bundle** (I). Frame time measured (J). Connects to the running engine or starts it. | None. |
+| **M1.8 Terminal shell** | *Replanned 2026-10-27 (D1 amended):* **M1.8a-web** (the engine serves the app with the one-time-code sign-in and an `open` command; generated types and golden tests; the stream reader, update hub and URL navigator; the screens from the mock-ups with Lightweight Charts and AG Grid; the update-to-screen meter and its load test; the browser hardening of D3 and the web checks of D11, CodeQL for
+TypeScript, and a `/security-review` before merge) and **M1.8b** (hotkeys, layouts, themes, settings and wizard, support bundle). The original text: from KalTerm3, stripped of the SQL Server and multi-user parts. The navigation service, the Overview per the approved mock-ups (portfolio included), the linked-items panel, the health view, hotkeys, layouts, themes. Live markets and a ledger view. Versioned settings and the first-run wizard (G15, G). A redacted **support bundle** (I). Frame time measured (J). Connects to the running engine or starts it. | None. |
 | **M1.9 Packaging** | Velopack `Setup.exe` and the portable zip with the standalone Python engine and the terminal. Per-user install on a clean Windows 11 account. The first-run wizard on a fresh install. An auto-update from one release to the next **with migrations**, and a tested **rollback** (G). Signing decided (G12). | A test pre-release on GitHub. |
 | **M1.10 Perp research** | Read-only: perp endpoints, fees, funding schedule, margin and liquidation rules; `docs/research/perps.md`. | Live GET requests. |
 | **M1.12 End-to-end momentum** | The thin vertical slice (D21-2): a minimal momentum signal on Kalshi's feed, **registered by hash** (G4); a minimal P&L after fees (D7's entry and exit costs, `ikars-core` fees); the recommendation on the Overview with a drill-down and provenance (F); a priority-tiered alert (H); journalled and scored forward from day one. No sizing beyond a fixed small size, and no news or LLM. | None (read-only). |
@@ -670,7 +696,7 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 | M1.5b Share backups, restore drill, portfolio | **done** (BUILD-LOG 1.5b; PR #8 merged as `5b6f702`) |
 | M1.6 Run mode and alerts | **done** (BUILD-LOG 1.6; PR #9 merged as `2efc95f`); the owner's sign-out check of auto-start pending |
 | M1.7 Loopback API and contracts | **done** (BUILD-LOG 1.7; PR #10 merged as `0ba5d83`) |
-| M1.R Base hardening (owner, 2026-10-27) | **built** on `m1/r-hardening` (BUILD-LOG 1.R): a whole-code-base review's items 1 to 26 fixed, plus 10 merge-review findings; PR pending |
+| M1.R Base hardening (owner, 2026-10-27) | **built** on `m1/r-hardening` (BUILD-LOG 1.R): a whole-code-base review's items 1 to 26 fixed, plus 10 merge-review findings; **done** (PR #14, `fca7941`) |
 | M1.8 Terminal shell | M1.8a (WPF) done and merged as `77849e3`, then **retired by the D1 amendment** (2026-10-27; BUILD-LOG 1.8w; tag `wpf-terminal-final`). **WPF pruned** (PR #13 merged as `1b92d49`). Next: the **M1.8a-web** plan, for approval; then M1.8b |
 
 ## 9. Parking lot
