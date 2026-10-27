@@ -1,5 +1,6 @@
 import { ColorType, LineSeries, createChart, type IChartApi, type UTCTimestamp } from "lightweight-charts";
 import { useEffect, useRef } from "react";
+import { THEME_EVENT } from "../app/theme";
 import type { ChartPoint } from "../view/market";
 
 function token(name: string): string {
@@ -38,10 +39,12 @@ export function PriceChart({ points }: { points: readonly ChartPoint[] }) {
     paint();
     const scheme = window.matchMedia("(prefers-color-scheme: light)");
     scheme.addEventListener("change", paint);
+    document.addEventListener(THEME_EVENT, paint); // Ctrl+Shift+L or Settings
     series.current = line;
     chart.current = made;
     return () => {
       scheme.removeEventListener("change", paint);
+      document.removeEventListener(THEME_EVENT, paint);
       made.remove();
       chart.current = series.current = null;
       drawn.current = "";

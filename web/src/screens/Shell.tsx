@@ -2,6 +2,7 @@ import { useState, type MouseEvent, type ReactNode } from "react";
 import { useRoute, useTerminal, useValue } from "../app/hooks";
 import { crumbs, href, type Route } from "../nav/route";
 import { strip } from "../view/health";
+import { Hotkeys } from "./Keys";
 
 /** An in-app link: the navigator moves, the page does not reload (a modified click opens as usual). */
 export function Link({ to, children, className }: { to: string; children: ReactNode; className?: string }) {
@@ -89,6 +90,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </nav>
         <main className="main">{children}</main>
       </div>
+      <Hotkeys />
       <footer className="strip" aria-label="Engine status">
         {items.map((item) => (
           <span key={item.label} className={`level-${item.level}`}>

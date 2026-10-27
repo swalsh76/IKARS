@@ -1,10 +1,11 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { BookView, QuoteUpdate } from "../api/contracts";
 import { useMarkets, useSnapshot, useTerminal } from "../app/hooks";
 import { href } from "../nav/route";
 import { bookRows, chartPoints, emptyChart, isOpen, marketRow, recordRow } from "../view/market";
 import { PriceChart } from "./Chart";
 import { Guarded } from "./Guarded";
+import { BOOK_ID, LINKED_EVENT } from "./Keys";
 import { Link } from "./Shell";
 
 function Book({ book, watched }: { book: BookView | undefined; watched: boolean }) {
@@ -52,6 +53,12 @@ export function Market({ ticker }: { ticker: string }) {
   const siblings = useSnapshot(info ? `/v1/markets?limit=200&q=${encodeURIComponent(info.event_ticker)}` : null, "MarketPage", 60_000);
   const records = useSnapshot(`/v1/ledger/records?limit=50&ticker=${path}`, "LedgerPage", 60_000);
   const points = useMemo(() => (candles.state === "ready" ? chartPoints(candles.value.items) : []), [candles]);
+  const [linked, setLinked] = useState(true); // X shows or hides it
+  useEffect(() => {
+    const flip = () => setLinked((shown) => !shown);
+    window.addEventListener(LINKED_EVENT, flip);
+    return () => window.removeEventListener(LINKED_EVENT, flip);
+  }, []);
 
   if (market.state === "failed") {
     return (
@@ -109,12 +116,12 @@ export function Market({ ticker }: { ticker: string }) {
         </Guarded>
       </div>
       <Guarded title="Order book">
-        <section className="card" aria-label="Order book">
+        <section className="card" aria-label="Order book" id={BOOK_ID} tabIndex={-1}>
           <h2>Order book</h2>
           <Book book={book} watched={watched} />
         </section>
       </Guarded>
-      <div className="span-3">
+      <div className={`span-3${linked ? "" : " gone"}`}>
         <Guarded title="Linked">
           <section className="card" aria-label="Linked">
             <h2>Linked</h2>

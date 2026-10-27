@@ -1,6 +1,6 @@
-/* The approved mock-ups' tokens (docs/design/mockups): dark by default, light when Windows is light.
-   The theme switch and saved layouts come with M1.8b. A stylesheet file, never inline <style>: the
-   engine's CSP allows styles from its own origin only. */
+/* The approved mock-ups' tokens (docs/design/mockups): dark, or light when chosen (data-theme="light") or
+   when following Windows (no data-theme) and Windows is light; data-theme="dark" stays dark (M1.8b-1).
+   A stylesheet file, never inline <style>: the engine's CSP allows styles from its own origin only. */
 :root {
   color-scheme: dark;
   --bg: #1c1c1c;
@@ -16,8 +16,23 @@
   --nav-on: #383838;
   --problem: #ff99a4;
 }
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3f3f3;
+  --panel: #fafafa;
+  --card: #ffffff;
+  --line: #dcdcdc;
+  --text: #1a1a1a;
+  --sub: #3d3d3d;
+  --muted: #595959;
+  --accent: #005fb8;
+  --pos: #005fb8;
+  --neg: #a8440a;
+  --nav-on: #e6e6e6;
+  --problem: #c42b1c;
+}
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme]) {
     color-scheme: light;
     --bg: #f3f3f3;
     --panel: #fafafa;
@@ -141,3 +156,9 @@ pre { margin: 8px 0 0; max-height: 480px; overflow: auto; font-size: 12px; color
 .nowrap { white-space: nowrap; }
 h2.priority-urgent { color: var(--problem); }
 
+/* Hotkeys (M1.8b-1) */
+.overlay { position: fixed; inset: 0; z-index: 10; background: rgb(0 0 0 / 0.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.dialog { max-width: 640px; width: 100%; max-height: 90vh; overflow: auto; }
+kbd { padding: 2px 8px; border-radius: 4px; border: 1px solid var(--line); background: var(--panel); font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
+
+.gone { display: none; }
