@@ -727,6 +727,22 @@ async def test_a_repeated_backfill_never_stores_a_trade_twice(
     assert read_rows(hours(tmp_path / "rec", "trade"), "trade").num_rows == 1
 
 
+async def test_overlapping_gaps_never_store_a_trade_twice(tmp_path: Path) -> None:
+    """M1.8a-web-1a merge review: the first gap's backfill stores the trade at the time it was
+    fetched (now); the second gap's backfill, over the same trade, must still find it."""
+    rig = Rig(tmp_path, [market("M1")])
+    rig.recorder = Recorder(tmp_path / "rec", flush_seconds=0)
+    rig.source.recorder = rig.recorder
+    await rig.source.start()
+    rig.kalshi.trades = [fixture("trade.json")]
+    rig.clock.advance_to(LATE + 2 * HOUR_NS)
+    assert await rig.source._backfill(LATE - 10 * 10**9, LATE, gap_id=1) == 1
+    rig.clock.advance_to(LATE + 2 * HOUR_NS + 60 * 10**9)
+    assert await rig.source._backfill(LATE - 20 * 10**9, LATE + 5 * 10**9, gap_id=2) == 0
+    await rig.source.stop()
+    assert read_rows(hours(tmp_path / "rec", "trade"), "trade").num_rows == 1
+
+
 async def test_a_quiet_channel_has_no_empty_loss(tmp_path: Path) -> None:
     """Review 6: a channel with no frame yet had its loss start "now", an empty gap."""
     rig = Rig(tmp_path, [market("M1")])

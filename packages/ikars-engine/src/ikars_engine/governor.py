@@ -31,6 +31,11 @@ class StorageReport:
         return 100.0 * self.used_bytes / self.budget_bytes if self.budget_bytes else 0.0
 
 
+def _damaged(path: Path) -> bool:
+    """Set aside by the recorder: ``.damaged``, or ``.damaged.1`` and on (the name was taken)."""
+    return ".damaged" in path.suffixes
+
+
 class StorageGovernor:
     def __init__(
         self,
@@ -51,7 +56,7 @@ class StorageGovernor:
 
     def _files(self) -> list[Path]:
         return [
-            p for p in self.root.glob("*/*/*") if p.suffix in (".parquet", ".arrow", ".damaged")
+            p for p in self.root.glob("*/*/*") if p.suffix in (".parquet", ".arrow") or _damaged(p)
         ]
 
     def _sizes(self) -> dict[Path, int]:
@@ -78,7 +83,7 @@ class StorageGovernor:
             return StorageReport(Storage.WARN, used, self.budget_bytes)
         # oldest hour first across channels: by (date, hour), then channel for a stable order
         compacted = sorted(
-            (p for p in files if p.suffix in (".parquet", ".damaged")),  # never an open hour
+            (p for p in files if p.suffix == ".parquet" or _damaged(p)),  # never an open hour
             key=lambda p: (p.parent.name, p.stem, p.parent.parent.name),
         )
         pruned: list[Path] = []

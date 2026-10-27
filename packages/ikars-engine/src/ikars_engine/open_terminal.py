@@ -97,8 +97,8 @@ def open_terminal(
             try:
                 url = code(int(record["port"]), str(record["token"]))
                 break
-            except (OSError, KeyError, ValueError):
-                pass  # api.json from a stopped engine, or the API not answering yet
+            except (OSError, KeyError, ValueError, TypeError):
+                pass  # api.json from a stopped engine or malformed, or the API not answering yet
         if time.monotonic() >= deadline:
             raise OpenError("the engine's API did not answer: see ikars status")
         sleep(POLL_S)

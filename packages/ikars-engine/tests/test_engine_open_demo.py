@@ -156,3 +156,22 @@ async def test_the_demo_server_signs_in_and_streams(tmp_path: Path) -> None:
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
     assert quotes >= 20
+
+
+def test_open_waits_past_a_malformed_api_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.8a-web-1a merge review: a null port raised TypeError, a traceback for the owner."""
+    paths = Paths(tmp_path)
+    monkeypatch.setattr("ikars_engine.runmode.engine_running", lambda folder: True)
+    paths.data.mkdir(parents=True)
+    (paths.data / "api.json").write_text(json.dumps({"port": None, "token": "t"}), "utf-8")
+    with pytest.raises(ot.OpenError):
+        opener(paths, wait_s=0.0)
+
+
+def test_demo_api_refuses_a_rate_of_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    from ikars_engine.__main__ import main
+
+    assert main(["ikars", "demo-api", "--hz", "0"]) == 2
+    assert "must be above 0" in capsys.readouterr().err

@@ -116,6 +116,8 @@ class ApiContext:
     sorted_index: tuple[int, list[MarketInfo]] = (-1, [])
     closing: bool = False  # set at stop: every stream ends
     alert_index: "AlertIndex | None" = None
+    # the health view and when it was built: every stream shares one per interval (M1.8a-web-1a)
+    health_cache: "tuple[float, c.HealthView] | None" = None
     port: int = 0  # set by the server once it listens: the engine's own origin
     sessions: Sessions | None = None  # the terminal's sign-in; None: the bearer token only
     web_root: Path | None = None  # the terminal's files; None: none served
@@ -664,7 +666,11 @@ def create_app(ctx: ApiContext) -> ASGIApp:
     async def not_found(request: Request, exc: Exception) -> Response:
         return _error(404, "not_found", "no such route")
 
-    app = Starlette(routes=routes, exception_handlers={_BadRequest: bad_request, 404: not_found})
+    async def wrong_method(request: Request, exc: Exception) -> Response:
+        return _error(405, "bad_request", "this route does not take that method")
+
+    handlers = {_BadRequest: bad_request, 404: not_found, 405: wrong_method}
+    app = Starlette(routes=routes, exception_handlers=handlers)
     return Guard(app, ctx)
 
 
@@ -727,6 +733,14 @@ def changes(ctx: ApiContext, state: Stream) -> list[bytes]:
     return out
 
 
+def shared_health(ctx: ApiContext, now: float) -> c.HealthView:
+    """The health view, built at most once per half interval however many streams are open (the
+    report reads SQLite and the metrics; M1.8a-web-1a merge review)."""
+    if ctx.health_cache is None or now - ctx.health_cache[0] >= HEALTH_EVERY_S / 2:
+        ctx.health_cache = (now, health_view(ctx.health()))
+    return ctx.health_cache[1]
+
+
 async def _events(ctx: ApiContext, state: Stream, request: Request) -> AsyncGenerator[bytes]:
     loop = asyncio.get_running_loop()
     opened = c.StreamOpened(stream_id=state.id, coalesce_ms=int(ctx.coalesce_s * 1000))
@@ -753,7 +767,7 @@ async def _events(ctx: ApiContext, state: Stream, request: Request) -> AsyncGene
                     yield _event(state, "alert", alert)
             if now - health_at >= HEALTH_EVERY_S:
                 health_at = now
-                yield _event(state, "health", health_view(ctx.health()))
+                yield _event(state, "health", shared_health(ctx, now))
             await asyncio.sleep(ctx.coalesce_s)
     finally:
         ctx.streams.pop(state.id, None)
@@ -799,6 +813,8 @@ class ApiServer:
             "the terminal's port is taken: using a free one", extra={"wanted": self._wanted}
         )
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         listener.bind(("127.0.0.1", 0))
         return listener
 

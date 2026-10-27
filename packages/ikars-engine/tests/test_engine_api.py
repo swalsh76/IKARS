@@ -851,3 +851,30 @@ def test_alerts_carry_their_local_time_by_name() -> None:
 def test_the_search_key_is_made_once_from_ticker_and_title() -> None:
     market = info("KXA", 1)
     assert market.search == "kxa\nmade up kxa"  # a line break: a query never spans the two
+
+
+# --- M1.8a-web-1a merge review -------------------------------------------------------------------
+
+
+async def test_a_wrong_method_on_the_api_is_a_json_error(web: ApiContext) -> None:
+    for method, path in (("POST", "/v1/nothing"), ("GET", "/v1/session"), ("DELETE", "/v1/hello")):
+        response = await call(web, method, path)
+        assert response.status_code in (404, 405), (method, path)  # GET falls to the files' 404
+        assert response.json()["error"] in ("bad_request", "not_found")  # the contract's JSON
+
+
+def test_streams_share_one_health_build_per_interval(ctx: ApiContext) -> None:
+    from ikars_engine.api import HEALTH_EVERY_S, shared_health
+
+    built = [0]
+    report = ctx.health
+
+    def counted() -> dict[str, Any]:
+        built[0] += 1
+        return report()
+
+    ctx.health = counted
+    first = shared_health(ctx, 100.0)
+    assert shared_health(ctx, 100.0 + HEALTH_EVERY_S / 4) is first and built[0] == 1
+    shared_health(ctx, 100.0 + HEALTH_EVERY_S)
+    assert built[0] == 2

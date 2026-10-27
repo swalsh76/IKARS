@@ -83,6 +83,13 @@ async def smoke(folder: Path) -> dict[str, object]:
     return {"received": received, **engine.health()}
 
 
+def _positive(text: str) -> float:
+    value = float(text)
+    if not value > 0:  # also refuses NaN
+        raise argparse.ArgumentTypeError("must be above 0")
+    return value
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m ikars_engine")
     commands = parser.add_subparsers(dest="command")
@@ -101,7 +108,7 @@ def main(argv: list[str]) -> int:
     exporter.add_argument("--to", default="contracts", help="the folder (default: ./contracts)")
     demo = commands.add_parser("demo-api", help="the API server on made-up data, for tests")
     demo.add_argument("--markets", type=int, default=100)
-    demo.add_argument("--hz", type=float, default=10.0, help="quote changes a second")
+    demo.add_argument("--hz", type=_positive, default=10.0, help="quote changes a second")
     demo.add_argument("--port", type=int, default=0, help="0: any free port")
     demo.add_argument("--seconds", type=float, default=None, help="stop after this long")
     try:

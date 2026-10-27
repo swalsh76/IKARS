@@ -24,11 +24,12 @@ import logging
 import secrets
 import time
 from collections.abc import Callable
+from itertools import count
 from pathlib import Path
 
 from ikars_core import dpapi
 
-from ikars_engine.files import write_text_atomic
+from ikars_engine.files import first_free, write_text_atomic
 
 COOKIE = "ikars_session"
 KEY_FILE = "session.key"
@@ -41,12 +42,21 @@ log = logging.getLogger("ikars_engine.session")
 def _load_or_create_key(path: Path) -> tuple[bytes, bool]:
     """The signing key, and whether it outlives this process (DPAPI-protected on disk)."""
     if path.exists():
+        # a read that fails (a lock, a disk error) is raised: the start fails and the watchdog
+        # retries, rather than a new key signing every terminal out (M1.8a-web-1a merge review)
+        stored = path.read_text(encoding="ascii")
         try:
-            return dpapi.unprotect(base64.b64decode(path.read_text(encoding="ascii"))), True
-        except (OSError, ValueError, NotImplementedError) as exc:  # damaged, or not this account's
+            return dpapi.unprotect(base64.b64decode(stored)), True
+        except NotImplementedError:
+            log.warning("no DPAPI here: terminal sessions end when the engine stops")
+            return secrets.token_bytes(32), False
+        except (dpapi.DpapiError, ValueError) as exc:  # damaged, or not this account's
             log.warning("session key unreadable: a new one signs every terminal out",
                         extra={"error": type(exc).__name__})  # fmt: skip
-            path.replace(path.with_name(path.name + ".unreadable"))  # kept, never deleted
+            path.replace(first_free(  # kept beside it, never overwriting an earlier copy
+                path.with_name(f"{path.name}.unreadable" + ("" if n == 0 else f".{n}"))
+                for n in count()
+            ))  # fmt: skip
     key = secrets.token_bytes(32)
     try:
         write_text_atomic(path, base64.b64encode(dpapi.protect(key)).decode("ascii"))

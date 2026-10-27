@@ -111,6 +111,33 @@ def test_an_unreadable_key_is_set_aside_and_replaced(tmp_path: Path) -> None:
     assert cookie is not None and s.check(cookie)[0]
 
 
+def test_a_second_unreadable_key_never_overwrites_the_first(tmp_path: Path) -> None:
+    for _ in range(2):
+        (tmp_path / KEY_FILE).write_text("not base64 of anything DPAPI made", encoding="ascii")
+        sessions(tmp_path)
+    kept = sorted(p.name for p in tmp_path.glob(KEY_FILE + ".unreadable*"))
+    assert kept == [KEY_FILE + ".unreadable", KEY_FILE + ".unreadable.1"]
+
+
+def test_a_key_that_cannot_be_read_now_is_not_replaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.8a-web-1a merge review: a passing lock signed every terminal out."""
+    first = sessions(tmp_path)
+    if not first.persistent:
+        pytest.skip("no DPAPI here")
+    stored = (tmp_path / KEY_FILE).read_text(encoding="ascii")
+
+    def locked(self: Path, encoding: str | None = None) -> str:
+        raise PermissionError("held by another process")
+
+    monkeypatch.setattr(Path, "read_text", locked)
+    with pytest.raises(PermissionError):
+        sessions(tmp_path)
+    monkeypatch.undo()
+    assert (tmp_path / KEY_FILE).read_text(encoding="ascii") == stored  # the same key, kept
+
+
 def test_without_dpapi_sessions_last_only_while_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

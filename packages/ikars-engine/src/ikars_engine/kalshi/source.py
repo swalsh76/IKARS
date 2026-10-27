@@ -64,6 +64,7 @@ log = logging.getLogger("ikars_engine.kalshi")
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 FULL_BOOKMARK = "discovery.full_ns"
 MINUTE_NS = 60 * 1_000_000_000
+BACKFILL_RECENT_NS = 2 * 60 * MINUTE_NS  # earlier backfills' rows, by when they were fetched
 MILLISECOND = timedelta(milliseconds=1)
 NS = 1_000_000_000
 CHANNEL_OF_TYPE = {
@@ -572,6 +573,10 @@ class KalshiSource:
             first = max(first, self._state.bookmark(done_key) or first)
         cutoff = int((await self._data.historical_cutoff()).trades_created_ts.timestamp())
         count = 0
+        # an earlier backfill's rows carry the time they were fetched, not the trade's: read the
+        # recent hours once, so overlapping gaps never store a trade twice (M1.8a-web-1a review)
+        started = self._clock.now_ns()
+        recent = self.recorder.known_trade_ids(started - BACKFILL_RECENT_NS, started + MINUTE_NS)
         for low in range(first, last, self._every.backfill_slice_s):
             high = min(low + self._every.backfill_slice_s, last)
             now = self._clock.now_ns()
@@ -580,7 +585,9 @@ class KalshiSource:
                 self._state.set_bookmark(slice_key, began)
             # what the feed recorded in this slice, and what an earlier attempt at it stored (with
             # the time it was fetched, so in the hours since that attempt began)
-            known = self.recorder.known_trade_ids(low * NS - MINUTE_NS, high * NS + MINUTE_NS)
+            known = recent | self.recorder.known_trade_ids(
+                low * NS - MINUTE_NS, high * NS + MINUTE_NS
+            )
             if began < now:  # resuming this slice: what the attempt that failed stored since
                 known |= self.recorder.known_trade_ids(began - MINUTE_NS, now + MINUTE_NS)
             # a slice that crosses the cutoff is read from both stores, split at the cutoff
