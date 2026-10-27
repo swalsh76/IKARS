@@ -646,3 +646,24 @@ Both are over two weeks old; `pyarrow` is also what M1.4b writes with.
    health, kept in the gap log), never a silent drop and never blocking the feed. *Alternative:* block the
    producer with a timeout.
 3. **Logs:** JSON lines (recommended: machine-readable for the support bundle) or plain text.
+
+#### 1.3 round 1 (2026-10-27)
+
+**Built.** A private Design canvas on the owner's claude.ai account (the link is kept out of this public
+repository), with six screens, all with made-up data:
+1. **Overview**, with a light/dark toggle;
+2. **Market drill-down**, with the cross-reference panel docked;
+3. **Recommendation detail**: evidence, size and limits, provenance, taken/ignored/dismissed, and a bracket as a
+   watch order;
+4. **Health**: feeds, books, latency, clock, ledger, backups, storage, cost, plugins, gap log;
+5. **Alerts** by priority, with the hotkeys list;
+6. a **two-monitor layout** sketch.
+
+The screens link to each other for clicking through.
+
+**Problems and fixes.** The first draft's sample P&L added the spread to the cost basis, which double-counts it
+when the ask is paid. It now shows the spread separately and the figures follow D7: cost basis $17.49, YES
++$22.51, NO −$17.49, maker exit at $0.55 +$4.33, stop at $0.41 −$1.77, EV +$3.71, break-even 0.437.
+
+**Waiting on the owner:** comments or approval. The approved source goes into `docs/design/mockups/` on branch
+`m1/3-mockups`.
