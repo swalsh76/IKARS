@@ -535,7 +535,7 @@ checked against the code, and all **fixed** in `ff5a13d`:
 local permission rule so the assistant can run `gh pr merge` when asked; `.claude/settings.local.json` is
 git-ignored.
 
-### 1.3 UI mock-ups (plan PROPOSED 2026-10-27; branch `m1/3-mockups`)
+### 1.3 UI mock-ups (plan APPROVED 2026-10-27: an HTML Artifact; branch `m1/3-mockups`)
 
 **Builds.** Clickable mock-ups of the terminal's navigation model (R9), with made-up data (`KXDEMO-…`), for the
 owner's approval **before M1.8 builds any screen**. They follow the Windows 11 Fluent look of KalTerm3's WPF
@@ -576,7 +576,7 @@ mock-up.
 1. HTML Artifact (recommended) or a WPF prototype?
 2. Rounds: the owner comments; the assistant revises; **approval is recorded in this log** before M1.8.
 
-### 1.4a Engine core (plan PROPOSED 2026-10-27; branch `m1/4a-engine-core`)
+### 1.4a Engine core (plan APPROVED 2026-10-27: TOML settings, drop-oldest with a recorded gap, JSON-lines logs; branch `m1/4a-engine-core`)
 
 **Builds** (in `ikars-engine`; no network in this slice):
 

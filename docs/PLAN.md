@@ -635,7 +635,7 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 | M1 slices (§4.1) and gates (§4.2) | **approved 2026-10-26** |
 | M1.1 Repository, CI and security | **done** (BUILD-LOG 1.1; PR #1 merged 2026-10-26 as `2f19222`) |
 | M1.2 `ikars-core` | **done** (BUILD-LOG 1.2; PR #3 merged as `3485b16`) |
-| M1.3 UI mock-ups, M1.4a engine core | plans proposed 2026-10-27 (BUILD-LOG 1.3, 1.4a), **awaiting owner** |
+| M1.3 UI mock-ups, M1.4a engine core | plans approved 2026-10-27 (BUILD-LOG 1.3, 1.4a); **in progress** |
 
 ## 9. Parking lot
 

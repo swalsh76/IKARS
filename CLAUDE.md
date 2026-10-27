@@ -91,7 +91,7 @@ slice still needs its own approved plan before code.
   file; check with `Test-Path` only; load into a single command's process. First use: M1.2's live tests.
 - **M1 slice list and gates approved (2026-10-26).** **M1.1 done:** PR #1 merged as `2f19222`, CI green on `main`
   (BUILD-LOG 1.1). **M1.2 done** (PR #3 merged as `3485b16`; BUILD-LOG 1.2). **M1.3 (mock-ups) and M1.4a (engine core) plans
-  proposed** (BUILD-LOG 1.3, 1.4a) on branch `m1/4a-engine-core`, awaiting the owner. The owner allows
+  approved** (Artifact mock-ups; TOML; drop-oldest with a gap; JSON logs) and **in progress**. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
