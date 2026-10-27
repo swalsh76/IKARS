@@ -70,7 +70,18 @@ def open_store(path: Path, migrations: Sequence[str]) -> sqlite3.Connection:
 
 
 def _statements(script: str) -> list[str]:
-    return [s.strip() for s in script.split(";") if s.strip()]
+    """The statements of ``script``; a ``;`` inside a trigger's body does not end its statement."""
+    statements: list[str] = []
+    pending = ""
+    for piece in script.split(";"):
+        pending += piece + ";"
+        if sqlite3.complete_statement(pending):
+            if pending.strip(" \n\t;"):
+                statements.append(pending.strip().rstrip(";").strip())
+            pending = ""
+    if pending.strip(" \n\t;"):
+        statements.append(pending.strip().rstrip(";").strip())
+    return statements
 
 
 STATE_MIGRATIONS = (

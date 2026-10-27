@@ -267,3 +267,12 @@ def test_a_key_parsed_from_bytes_is_judged_on_its_content_alone() -> None:
         parse_private_key(b"not a key", "the credential")
     with pytest.raises(AuthError, match="only Ed25519"):
         parse_private_key(pem(rsa.generate_private_key(65537, 2048)), "the credential")
+
+
+def test_the_fingerprint_names_the_public_key_only() -> None:
+    key = Ed25519PrivateKey.from_private_bytes(SEED)
+    first = AccountSigner(VECTORS["keyId"], key).fingerprint
+    assert first == DataSigner("another-id", key).fingerprint  # the key, not its id
+    assert len(first) == 16 and int(first, 16) >= 0
+    assert first != AccountSigner(VECTORS["keyId"], Ed25519PrivateKey.generate()).fingerprint
+    assert VECTORS["keyId"] not in first
