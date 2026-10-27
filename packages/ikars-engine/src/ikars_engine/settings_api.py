@@ -19,8 +19,9 @@ import asyncio
 import os
 import secrets
 import sys
+import threading
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, get_args
 
@@ -193,9 +194,12 @@ class TerminalConfig:
     root: Path | None = None  # the engine's --root, for a restart or the start at sign-in
     registry: autostart.Registry | None = None  # the Windows registry (tests give MemoryRegistry)
     run_command: Callable[[list[str]], int] = autostart.run_quietly
-    restartable: bool = (
-        False  # it runs under ``serve`` (a foreground ``run`` cannot restart itself)
-    )
+    # it runs under ``serve`` (a foreground ``run`` cannot restart itself)
+    restartable: bool = False
+    # reads and writes of the settings file take turns: two changes at once (a skin hotkey while
+    # Settings saves) collided on the same temporary file, and Windows cannot replace a file a read
+    # holds open (CI's first run on main)
+    _turn: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def _saved(self) -> Settings:
         """The settings on disk (the running ones before the first save); a file that cannot be read
@@ -208,7 +212,8 @@ class TerminalConfig:
             raise SettingsRefused(f"the settings file cannot be read: {exc}") from exc
 
     def view(self) -> c.SettingsView:
-        saved = self._saved()
+        with self._turn:
+            saved = self._saved()
         try:
             zone = taxzone.resolve(saved.tax_time_zone)
         except Exception as exc:  # a hand-edited zone IKARS does not know: said, never a 500
@@ -236,12 +241,15 @@ class TerminalConfig:
 
     def change(self, change: c.SettingsChange) -> c.SettingsView:
         """Check and save ``change`` (the old file kept as a backup first)."""
-        updated = checked(self._saved(), change)
-        only_skin = all(v is None for k, v in msgspec.structs.asdict(change).items() if k != "skin")
-        if self.paths.settings.exists() and not only_skin:  # a skin is no change worth a backup
-            backup(self.paths.settings)
-            self._prune_backups()
-        save(updated, self.paths.settings)
+        with self._turn:
+            updated = checked(self._saved(), change)
+            only_skin = all(
+                v is None for k, v in msgspec.structs.asdict(change).items() if k != "skin"
+            )
+            if self.paths.settings.exists() and not only_skin:  # a skin is worth no backup
+                backup(self.paths.settings)
+                self._prune_backups()
+            save(updated, self.paths.settings)
         return self.view()
 
     def _prune_backups(self) -> None:
