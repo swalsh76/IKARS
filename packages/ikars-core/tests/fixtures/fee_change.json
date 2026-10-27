@@ -1,0 +1,7 @@
+{
+ "id": "2f485fba-0000-4000-8000-000000000001",
+ "series_ticker": "KXDEMO",
+ "fee_type": "quadratic_with_maker_fees",
+ "fee_multiplier": 1,
+ "scheduled_ts": "2026-09-03T18:35:23Z"
+}

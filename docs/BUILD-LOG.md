@@ -321,3 +321,212 @@ files instead, which left the working tree untouched.
 - `hygiene` 14 s
 
 The caches fill on this first run, so later runs should be quicker. **Ready for the owner to merge PR #1.**
+
+### 1.2 `ikars-core` (plan APPROVED 2026-10-26; branch `m1/2-core`)
+
+**Builds.**
+
+1. **Seed `ikars_core` from SPARQ's `sparq_core`.**
+   - The source is about 2,260 lines in 11 modules: auth, clock, config, endpoints, fees, fixedpoint, models,
+     ratelimit, rest, ws, ws_models.
+   - Its tests come too (about 3,900 lines), with the 12 fixtures (already made-up: `KXDEMO-…`) and the golden
+     vectors. `fees.json` is 970,569 bytes, under the data guard's 1 MB limit.
+   - The exact SPARQ commit is recorded (open question 1).
+   - Renames:
+     - `sparq` → `ikars`;
+     - `SPARQ_*` settings → `IKARS_*`;
+     - the live switch → `IKARS_LIVE`;
+     - the key → `IKARS_KALSHI_KEY_ID` and `IKARS_KALSHI_PRIVATE_KEY_PATH`.
+   - **`test_live_ratelimit.py` is dropped entirely**: the rate-limit ramp stays banned.
+   - The 95% coverage gate on `fixedpoint.py` and `fees.py` goes into CI.
+2. **A key-file permission check on Windows.** SPARQ's check is POSIX-only, so on Windows it checks nothing.
+   - The new check reads the file's ACL through the Windows API (`ctypes`, no new package).
+   - It refuses to load a key that any principal other than the owner, SYSTEM or Administrators can read, and
+     gives the `icacls` command that fixes it.
+   - Tested on temporary files whose ACLs the tests set.
+3. **A signed read-only account client** for D18's ledger import and D21-3's limits:
+   - GET only, through the same guard as the public client;
+   - its own allow-list (`/portfolio/...` reads and `/account/limits`), signed with the existing `DataSigner`;
+   - account responses are never logged;
+   - models for balance, positions, fills, settlements and account limits. Transfers and interest come too *if*
+     the API has endpoints for them; checked against Kalshi's docs in the slice, and recorded as a D18 gap if not.
+4. **Order-book models:**
+   - `orderbook_snapshot` and `orderbook_delta` messages (`seq`, `clock`, fixed-point levels);
+   - a pure in-memory book that applies deltas and reports a gap.
+
+   The keeper and resync logic belong to M1.4b. SPARQ's unmerged branches are checked first, and anything already
+   built there is reused.
+5. **Native order options re-checked** against Kalshi's API reference (for D14). Written up in
+   `docs/research/kalshi-order-options.md`: types, time-in-force, post-only, reduce-only, expiry, self-trade
+   prevention, order groups if any.
+6. **Account-level limits (D21-3):** read once from `GET /account/limits` and recorded (open question 2).
+7. **Contract tests:** hand-written fixtures with made-up values for every new model.
+
+**Changes on this machine:** none beyond the repository. The slice reads the key file's ACL (not its contents) to
+check it. If the ACL is too open, the owner is given the command; the assistant does not change it (open
+question 3).
+
+**New packages and licences** (carried from SPARQ):
+
+| Package | Licence |
+|---|---|
+| cryptography | Apache-2.0 or BSD-3 |
+| httpx | BSD-3 |
+| pydantic | MIT |
+| websockets | BSD-3 |
+
+Dev only: `hypothesis` (MPL-2.0), already present. The engine–terminal contracts use `msgspec` from M1.7; the core
+keeps SPARQ's pydantic models.
+
+**Live checks** (GET only, IKARS's own key, about 100 requests in all, nothing printed but public data and status
+codes):
+- `test_live_public` (about 15 GETs);
+- `test_live_bounds` (about 40);
+- `test_live_ws` (subscribe commands on public channels);
+- new `test_live_account`: signed GETs for balance, positions, fills, settlements and limits. It asserts shapes
+  only and **never reports an account value**.
+
+**Open questions.**
+1. **Seed from SPARQ `main` (`15669a4`) or its review clean-up branch `s1/2q-cleanup` (`c017add`)?** The clean-up
+   was approved in SPARQ but is not merged yet. It touches 12 files in `sparq-core`: one rate-limited client
+   config, generic endpoint readers, one model base. *Recommended: `c017add`*, so the refactor is not ported twice.
+   The commit is recorded in this log.
+2. **WebSocket market-subscription limit:** read the account limits only now, and learn the WebSocket limit
+   passively in M1.4b (by recording any "limit reached" error), never by probing? *Recommended: yes.* Probing
+   would be close to the benchmarking the Developer Agreement forbids.
+3. If the key file's ACL lets other users read it, the owner runs the `icacls` command the assistant gives; the
+   assistant never changes the key file. *Recommended: yes.*
+
+**Owner's answers (2026-10-26):**
+1. Seed from SPARQ's `s1/2q-cleanup` at **`c017add`**.
+2. The WebSocket subscription limit is learned passively in M1.4b, never probed.
+3. If the key file's ACL is too open, the owner runs the `icacls` command; the assistant never changes it.
+
+PR #1 (M1.1) was merged by the owner as `2f19222`, and CI on `main` is green.
+
+#### 1.2 progress (2026-10-26)
+
+**Built (commits on `m1/2-core`).**
+1. **Seed** (`344bb3c`): `sparq-core` at SPARQ `c017add`, copied with its tests, made-up fixtures and golden
+   vectors.
+   - Renamed throughout. IKARS's own variables: `IKARS_LIVE`, `IKARS_KALSHI_ENV`, `IKARS_KALSHI_KEY_ID`,
+     `IKARS_KALSHI_PRIVATE_KEY_PATH`; KAPS's `KALSHI_ENV` can no longer switch IKARS to production.
+   - The rate-limit ramp test is dropped.
+   - The package conftest's own opt-in hook is removed, since it used SPARQ's fragile `item.keywords` check.
+   - mypy runs in two CI steps (two modules named `conftest`).
+   - The 95% coverage gate for money and fee code is added to CI.
+   - 923 tests pass on Windows.
+2. **Key files private on Windows** (`046a396`): `winacl` reads the DACL through `ctypes` and refuses a key that
+   anyone but the owner (or OWNER RIGHTS), SYSTEM or Administrators can read, giving the `icacls` fix. SPARQ's
+   check was POSIX-only. **The owner's IKARS key file passes**; only its ACL was read.
+3. **Account reader** (`3d2b23d`):
+   - `AccountSigner` signs exactly the account reads D18 needs, plus the account limits.
+   - `KalshiAccountClient` is the one GET-only client class, preset for those reads, with every attempt signed
+     afresh.
+   - **A hole closed:** SPARQ's data signer and public client allowed every `/historical` route, but Kalshi's
+     reference shows `/historical/fills`, `/orders` and `/positions` are account data. Both now allow only cutoff,
+     markets and trades there.
+4. **Account models and reader** (`0f1769c`): balance, positions (live and archived), fills (live and historical),
+   settlements, deposits, withdrawals, instance transfers and limits. Kalshi's cent fields are converted to dollar
+   millionths. **Kalshi has no interest endpoint (D18 gap):** interest reaches the ledger only as a balance change
+   it cannot explain, so reconciliation must show it and the tax package must name it.
+5. **Order book** (`4d3801c`): the `orderbook_snapshot` and `orderbook_delta` models and a pure in-memory
+   `OrderBook` (stale-clock, no-snapshot and broken-on-negative rules; best ask is $1 minus the other side's best
+   bid; crossed books reported). SPARQ had no book code on any branch.
+6. **Native order options** (`8a0726f`): `docs/research/kalshi-order-options.md`. Every order is a priced limit on
+   the YES book. There is no market, stop, take-profit, trailing, OCO or bracket order. Order groups (cancel all
+   when a contracts cap is hit within a rolling 15 s), `expiration_time`, `cancel_order_on_pause`, `post_only` and
+   `reduce_only` are the native building blocks. Each D14 type is mapped onto them.
+7. **Key-id guard and live checks** (`96a5df4`): see Problems.
+
+**Verified.**
+- Locally: about 1,020 tests pass, coverage 97.5%, money and fees 100%; ruff, mypy and pip-audit clean.
+- **Live (public, no key; about 55 GETs), all passed:**
+  - trades `min_ts` inclusive and `max_ts` exclusive, live and historical;
+  - the largest page is 1,000 (1,001 gives HTTP 400);
+  - cursors are stable, with no duplicates, newest first;
+  - one 429 on each paged walk, retried.
+- **Live with the key: blocked** (see Problems).
+
+**Review (R14).** `/code-review` at low effort on every commit:
+- seed, ACL check, signers, account models, book: no findings;
+- key-id guard: one finding, **fixed** before the commit (the error reason was judged on the untrimmed value).
+
+**Problems and fixes.**
+- The first signed live run got **401 `INVALID_PARAMETER`** on every host. The stored `IKARS_KALSHI_KEY_ID`
+  contains quotes or spaces, so it is not the bare 36-character id; the key file itself loads. **The owner is
+  re-setting the variable.**
+- The signer now refuses such an id with a clear reason that never shows the value.
+- After the variable is fixed: run `test_live_account` and `test_live_ws` (including the order-book check), then
+  close the slice.
+
+#### 1.2 live checks and merge review (2026-10-26, after the owner re-set the key id)
+
+**Verified live with IKARS's own key** (GET and subscribe only):
+- Production accepts the signature on both hosts; the demo answers "not found", as expected for a production key.
+- **Account (4 checks):** every one of the owner's real records parsed, under the final, stricter models: positions
+  (live, settled and archived), fills, historical fills, settlements, deposits, withdrawals and instance transfers.
+  Fills carry a direction and dollar fields arrive as text.
+  - Kalshi's undocumented `updated_ts` and `created_ts` are **Unix seconds**.
+  - The API tier is **basic**: read bucket 200 tokens/s with a burst of 600, write 100/s with a burst of 100 (each
+    request costs tokens). This is the D21-3 budget input.
+- **WebSocket (5 checks):**
+  - the signed handshake succeeds;
+  - 1,563 frames parsed with no errors and no unknown fields;
+  - no `seq` gaps;
+  - a forced disconnect reconnects;
+  - adding and removing markets is not a gap;
+  - the receive delay after `sending_ts_ms` is about 46 ms.
+- **Order book:**
+  - Production book messages carry **no `clock`** (Kalshi's reference has it; the changelog dates it
+    2026-10-29). The first run therefore rejected 17,772 deltas in 20 s, and the model was fixed (`ef0a714`).
+  - After the fix: 33,464 book messages applied in 30 s on the three busiest markets, **none broken**.
+  - The book at each ticker frame's own `ts_ms` matched the ticker **86 of 87 times**, which confirms that both
+    sides are bids and a YES ask is $1 minus the best NO bid.
+  - Delta rates were **783, 234 and 98 a second** (the 15-minute BTC, ETH and XRP contracts). This sizes M1.4b's
+    watched set.
+
+**Review (R14), per merge.** `/code-review` at medium effort over `main...m1/2-core` found 10 issues. All were
+checked against the code, and all **fixed** in `ff5a13d`:
+
+1. The data key's WebSocket would subscribe to *any* channel, private account channels included. It now accepts
+   market-data channels only (`MARKET_DATA_CHANNELS`).
+2. The data key could sign `/account/limits` (account data), and the account client did not check its signer at
+   run time. Limits are now the account reader's only, and the client refuses any other signer. The reference
+   signing vectors for that route pass through the account reader with the identical signature.
+3. A bad side in a snapshot left a half-applied book reporting ready. Both sides are now built before either is
+   replaced, and the parser refuses negative sizes and non-positive prices.
+4. Key-loading errors contained the key file's path (CLAUDE.md forbids printing key paths). They now say "the
+   private key file", and the fix commands use the environment variable.
+5. A fill could parse with no direction, which would silently corrupt the ledger's cost basis. The direction is
+   now required: taken from `outcome_side` or `book_side`, or else from the legacy `side` and `action`.
+   Disagreeing fields are refused.
+6. The ACL check missed conditional (callback) allow entries and `WRITE_DAC`/`WRITE_OWNER`. They are now counted;
+   the rights are tested with icacls.
+7. `positions` duplicated the client's paging loop with weaker checks. There is now one `payloads()` loop.
+8. The public route rules existed twice with different regexes. There is now one table (`auth.public_route`).
+9. An integer in a dollar field would have been read as whole dollars, a 100-fold error if Kalshi ever sent cents
+   there. Account dollar fields now take text only.
+10. A 36-character malformed key id got a misleading reason. It now gets the right one.
+
+**Problems and fixes (this part).**
+- The missing `clock`: see above.
+- The first live book comparison was too naive for markets this fast (about 800 deltas a second against a ticker
+  about once a second). It now compares at matching times.
+
+**Close-out of M1.2.**
+- Offline: 1,025 tests pass; coverage about 97%, money and fees 100%; ruff, mypy and pip-audit clean.
+- Live: 8 public checks and 9 signed checks pass.
+- Left for later slices: the order-book keeper and resync, the watched set and the request budget (M1.4b); the
+  ledger store and import (M1.5).
+- Interest is not exposed by Kalshi's API (a D18 gap): the ledger's reconciliation must show unexplained balance
+  changes and the tax package must name them.
+
+**CI on PR #3 (first run): `python` failed, a real Windows difference.**
+- On GitHub's runner, files that `runneradmin` creates are owned by the Administrators group, so the user's own
+  access to its key was reported as another reader.
+- Fixed: the account running the process is an expected reader too, read from its access token. An undeclared
+  `GetCurrentProcess` handle was truncated to 32 bits at first; pointer-sized `ctypes` declarations fixed that.
+- The deny test now denies read-data only (`(RD)`): denying `(R)` also denies `READ_CONTROL`, and with it reading
+  the ACL.
+- The owner's own key file still passes.

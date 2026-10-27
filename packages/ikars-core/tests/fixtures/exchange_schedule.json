@@ -1,0 +1,55 @@
+{
+ "maintenance_windows": [],
+ "standard_hours": [
+  {
+   "start_time": "2024-12-01T00:00:00Z",
+   "end_time": "2200-12-01T00:00:00Z",
+   "monday": [
+    {
+     "open_time": "00:00",
+     "close_time": "00:00"
+    }
+   ],
+   "tuesday": [
+    {
+     "open_time": "00:00",
+     "close_time": "00:00"
+    }
+   ],
+   "wednesday": [
+    {
+     "open_time": "00:00",
+     "close_time": "00:00"
+    }
+   ],
+   "thursday": [
+    {
+     "open_time": "00:00",
+     "close_time": "03:00"
+    },
+    {
+     "open_time": "05:00",
+     "close_time": "00:00"
+    }
+   ],
+   "friday": [
+    {
+     "open_time": "00:00",
+     "close_time": "00:00"
+    }
+   ],
+   "saturday": [
+    {
+     "open_time": "00:00",
+     "close_time": "00:00"
+    }
+   ],
+   "sunday": [
+    {
+     "open_time": "00:00",
+     "close_time": "00:00"
+    }
+   ]
+  }
+ ]
+}

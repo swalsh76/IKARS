@@ -40,11 +40,18 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+      # Two runs: the root conftest.py and the packages' conftest.py are both a module named conftest.
       - name: Types
-        run: uv run mypy packages tools conftest.py
+        run: uv run mypy packages tools
+
+      - name: Types (root conftest)
+        run: uv run mypy conftest.py
 
       - name: Test and coverage
         run: uv run pytest --cov --cov-report=term
+
+      - name: Coverage gate for money and fee code (95%)
+        run: uv run coverage report --fail-under=95 --include="*/ikars_core/fixedpoint.py,*/ikars_core/fees.py"
 
       - name: Known vulnerabilities
         run: uv run pip-audit --skip-editable --progress-spinner off

@@ -1,0 +1,10 @@
+{
+ "event_ticker": "KXDEMO-26JAN01",
+ "series_ticker": "KXDEMO",
+ "category": "Crypto",
+ "title": "Demo event",
+ "sub_title": "Jan 1",
+ "mutually_exclusive": false,
+ "strike_period": "",
+ "last_updated_ts": "0001-01-01T00:00:00Z"
+}

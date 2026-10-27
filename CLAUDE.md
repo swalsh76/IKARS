@@ -89,12 +89,14 @@ slice still needs its own approved plan before code.
 - **IKARS's own read-only Kalshi key is set up (2026-10-26):** User environment variables `IKARS_KALSHI_KEY_ID` and
   `IKARS_KALSHI_PRIVATE_KEY_PATH` (separate from KAPS/SPARQ's `KALSHI_*`). Never print or read the id, the path or the
   file; check with `Test-Path` only; load into a single command's process. First use: M1.2's live tests.
-- **M1 slice list and gates approved (2026-10-26).** **M1.1 built and verified locally** (BUILD-LOG 1.1): `main` has the M0 docs;
-  branch `m1/1-repo-ci` has the slice, its review fixes and the log. **GitHub steps approved and under way (2026-10-26):** public
-  `swalsh76/IKARS` created; security settings on; `main` pushed; ruleset "main protection" active (PR required,
-  checks `python`, `dotnet`, `hygiene`, no force-push or deletion, no bypass). Branch pushed; **PR #1 open and green**
-  (after a medium review with 10 fixes); a direct push to `main` was refused (GH013). **Waiting for the owner to
-  merge PR #1** (never the assistant). Next after the merge: the M1.2 slice plan (`ikars-core` from `sparq_core`).
+- **M1 slice list and gates approved (2026-10-26).** **M1.1 done:** PR #1 merged as `2f19222`, CI green on `main`
+  (BUILD-LOG 1.1). **M1.2 (`ikars-core`) built and verified** on `m1/2-core` (BUILD-LOG 1.2), live included:
+  - the signed account reads parse the owner's real records;
+  - order books keep up and match the ticker (both sides are bids);
+  - production book messages have no `clock` yet.
+
+  Merge review: 10 findings, all fixed. **Next: PR #2 for the owner to merge**, then the M1.4a plan (M1.3
+  mock-ups run alongside).
 
 ## How the owner wants the work run
 
@@ -141,7 +143,7 @@ slice still needs its own approved plan before code.
 python -m uv sync
 python -m uv run ruff format --check .
 python -m uv run ruff check .
-python -m uv run mypy packages tools conftest.py
+python -m uv run mypy packages tools; python -m uv run mypy conftest.py   # two runs: both define a module named conftest
 python -m uv run pytest --cov
 python -m uv run pip-audit --skip-editable
 

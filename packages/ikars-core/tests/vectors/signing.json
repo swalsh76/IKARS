@@ -1,0 +1,1829 @@
+{
+ "generator": "tools/vectors/generate_signing.py",
+ "referenceCommit": "3d19d501c84ddf89e9b7df63185e5d17eecec320",
+ "python": "3.13.16",
+ "keyId": "test-key-id",
+ "seedHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+ "cases": [
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/markets",
+   "reference": "znkGui28VtUmr+OMBu9eoXvwywxxdzniiQwKXgEKXGO/7Zbd3RMzErS5tWB+oY5nnrdZzYHW7niUkzlpK3EoAA==",
+   "expect": "znkGui28VtUmr+OMBu9eoXvwywxxdzniiQwKXgEKXGO/7Zbd3RMzErS5tWB+oY5nnrdZzYHW7niUkzlpK3EoAA=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/markets",
+   "reference": "K/VF0Vno5bT3Sr3wSehImTsCcMMBjYZpA6M90/BdZEklIFXxVAg13IrpFrMGm9ezYcHMxgjDy9y5kKoT9ecqBg==",
+   "expect": "K/VF0Vno5bT3Sr3wSehImTsCcMMBjYZpA6M90/BdZEklIFXxVAg13IrpFrMGm9ezYcHMxgjDy9y5kKoT9ecqBg=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/markets",
+   "reference": "ylVJvU6HfrEYdvXDSlaNFfcYBoS75TLAd7Ig41IOju1Uu3ieT9d0cgn3WLeJVGgjLob8qBabchaQJdCvw5+VAQ==",
+   "expect": "ylVJvU6HfrEYdvXDSlaNFfcYBoS75TLAd7Ig41IOju1Uu3ieT9d0cgn3WLeJVGgjLob8qBabchaQJdCvw5+VAQ=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/markets",
+   "reference": "vixXmOD7B9jcQgvoqSQxbeMExIapc5ENqUR8fimanFRK9JTE06LlfD72SXgRh++9IrF260upbvA9q1O3+LpVAQ==",
+   "expect": "vixXmOD7B9jcQgvoqSQxbeMExIapc5ENqUR8fimanFRK9JTE06LlfD72SXgRh++9IrF260upbvA9q1O3+LpVAQ=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/markets",
+   "reference": "/COn4rGy327gYHew5voHDWOgL4B36faEVpqgiYTk+MDyiYsGzNUChJrAYBh7Rcnqs0VHO82WPl4wScS2KoUBCQ==",
+   "expect": "/COn4rGy327gYHew5voHDWOgL4B36faEVpqgiYTk+MDyiYsGzNUChJrAYBh7Rcnqs0VHO82WPl4wScS2KoUBCQ=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "get",
+   "path": "/trade-api/v2/markets",
+   "reference": "znkGui28VtUmr+OMBu9eoXvwywxxdzniiQwKXgEKXGO/7Zbd3RMzErS5tWB+oY5nnrdZzYHW7niUkzlpK3EoAA==",
+   "expect": "znkGui28VtUmr+OMBu9eoXvwywxxdzniiQwKXgEKXGO/7Zbd3RMzErS5tWB+oY5nnrdZzYHW7niUkzlpK3EoAA=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "get",
+   "path": "/trade-api/v2/markets",
+   "reference": "K/VF0Vno5bT3Sr3wSehImTsCcMMBjYZpA6M90/BdZEklIFXxVAg13IrpFrMGm9ezYcHMxgjDy9y5kKoT9ecqBg==",
+   "expect": "K/VF0Vno5bT3Sr3wSehImTsCcMMBjYZpA6M90/BdZEklIFXxVAg13IrpFrMGm9ezYcHMxgjDy9y5kKoT9ecqBg=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "get",
+   "path": "/trade-api/v2/markets",
+   "reference": "ylVJvU6HfrEYdvXDSlaNFfcYBoS75TLAd7Ig41IOju1Uu3ieT9d0cgn3WLeJVGgjLob8qBabchaQJdCvw5+VAQ==",
+   "expect": "ylVJvU6HfrEYdvXDSlaNFfcYBoS75TLAd7Ig41IOju1Uu3ieT9d0cgn3WLeJVGgjLob8qBabchaQJdCvw5+VAQ=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "get",
+   "path": "/trade-api/v2/markets",
+   "reference": "vixXmOD7B9jcQgvoqSQxbeMExIapc5ENqUR8fimanFRK9JTE06LlfD72SXgRh++9IrF260upbvA9q1O3+LpVAQ==",
+   "expect": "vixXmOD7B9jcQgvoqSQxbeMExIapc5ENqUR8fimanFRK9JTE06LlfD72SXgRh++9IrF260upbvA9q1O3+LpVAQ=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "get",
+   "path": "/trade-api/v2/markets",
+   "reference": "/COn4rGy327gYHew5voHDWOgL4B36faEVpqgiYTk+MDyiYsGzNUChJrAYBh7Rcnqs0VHO82WPl4wScS2KoUBCQ==",
+   "expect": "/COn4rGy327gYHew5voHDWOgL4B36faEVpqgiYTk+MDyiYsGzNUChJrAYBh7Rcnqs0VHO82WPl4wScS2KoUBCQ=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/markets?limit=1000&status=open",
+   "reference": "znkGui28VtUmr+OMBu9eoXvwywxxdzniiQwKXgEKXGO/7Zbd3RMzErS5tWB+oY5nnrdZzYHW7niUkzlpK3EoAA==",
+   "expect": "znkGui28VtUmr+OMBu9eoXvwywxxdzniiQwKXgEKXGO/7Zbd3RMzErS5tWB+oY5nnrdZzYHW7niUkzlpK3EoAA=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/markets?limit=1000&status=open",
+   "reference": "K/VF0Vno5bT3Sr3wSehImTsCcMMBjYZpA6M90/BdZEklIFXxVAg13IrpFrMGm9ezYcHMxgjDy9y5kKoT9ecqBg==",
+   "expect": "K/VF0Vno5bT3Sr3wSehImTsCcMMBjYZpA6M90/BdZEklIFXxVAg13IrpFrMGm9ezYcHMxgjDy9y5kKoT9ecqBg=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/markets?limit=1000&status=open",
+   "reference": "ylVJvU6HfrEYdvXDSlaNFfcYBoS75TLAd7Ig41IOju1Uu3ieT9d0cgn3WLeJVGgjLob8qBabchaQJdCvw5+VAQ==",
+   "expect": "ylVJvU6HfrEYdvXDSlaNFfcYBoS75TLAd7Ig41IOju1Uu3ieT9d0cgn3WLeJVGgjLob8qBabchaQJdCvw5+VAQ=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/markets?limit=1000&status=open",
+   "reference": "vixXmOD7B9jcQgvoqSQxbeMExIapc5ENqUR8fimanFRK9JTE06LlfD72SXgRh++9IrF260upbvA9q1O3+LpVAQ==",
+   "expect": "vixXmOD7B9jcQgvoqSQxbeMExIapc5ENqUR8fimanFRK9JTE06LlfD72SXgRh++9IrF260upbvA9q1O3+LpVAQ=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/markets?limit=1000&status=open",
+   "reference": "/COn4rGy327gYHew5voHDWOgL4B36faEVpqgiYTk+MDyiYsGzNUChJrAYBh7Rcnqs0VHO82WPl4wScS2KoUBCQ==",
+   "expect": "/COn4rGy327gYHew5voHDWOgL4B36faEVpqgiYTk+MDyiYsGzNUChJrAYBh7Rcnqs0VHO82WPl4wScS2KoUBCQ=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "get",
+   "path": "/trade-api/v2/markets?limit=1000&status=open",
+   "reference": "znkGui28VtUmr+OMBu9eoXvwywxxdzniiQwKXgEKXGO/7Zbd3RMzErS5tWB+oY5nnrdZzYHW7niUkzlpK3EoAA==",
+   "expect": "znkGui28VtUmr+OMBu9eoXvwywxxdzniiQwKXgEKXGO/7Zbd3RMzErS5tWB+oY5nnrdZzYHW7niUkzlpK3EoAA=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "get",
+   "path": "/trade-api/v2/markets?limit=1000&status=open",
+   "reference": "K/VF0Vno5bT3Sr3wSehImTsCcMMBjYZpA6M90/BdZEklIFXxVAg13IrpFrMGm9ezYcHMxgjDy9y5kKoT9ecqBg==",
+   "expect": "K/VF0Vno5bT3Sr3wSehImTsCcMMBjYZpA6M90/BdZEklIFXxVAg13IrpFrMGm9ezYcHMxgjDy9y5kKoT9ecqBg=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "get",
+   "path": "/trade-api/v2/markets?limit=1000&status=open",
+   "reference": "ylVJvU6HfrEYdvXDSlaNFfcYBoS75TLAd7Ig41IOju1Uu3ieT9d0cgn3WLeJVGgjLob8qBabchaQJdCvw5+VAQ==",
+   "expect": "ylVJvU6HfrEYdvXDSlaNFfcYBoS75TLAd7Ig41IOju1Uu3ieT9d0cgn3WLeJVGgjLob8qBabchaQJdCvw5+VAQ=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "get",
+   "path": "/trade-api/v2/markets?limit=1000&status=open",
+   "reference": "vixXmOD7B9jcQgvoqSQxbeMExIapc5ENqUR8fimanFRK9JTE06LlfD72SXgRh++9IrF260upbvA9q1O3+LpVAQ==",
+   "expect": "vixXmOD7B9jcQgvoqSQxbeMExIapc5ENqUR8fimanFRK9JTE06LlfD72SXgRh++9IrF260upbvA9q1O3+LpVAQ=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "get",
+   "path": "/trade-api/v2/markets?limit=1000&status=open",
+   "reference": "/COn4rGy327gYHew5voHDWOgL4B36faEVpqgiYTk+MDyiYsGzNUChJrAYBh7Rcnqs0VHO82WPl4wScS2KoUBCQ==",
+   "expect": "/COn4rGy327gYHew5voHDWOgL4B36faEVpqgiYTk+MDyiYsGzNUChJrAYBh7Rcnqs0VHO82WPl4wScS2KoUBCQ=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/KXHIGHNY-26OCT24-T70",
+   "reference": "ynr1O7aolafs7GDLZtKm0SRpXuzjm/hBo7szqcORFVePSqWEzbnv/aSzWUGcZE+522zJBZ2UzDpBZDMulqI3BQ==",
+   "expect": "ynr1O7aolafs7GDLZtKm0SRpXuzjm/hBo7szqcORFVePSqWEzbnv/aSzWUGcZE+522zJBZ2UzDpBZDMulqI3BQ=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/KXHIGHNY-26OCT24-T70",
+   "reference": "ZQcnnaTtGcLRJgTHchht5ywarGo8LSf/Undsqo9I/jscpjfT35V4U1gg280op2OUDo7SZ23hsjVcdTD6JwVZAQ==",
+   "expect": "ZQcnnaTtGcLRJgTHchht5ywarGo8LSf/Undsqo9I/jscpjfT35V4U1gg280op2OUDo7SZ23hsjVcdTD6JwVZAQ=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/KXHIGHNY-26OCT24-T70",
+   "reference": "HMjE5kWG91OdG5WJ3B1AeuS8Xspvy6e4fYJNnbaQe0PKjt2sZ7V5jsBA5aUpJgRuka26WFiQ8ECxxiG5gtJqCg==",
+   "expect": "HMjE5kWG91OdG5WJ3B1AeuS8Xspvy6e4fYJNnbaQe0PKjt2sZ7V5jsBA5aUpJgRuka26WFiQ8ECxxiG5gtJqCg=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/KXHIGHNY-26OCT24-T70",
+   "reference": "QColXXcA3sAR5f7tZ8oTiNu0ObSR767HJw+PKbvAINByf5Iw31A7gx7iZGNNavW5Gl1psC97yx/BEVdpxXCpDQ==",
+   "expect": "QColXXcA3sAR5f7tZ8oTiNu0ObSR767HJw+PKbvAINByf5Iw31A7gx7iZGNNavW5Gl1psC97yx/BEVdpxXCpDQ=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/KXHIGHNY-26OCT24-T70",
+   "reference": "QkrN4VhrCs2KUxgxM1dQzl6tXIM14dxKf5myLpi7ECtqUm2Epjy55qT/KlmglH9gJBQZCBI9HeFVP3QORij2Dw==",
+   "expect": "QkrN4VhrCs2KUxgxM1dQzl6tXIM14dxKf5myLpi7ECtqUm2Epjy55qT/KlmglH9gJBQZCBI9HeFVP3QORij2Dw=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "get",
+   "path": "/trade-api/v2/markets/KXHIGHNY-26OCT24-T70",
+   "reference": "ynr1O7aolafs7GDLZtKm0SRpXuzjm/hBo7szqcORFVePSqWEzbnv/aSzWUGcZE+522zJBZ2UzDpBZDMulqI3BQ==",
+   "expect": "ynr1O7aolafs7GDLZtKm0SRpXuzjm/hBo7szqcORFVePSqWEzbnv/aSzWUGcZE+522zJBZ2UzDpBZDMulqI3BQ=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "get",
+   "path": "/trade-api/v2/markets/KXHIGHNY-26OCT24-T70",
+   "reference": "ZQcnnaTtGcLRJgTHchht5ywarGo8LSf/Undsqo9I/jscpjfT35V4U1gg280op2OUDo7SZ23hsjVcdTD6JwVZAQ==",
+   "expect": "ZQcnnaTtGcLRJgTHchht5ywarGo8LSf/Undsqo9I/jscpjfT35V4U1gg280op2OUDo7SZ23hsjVcdTD6JwVZAQ=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "get",
+   "path": "/trade-api/v2/markets/KXHIGHNY-26OCT24-T70",
+   "reference": "HMjE5kWG91OdG5WJ3B1AeuS8Xspvy6e4fYJNnbaQe0PKjt2sZ7V5jsBA5aUpJgRuka26WFiQ8ECxxiG5gtJqCg==",
+   "expect": "HMjE5kWG91OdG5WJ3B1AeuS8Xspvy6e4fYJNnbaQe0PKjt2sZ7V5jsBA5aUpJgRuka26WFiQ8ECxxiG5gtJqCg=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "get",
+   "path": "/trade-api/v2/markets/KXHIGHNY-26OCT24-T70",
+   "reference": "QColXXcA3sAR5f7tZ8oTiNu0ObSR767HJw+PKbvAINByf5Iw31A7gx7iZGNNavW5Gl1psC97yx/BEVdpxXCpDQ==",
+   "expect": "QColXXcA3sAR5f7tZ8oTiNu0ObSR767HJw+PKbvAINByf5Iw31A7gx7iZGNNavW5Gl1psC97yx/BEVdpxXCpDQ=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "get",
+   "path": "/trade-api/v2/markets/KXHIGHNY-26OCT24-T70",
+   "reference": "QkrN4VhrCs2KUxgxM1dQzl6tXIM14dxKf5myLpi7ECtqUm2Epjy55qT/KlmglH9gJBQZCBI9HeFVP3QORij2Dw==",
+   "expect": "QkrN4VhrCs2KUxgxM1dQzl6tXIM14dxKf5myLpi7ECtqUm2Epjy55qT/KlmglH9gJBQZCBI9HeFVP3QORij2Dw=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/trades?min_ts=1&max_ts=2",
+   "reference": "3kFosztZwm6ITiNdptzLDIrkuTRaSqvezSVVQ6wfBZ/a8m2ZwmcVFpAylCUUM1qihrLWXV3DQYrJVC5Md9leBw==",
+   "expect": "3kFosztZwm6ITiNdptzLDIrkuTRaSqvezSVVQ6wfBZ/a8m2ZwmcVFpAylCUUM1qihrLWXV3DQYrJVC5Md9leBw=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/trades?min_ts=1&max_ts=2",
+   "reference": "N7bNnqGicsUy1RuW2STEjpOhEbUOyHpItC0BGlhXh88kjz1Way+8MBWwNJMj/oBBAVLsApdr0ckafjKka1pHCw==",
+   "expect": "N7bNnqGicsUy1RuW2STEjpOhEbUOyHpItC0BGlhXh88kjz1Way+8MBWwNJMj/oBBAVLsApdr0ckafjKka1pHCw=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/trades?min_ts=1&max_ts=2",
+   "reference": "C/Y2hqFQ0fBZbT70bpJ28CQxAeQ7sKzyvV5BHdqJCaHyUXyFfV4iqjoCDtBDxdo/IgJrV/+foLMXlXaNDVSkDA==",
+   "expect": "C/Y2hqFQ0fBZbT70bpJ28CQxAeQ7sKzyvV5BHdqJCaHyUXyFfV4iqjoCDtBDxdo/IgJrV/+foLMXlXaNDVSkDA=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/trades?min_ts=1&max_ts=2",
+   "reference": "gedm/JZGGdnLKml0SOp97UUaPpHtxlMzno8aM7H0XsUU/BN30rRWyusVBmcO9CcR3T0VFNtcmmghQDPoyl/9Bw==",
+   "expect": "gedm/JZGGdnLKml0SOp97UUaPpHtxlMzno8aM7H0XsUU/BN30rRWyusVBmcO9CcR3T0VFNtcmmghQDPoyl/9Bw=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/trades?min_ts=1&max_ts=2",
+   "reference": "byYN0r4sHrk9wmjTTgPcyEeej6e27Tyxvb7iDcLGFW09+T5T7jJNDkPTVfyKKKPpFZNH8uZaEtV5MtVZxBsbAg==",
+   "expect": "byYN0r4sHrk9wmjTTgPcyEeej6e27Tyxvb7iDcLGFW09+T5T7jJNDkPTVfyKKKPpFZNH8uZaEtV5MtVZxBsbAg=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "get",
+   "path": "/trade-api/v2/markets/trades?min_ts=1&max_ts=2",
+   "reference": "3kFosztZwm6ITiNdptzLDIrkuTRaSqvezSVVQ6wfBZ/a8m2ZwmcVFpAylCUUM1qihrLWXV3DQYrJVC5Md9leBw==",
+   "expect": "3kFosztZwm6ITiNdptzLDIrkuTRaSqvezSVVQ6wfBZ/a8m2ZwmcVFpAylCUUM1qihrLWXV3DQYrJVC5Md9leBw=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "get",
+   "path": "/trade-api/v2/markets/trades?min_ts=1&max_ts=2",
+   "reference": "N7bNnqGicsUy1RuW2STEjpOhEbUOyHpItC0BGlhXh88kjz1Way+8MBWwNJMj/oBBAVLsApdr0ckafjKka1pHCw==",
+   "expect": "N7bNnqGicsUy1RuW2STEjpOhEbUOyHpItC0BGlhXh88kjz1Way+8MBWwNJMj/oBBAVLsApdr0ckafjKka1pHCw=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "get",
+   "path": "/trade-api/v2/markets/trades?min_ts=1&max_ts=2",
+   "reference": "C/Y2hqFQ0fBZbT70bpJ28CQxAeQ7sKzyvV5BHdqJCaHyUXyFfV4iqjoCDtBDxdo/IgJrV/+foLMXlXaNDVSkDA==",
+   "expect": "C/Y2hqFQ0fBZbT70bpJ28CQxAeQ7sKzyvV5BHdqJCaHyUXyFfV4iqjoCDtBDxdo/IgJrV/+foLMXlXaNDVSkDA=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "get",
+   "path": "/trade-api/v2/markets/trades?min_ts=1&max_ts=2",
+   "reference": "gedm/JZGGdnLKml0SOp97UUaPpHtxlMzno8aM7H0XsUU/BN30rRWyusVBmcO9CcR3T0VFNtcmmghQDPoyl/9Bw==",
+   "expect": "gedm/JZGGdnLKml0SOp97UUaPpHtxlMzno8aM7H0XsUU/BN30rRWyusVBmcO9CcR3T0VFNtcmmghQDPoyl/9Bw=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "get",
+   "path": "/trade-api/v2/markets/trades?min_ts=1&max_ts=2",
+   "reference": "byYN0r4sHrk9wmjTTgPcyEeej6e27Tyxvb7iDcLGFW09+T5T7jJNDkPTVfyKKKPpFZNH8uZaEtV5MtVZxBsbAg==",
+   "expect": "byYN0r4sHrk9wmjTTgPcyEeej6e27Tyxvb7iDcLGFW09+T5T7jJNDkPTVfyKKKPpFZNH8uZaEtV5MtVZxBsbAg=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/events/KXHIGHNY-26OCT24",
+   "reference": "/p4VN6M8qlyvpNi69DTVTO4fZt4VTcQUr36MqCaooV8IVMZDhnTwJ3Z0Ih54Kkc7vnIGxXQ7oFrhG03WbLZiCg==",
+   "expect": "/p4VN6M8qlyvpNi69DTVTO4fZt4VTcQUr36MqCaooV8IVMZDhnTwJ3Z0Ih54Kkc7vnIGxXQ7oFrhG03WbLZiCg=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/events/KXHIGHNY-26OCT24",
+   "reference": "oStPOEm+11KOIU/pKy+X9XGKshH3k/Bdur1Mb49rzu0qvVgREh9UAtJA5t3F2hucEzvxM2+66QWhqGShrNPVAA==",
+   "expect": "oStPOEm+11KOIU/pKy+X9XGKshH3k/Bdur1Mb49rzu0qvVgREh9UAtJA5t3F2hucEzvxM2+66QWhqGShrNPVAA=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/events/KXHIGHNY-26OCT24",
+   "reference": "R2LKlfVuGSSeB4F9ZcyaU92KpozXiIRMXV97g729yGKrco3ognKjtmqHEyFNssCgNYIPZr+VXxnBXT08f8lfDA==",
+   "expect": "R2LKlfVuGSSeB4F9ZcyaU92KpozXiIRMXV97g729yGKrco3ognKjtmqHEyFNssCgNYIPZr+VXxnBXT08f8lfDA=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/events/KXHIGHNY-26OCT24",
+   "reference": "Xvpe8uGKP5iu8oIZcOPhJZVTqoQXZbOkHQvKplIooHguJqO670Su9h8rrn/rlF+ZElm/K0bWvhau2mf0BsHiDw==",
+   "expect": "Xvpe8uGKP5iu8oIZcOPhJZVTqoQXZbOkHQvKplIooHguJqO670Su9h8rrn/rlF+ZElm/K0bWvhau2mf0BsHiDw=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/events/KXHIGHNY-26OCT24",
+   "reference": "Dj/ouXlT3hqI/00rPb6wU04ZWuWLJA9XMkE4IPuY3S9YtBkQyE75d5rIRUI+IHPru4LFq9m0IAQaX+H/5FXnBA==",
+   "expect": "Dj/ouXlT3hqI/00rPb6wU04ZWuWLJA9XMkE4IPuY3S9YtBkQyE75d5rIRUI+IHPru4LFq9m0IAQaX+H/5FXnBA=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "get",
+   "path": "/trade-api/v2/events/KXHIGHNY-26OCT24",
+   "reference": "/p4VN6M8qlyvpNi69DTVTO4fZt4VTcQUr36MqCaooV8IVMZDhnTwJ3Z0Ih54Kkc7vnIGxXQ7oFrhG03WbLZiCg==",
+   "expect": "/p4VN6M8qlyvpNi69DTVTO4fZt4VTcQUr36MqCaooV8IVMZDhnTwJ3Z0Ih54Kkc7vnIGxXQ7oFrhG03WbLZiCg=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "get",
+   "path": "/trade-api/v2/events/KXHIGHNY-26OCT24",
+   "reference": "oStPOEm+11KOIU/pKy+X9XGKshH3k/Bdur1Mb49rzu0qvVgREh9UAtJA5t3F2hucEzvxM2+66QWhqGShrNPVAA==",
+   "expect": "oStPOEm+11KOIU/pKy+X9XGKshH3k/Bdur1Mb49rzu0qvVgREh9UAtJA5t3F2hucEzvxM2+66QWhqGShrNPVAA=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "get",
+   "path": "/trade-api/v2/events/KXHIGHNY-26OCT24",
+   "reference": "R2LKlfVuGSSeB4F9ZcyaU92KpozXiIRMXV97g729yGKrco3ognKjtmqHEyFNssCgNYIPZr+VXxnBXT08f8lfDA==",
+   "expect": "R2LKlfVuGSSeB4F9ZcyaU92KpozXiIRMXV97g729yGKrco3ognKjtmqHEyFNssCgNYIPZr+VXxnBXT08f8lfDA=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "get",
+   "path": "/trade-api/v2/events/KXHIGHNY-26OCT24",
+   "reference": "Xvpe8uGKP5iu8oIZcOPhJZVTqoQXZbOkHQvKplIooHguJqO670Su9h8rrn/rlF+ZElm/K0bWvhau2mf0BsHiDw==",
+   "expect": "Xvpe8uGKP5iu8oIZcOPhJZVTqoQXZbOkHQvKplIooHguJqO670Su9h8rrn/rlF+ZElm/K0bWvhau2mf0BsHiDw=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "get",
+   "path": "/trade-api/v2/events/KXHIGHNY-26OCT24",
+   "reference": "Dj/ouXlT3hqI/00rPb6wU04ZWuWLJA9XMkE4IPuY3S9YtBkQyE75d5rIRUI+IHPru4LFq9m0IAQaX+H/5FXnBA==",
+   "expect": "Dj/ouXlT3hqI/00rPb6wU04ZWuWLJA9XMkE4IPuY3S9YtBkQyE75d5rIRUI+IHPru4LFq9m0IAQaX+H/5FXnBA=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/series",
+   "reference": "VTKlThtc5vLn0BYHFTFE8HUhAIZ6jYYhrsN02m/mFjU1SaIUMb/3OLDRg+pgd93pn6fHHcXFbuL3MEu4J4IWCw==",
+   "expect": "VTKlThtc5vLn0BYHFTFE8HUhAIZ6jYYhrsN02m/mFjU1SaIUMb/3OLDRg+pgd93pn6fHHcXFbuL3MEu4J4IWCw=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/series",
+   "reference": "ymcfQLdediG35UrvahL1w6QS7qMkHFifv43vJLZp6jZcl5wMjjJ1W6Zgq/ZFm63sgJ/qg++9c7mQ2JSHIExPCw==",
+   "expect": "ymcfQLdediG35UrvahL1w6QS7qMkHFifv43vJLZp6jZcl5wMjjJ1W6Zgq/ZFm63sgJ/qg++9c7mQ2JSHIExPCw=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/series",
+   "reference": "98NALAbaWiU88eVdUOdVujcIQeEsrsUFofszzBZVHzHvdOgi+Myal0EuRiH/uwwunuaaiyq/3Xd2sfB0IJh4Bw==",
+   "expect": "98NALAbaWiU88eVdUOdVujcIQeEsrsUFofszzBZVHzHvdOgi+Myal0EuRiH/uwwunuaaiyq/3Xd2sfB0IJh4Bw=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/series",
+   "reference": "zx5RL4TS+WiVPJWRpPF5uWbkKsZf+Pne8Ra9pV0XLX8SWs2mJBi23W/eSIushEO2Fd1qCeXwCI8sgNgb7RefAQ==",
+   "expect": "zx5RL4TS+WiVPJWRpPF5uWbkKsZf+Pne8Ra9pV0XLX8SWs2mJBi23W/eSIushEO2Fd1qCeXwCI8sgNgb7RefAQ=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/series",
+   "reference": "OKGXr/aMLkuDwSz91e/NBMhUdaEq3AEV/c36Sw4J1PWBiPEIaUR5uxAbsWmjJbVoaQtkcZxYGeBPpF48QwhwDQ==",
+   "expect": "OKGXr/aMLkuDwSz91e/NBMhUdaEq3AEV/c36Sw4J1PWBiPEIaUR5uxAbsWmjJbVoaQtkcZxYGeBPpF48QwhwDQ=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "get",
+   "path": "/trade-api/v2/series",
+   "reference": "VTKlThtc5vLn0BYHFTFE8HUhAIZ6jYYhrsN02m/mFjU1SaIUMb/3OLDRg+pgd93pn6fHHcXFbuL3MEu4J4IWCw==",
+   "expect": "VTKlThtc5vLn0BYHFTFE8HUhAIZ6jYYhrsN02m/mFjU1SaIUMb/3OLDRg+pgd93pn6fHHcXFbuL3MEu4J4IWCw=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "get",
+   "path": "/trade-api/v2/series",
+   "reference": "ymcfQLdediG35UrvahL1w6QS7qMkHFifv43vJLZp6jZcl5wMjjJ1W6Zgq/ZFm63sgJ/qg++9c7mQ2JSHIExPCw==",
+   "expect": "ymcfQLdediG35UrvahL1w6QS7qMkHFifv43vJLZp6jZcl5wMjjJ1W6Zgq/ZFm63sgJ/qg++9c7mQ2JSHIExPCw=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "get",
+   "path": "/trade-api/v2/series",
+   "reference": "98NALAbaWiU88eVdUOdVujcIQeEsrsUFofszzBZVHzHvdOgi+Myal0EuRiH/uwwunuaaiyq/3Xd2sfB0IJh4Bw==",
+   "expect": "98NALAbaWiU88eVdUOdVujcIQeEsrsUFofszzBZVHzHvdOgi+Myal0EuRiH/uwwunuaaiyq/3Xd2sfB0IJh4Bw=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "get",
+   "path": "/trade-api/v2/series",
+   "reference": "zx5RL4TS+WiVPJWRpPF5uWbkKsZf+Pne8Ra9pV0XLX8SWs2mJBi23W/eSIushEO2Fd1qCeXwCI8sgNgb7RefAQ==",
+   "expect": "zx5RL4TS+WiVPJWRpPF5uWbkKsZf+Pne8Ra9pV0XLX8SWs2mJBi23W/eSIushEO2Fd1qCeXwCI8sgNgb7RefAQ=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "get",
+   "path": "/trade-api/v2/series",
+   "reference": "OKGXr/aMLkuDwSz91e/NBMhUdaEq3AEV/c36Sw4J1PWBiPEIaUR5uxAbsWmjJbVoaQtkcZxYGeBPpF48QwhwDQ==",
+   "expect": "OKGXr/aMLkuDwSz91e/NBMhUdaEq3AEV/c36Sw4J1PWBiPEIaUR5uxAbsWmjJbVoaQtkcZxYGeBPpF48QwhwDQ=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/series/KXHIGHNY/fee_changes",
+   "reference": "W6f5FqXNO52a/d9ENKv1OGT7HmCC2gHPJM9M/vtPPJTtrF1YFCdZPxHgbHZ5vBwY3CnarPC0cUQ/4HMh728GDg==",
+   "expect": "W6f5FqXNO52a/d9ENKv1OGT7HmCC2gHPJM9M/vtPPJTtrF1YFCdZPxHgbHZ5vBwY3CnarPC0cUQ/4HMh728GDg=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/series/KXHIGHNY/fee_changes",
+   "reference": "0sRirhrsUcUxRGBvTzN17aXPvm4nMHTWVDHL1TEM9ZXPUA232HjnrT0LQPhY893F2S50v9lamECHHe2mJ5yXCw==",
+   "expect": "0sRirhrsUcUxRGBvTzN17aXPvm4nMHTWVDHL1TEM9ZXPUA232HjnrT0LQPhY893F2S50v9lamECHHe2mJ5yXCw=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/series/KXHIGHNY/fee_changes",
+   "reference": "5R03tRNMVtWWn2B4+pejg8wa5dW0uKTZMZEaIq/QAPRRBRsPkC9at9dldsfOZQYU+m2PaC4xAIJERQeRRDU3BQ==",
+   "expect": "5R03tRNMVtWWn2B4+pejg8wa5dW0uKTZMZEaIq/QAPRRBRsPkC9at9dldsfOZQYU+m2PaC4xAIJERQeRRDU3BQ=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/series/KXHIGHNY/fee_changes",
+   "reference": "RADBCxC0zQLmmSA3v7MJvYsycbsex8mXiQoJBX31pH67J9RCDaSbnTftPwlGC5Y1dRir6KaEVnAAWn9DTxidDw==",
+   "expect": "RADBCxC0zQLmmSA3v7MJvYsycbsex8mXiQoJBX31pH67J9RCDaSbnTftPwlGC5Y1dRir6KaEVnAAWn9DTxidDw=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/series/KXHIGHNY/fee_changes",
+   "reference": "2lj7nuotQ7HDoItQAtSMbAK54dZ21mWW9OVr6Cf8OleGvJeGf7NDhDsx01sAd0BHbNL8aueeO13kacYALV/VAg==",
+   "expect": "2lj7nuotQ7HDoItQAtSMbAK54dZ21mWW9OVr6Cf8OleGvJeGf7NDhDsx01sAd0BHbNL8aueeO13kacYALV/VAg=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "get",
+   "path": "/trade-api/v2/series/KXHIGHNY/fee_changes",
+   "reference": "W6f5FqXNO52a/d9ENKv1OGT7HmCC2gHPJM9M/vtPPJTtrF1YFCdZPxHgbHZ5vBwY3CnarPC0cUQ/4HMh728GDg==",
+   "expect": "W6f5FqXNO52a/d9ENKv1OGT7HmCC2gHPJM9M/vtPPJTtrF1YFCdZPxHgbHZ5vBwY3CnarPC0cUQ/4HMh728GDg=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "get",
+   "path": "/trade-api/v2/series/KXHIGHNY/fee_changes",
+   "reference": "0sRirhrsUcUxRGBvTzN17aXPvm4nMHTWVDHL1TEM9ZXPUA232HjnrT0LQPhY893F2S50v9lamECHHe2mJ5yXCw==",
+   "expect": "0sRirhrsUcUxRGBvTzN17aXPvm4nMHTWVDHL1TEM9ZXPUA232HjnrT0LQPhY893F2S50v9lamECHHe2mJ5yXCw=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "get",
+   "path": "/trade-api/v2/series/KXHIGHNY/fee_changes",
+   "reference": "5R03tRNMVtWWn2B4+pejg8wa5dW0uKTZMZEaIq/QAPRRBRsPkC9at9dldsfOZQYU+m2PaC4xAIJERQeRRDU3BQ==",
+   "expect": "5R03tRNMVtWWn2B4+pejg8wa5dW0uKTZMZEaIq/QAPRRBRsPkC9at9dldsfOZQYU+m2PaC4xAIJERQeRRDU3BQ=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "get",
+   "path": "/trade-api/v2/series/KXHIGHNY/fee_changes",
+   "reference": "RADBCxC0zQLmmSA3v7MJvYsycbsex8mXiQoJBX31pH67J9RCDaSbnTftPwlGC5Y1dRir6KaEVnAAWn9DTxidDw==",
+   "expect": "RADBCxC0zQLmmSA3v7MJvYsycbsex8mXiQoJBX31pH67J9RCDaSbnTftPwlGC5Y1dRir6KaEVnAAWn9DTxidDw=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "get",
+   "path": "/trade-api/v2/series/KXHIGHNY/fee_changes",
+   "reference": "2lj7nuotQ7HDoItQAtSMbAK54dZ21mWW9OVr6Cf8OleGvJeGf7NDhDsx01sAd0BHbNL8aueeO13kacYALV/VAg==",
+   "expect": "2lj7nuotQ7HDoItQAtSMbAK54dZ21mWW9OVr6Cf8OleGvJeGf7NDhDsx01sAd0BHbNL8aueeO13kacYALV/VAg=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/status",
+   "reference": "Kpw6IAO0W4HhfE5VG+w7/dIItZ+ViiprQYw6jJ3VEth86GD7GDuWZXtAgM+oZSqWLsdWqLD78E1egosYfeJcBw==",
+   "expect": "Kpw6IAO0W4HhfE5VG+w7/dIItZ+ViiprQYw6jJ3VEth86GD7GDuWZXtAgM+oZSqWLsdWqLD78E1egosYfeJcBw=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/status",
+   "reference": "eUePTAxhMomav3vVKvi0j/yvYRtAZo04QFM7ulBa3VhCLMWOke4KkVj2TtMSSnNOWEbT+5FNYQ3IqjdeXooiDA==",
+   "expect": "eUePTAxhMomav3vVKvi0j/yvYRtAZo04QFM7ulBa3VhCLMWOke4KkVj2TtMSSnNOWEbT+5FNYQ3IqjdeXooiDA=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/status",
+   "reference": "16I5pAeLVngzSescvTzLfwTyCtpCnvyMSP39utLBUAHZJwDeGZUp+f0XgOb5V54f0ijZ0qrq2qaEwMLkVKkjCw==",
+   "expect": "16I5pAeLVngzSescvTzLfwTyCtpCnvyMSP39utLBUAHZJwDeGZUp+f0XgOb5V54f0ijZ0qrq2qaEwMLkVKkjCw=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/status",
+   "reference": "37+9DZ8W2uUF5HY0C06TCDEwEJ6SbD8JFCXwGALF08mklrVvaOV3fVUBPH/ia977rvBWbn+PAE/53HwE+nEZDA==",
+   "expect": "37+9DZ8W2uUF5HY0C06TCDEwEJ6SbD8JFCXwGALF08mklrVvaOV3fVUBPH/ia977rvBWbn+PAE/53HwE+nEZDA=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/status",
+   "reference": "qE2QkGTnDkqf0WRheuvKXVc7mae0aGH/KZuF8h+y/dCIMnyME7VkeyjI/ReyvMEiB+8fTJljhRBDkQORlonwCQ==",
+   "expect": "qE2QkGTnDkqf0WRheuvKXVc7mae0aGH/KZuF8h+y/dCIMnyME7VkeyjI/ReyvMEiB+8fTJljhRBDkQORlonwCQ=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "get",
+   "path": "/trade-api/v2/exchange/status",
+   "reference": "Kpw6IAO0W4HhfE5VG+w7/dIItZ+ViiprQYw6jJ3VEth86GD7GDuWZXtAgM+oZSqWLsdWqLD78E1egosYfeJcBw==",
+   "expect": "Kpw6IAO0W4HhfE5VG+w7/dIItZ+ViiprQYw6jJ3VEth86GD7GDuWZXtAgM+oZSqWLsdWqLD78E1egosYfeJcBw=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "get",
+   "path": "/trade-api/v2/exchange/status",
+   "reference": "eUePTAxhMomav3vVKvi0j/yvYRtAZo04QFM7ulBa3VhCLMWOke4KkVj2TtMSSnNOWEbT+5FNYQ3IqjdeXooiDA==",
+   "expect": "eUePTAxhMomav3vVKvi0j/yvYRtAZo04QFM7ulBa3VhCLMWOke4KkVj2TtMSSnNOWEbT+5FNYQ3IqjdeXooiDA=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "get",
+   "path": "/trade-api/v2/exchange/status",
+   "reference": "16I5pAeLVngzSescvTzLfwTyCtpCnvyMSP39utLBUAHZJwDeGZUp+f0XgOb5V54f0ijZ0qrq2qaEwMLkVKkjCw==",
+   "expect": "16I5pAeLVngzSescvTzLfwTyCtpCnvyMSP39utLBUAHZJwDeGZUp+f0XgOb5V54f0ijZ0qrq2qaEwMLkVKkjCw=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "get",
+   "path": "/trade-api/v2/exchange/status",
+   "reference": "37+9DZ8W2uUF5HY0C06TCDEwEJ6SbD8JFCXwGALF08mklrVvaOV3fVUBPH/ia977rvBWbn+PAE/53HwE+nEZDA==",
+   "expect": "37+9DZ8W2uUF5HY0C06TCDEwEJ6SbD8JFCXwGALF08mklrVvaOV3fVUBPH/ia977rvBWbn+PAE/53HwE+nEZDA=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "get",
+   "path": "/trade-api/v2/exchange/status",
+   "reference": "qE2QkGTnDkqf0WRheuvKXVc7mae0aGH/KZuF8h+y/dCIMnyME7VkeyjI/ReyvMEiB+8fTJljhRBDkQORlonwCQ==",
+   "expect": "qE2QkGTnDkqf0WRheuvKXVc7mae0aGH/KZuF8h+y/dCIMnyME7VkeyjI/ReyvMEiB+8fTJljhRBDkQORlonwCQ=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/schedule",
+   "reference": "Nfwul4awdzi4+AxVTa1yimLF7qqL+fsxe5WeYkoif1rcc9bW17hNFJ76UUom8KUoRlma4y+bWxkjtJ0AyGsnDw==",
+   "expect": "Nfwul4awdzi4+AxVTa1yimLF7qqL+fsxe5WeYkoif1rcc9bW17hNFJ76UUom8KUoRlma4y+bWxkjtJ0AyGsnDw=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/schedule",
+   "reference": "Gl/lmZ6ZiW0CWUNzTXkd2FQ+9Hgj+2giKQw39Y6y1j7BlX2TLMos9SYdF9a5mKUOsI4vyBx6pP5B/E5Fwd+aAw==",
+   "expect": "Gl/lmZ6ZiW0CWUNzTXkd2FQ+9Hgj+2giKQw39Y6y1j7BlX2TLMos9SYdF9a5mKUOsI4vyBx6pP5B/E5Fwd+aAw=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/schedule",
+   "reference": "iNd8uLLGjW1Rbzv4Uklm38GFwCIB+sCNF1O1oLzOYOU5muP6C45bGC93MeHuivg0NC4jqa84Mo8eCrPoB9lKCg==",
+   "expect": "iNd8uLLGjW1Rbzv4Uklm38GFwCIB+sCNF1O1oLzOYOU5muP6C45bGC93MeHuivg0NC4jqa84Mo8eCrPoB9lKCg=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/schedule",
+   "reference": "vYESNOWujQ+LPbo6mjrDSYhXFfkZzFUFa1iIslwa7rbBIppCDIAfAqfAFCXOasSxVRwjhErsXRixeyslr8TtCw==",
+   "expect": "vYESNOWujQ+LPbo6mjrDSYhXFfkZzFUFa1iIslwa7rbBIppCDIAfAqfAFCXOasSxVRwjhErsXRixeyslr8TtCw=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/schedule",
+   "reference": "cvHAZ8r01DbmM24NSC7Y8NsixYGhobDtAEsy6853PW/1Zhsas/x1rubGxNGsh8Ixhi1J56MO5HMHYiv7YtGVBg==",
+   "expect": "cvHAZ8r01DbmM24NSC7Y8NsixYGhobDtAEsy6853PW/1Zhsas/x1rubGxNGsh8Ixhi1J56MO5HMHYiv7YtGVBg=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "get",
+   "path": "/trade-api/v2/exchange/schedule",
+   "reference": "Nfwul4awdzi4+AxVTa1yimLF7qqL+fsxe5WeYkoif1rcc9bW17hNFJ76UUom8KUoRlma4y+bWxkjtJ0AyGsnDw==",
+   "expect": "Nfwul4awdzi4+AxVTa1yimLF7qqL+fsxe5WeYkoif1rcc9bW17hNFJ76UUom8KUoRlma4y+bWxkjtJ0AyGsnDw=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "get",
+   "path": "/trade-api/v2/exchange/schedule",
+   "reference": "Gl/lmZ6ZiW0CWUNzTXkd2FQ+9Hgj+2giKQw39Y6y1j7BlX2TLMos9SYdF9a5mKUOsI4vyBx6pP5B/E5Fwd+aAw==",
+   "expect": "Gl/lmZ6ZiW0CWUNzTXkd2FQ+9Hgj+2giKQw39Y6y1j7BlX2TLMos9SYdF9a5mKUOsI4vyBx6pP5B/E5Fwd+aAw=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "get",
+   "path": "/trade-api/v2/exchange/schedule",
+   "reference": "iNd8uLLGjW1Rbzv4Uklm38GFwCIB+sCNF1O1oLzOYOU5muP6C45bGC93MeHuivg0NC4jqa84Mo8eCrPoB9lKCg==",
+   "expect": "iNd8uLLGjW1Rbzv4Uklm38GFwCIB+sCNF1O1oLzOYOU5muP6C45bGC93MeHuivg0NC4jqa84Mo8eCrPoB9lKCg=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "get",
+   "path": "/trade-api/v2/exchange/schedule",
+   "reference": "vYESNOWujQ+LPbo6mjrDSYhXFfkZzFUFa1iIslwa7rbBIppCDIAfAqfAFCXOasSxVRwjhErsXRixeyslr8TtCw==",
+   "expect": "vYESNOWujQ+LPbo6mjrDSYhXFfkZzFUFa1iIslwa7rbBIppCDIAfAqfAFCXOasSxVRwjhErsXRixeyslr8TtCw=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "get",
+   "path": "/trade-api/v2/exchange/schedule",
+   "reference": "cvHAZ8r01DbmM24NSC7Y8NsixYGhobDtAEsy6853PW/1Zhsas/x1rubGxNGsh8Ixhi1J56MO5HMHYiv7YtGVBg==",
+   "expect": "cvHAZ8r01DbmM24NSC7Y8NsixYGhobDtAEsy6853PW/1Zhsas/x1rubGxNGsh8Ixhi1J56MO5HMHYiv7YtGVBg=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/historical/cutoff",
+   "reference": "YtmmKZlu/qSRXmV+aPcE7yxIOeKkrpxJS55nChA/rK5RII4kEJI8cRZqPUumoAZACB4IsRhvCwWbHFKqDk0LCg==",
+   "expect": "YtmmKZlu/qSRXmV+aPcE7yxIOeKkrpxJS55nChA/rK5RII4kEJI8cRZqPUumoAZACB4IsRhvCwWbHFKqDk0LCg=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/historical/cutoff",
+   "reference": "HzWeRHNshjyNgywgxKosAMjW4Sd9PLn7QoYH2StKtIgOOi/DG1YzKNFLFrC6CiSNhkrsgA/pBTvNgJA6o/pyBw==",
+   "expect": "HzWeRHNshjyNgywgxKosAMjW4Sd9PLn7QoYH2StKtIgOOi/DG1YzKNFLFrC6CiSNhkrsgA/pBTvNgJA6o/pyBw=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/historical/cutoff",
+   "reference": "+i0vZnmYy36cV/kfrkCzFoX27/ViPXgtT2m51+OyNuxqKB+2/ZNc1mX4k7sl2h3oXnHpWWk6dl1y/RPfavwSAQ==",
+   "expect": "+i0vZnmYy36cV/kfrkCzFoX27/ViPXgtT2m51+OyNuxqKB+2/ZNc1mX4k7sl2h3oXnHpWWk6dl1y/RPfavwSAQ=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/historical/cutoff",
+   "reference": "3z/Z/BnQHz8GukBv2NvfWxy/+UnJAHMAqp+nEMgBveC7GLjiBePlilqjZkgLCvNmGHzHWjC8UVlzhj0ooWcwDA==",
+   "expect": "3z/Z/BnQHz8GukBv2NvfWxy/+UnJAHMAqp+nEMgBveC7GLjiBePlilqjZkgLCvNmGHzHWjC8UVlzhj0ooWcwDA=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/historical/cutoff",
+   "reference": "JXDz/KCYQ1Z7ldrnui3QfQLdUHFqC3IisNMhRl/o5zQbbEnInQg1JmMR07ob5ooWbYJdH4/LoDsY2JMLOZS0CA==",
+   "expect": "JXDz/KCYQ1Z7ldrnui3QfQLdUHFqC3IisNMhRl/o5zQbbEnInQg1JmMR07ob5ooWbYJdH4/LoDsY2JMLOZS0CA=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "get",
+   "path": "/trade-api/v2/historical/cutoff",
+   "reference": "YtmmKZlu/qSRXmV+aPcE7yxIOeKkrpxJS55nChA/rK5RII4kEJI8cRZqPUumoAZACB4IsRhvCwWbHFKqDk0LCg==",
+   "expect": "YtmmKZlu/qSRXmV+aPcE7yxIOeKkrpxJS55nChA/rK5RII4kEJI8cRZqPUumoAZACB4IsRhvCwWbHFKqDk0LCg=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "get",
+   "path": "/trade-api/v2/historical/cutoff",
+   "reference": "HzWeRHNshjyNgywgxKosAMjW4Sd9PLn7QoYH2StKtIgOOi/DG1YzKNFLFrC6CiSNhkrsgA/pBTvNgJA6o/pyBw==",
+   "expect": "HzWeRHNshjyNgywgxKosAMjW4Sd9PLn7QoYH2StKtIgOOi/DG1YzKNFLFrC6CiSNhkrsgA/pBTvNgJA6o/pyBw=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "get",
+   "path": "/trade-api/v2/historical/cutoff",
+   "reference": "+i0vZnmYy36cV/kfrkCzFoX27/ViPXgtT2m51+OyNuxqKB+2/ZNc1mX4k7sl2h3oXnHpWWk6dl1y/RPfavwSAQ==",
+   "expect": "+i0vZnmYy36cV/kfrkCzFoX27/ViPXgtT2m51+OyNuxqKB+2/ZNc1mX4k7sl2h3oXnHpWWk6dl1y/RPfavwSAQ=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "get",
+   "path": "/trade-api/v2/historical/cutoff",
+   "reference": "3z/Z/BnQHz8GukBv2NvfWxy/+UnJAHMAqp+nEMgBveC7GLjiBePlilqjZkgLCvNmGHzHWjC8UVlzhj0ooWcwDA==",
+   "expect": "3z/Z/BnQHz8GukBv2NvfWxy/+UnJAHMAqp+nEMgBveC7GLjiBePlilqjZkgLCvNmGHzHWjC8UVlzhj0ooWcwDA=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "get",
+   "path": "/trade-api/v2/historical/cutoff",
+   "reference": "JXDz/KCYQ1Z7ldrnui3QfQLdUHFqC3IisNMhRl/o5zQbbEnInQg1JmMR07ob5ooWbYJdH4/LoDsY2JMLOZS0CA==",
+   "expect": "JXDz/KCYQ1Z7ldrnui3QfQLdUHFqC3IisNMhRl/o5zQbbEnInQg1JmMR07ob5ooWbYJdH4/LoDsY2JMLOZS0CA=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/historical/trades?limit=1000",
+   "reference": "8h8ocWN6RLPWypPrXqZVyjkQMnS8HbtmTW7kS1VKeI/ncgoBuVNGTdT3dEG35PM9I+x7RLn246sv2/2A3K1sCA==",
+   "expect": "8h8ocWN6RLPWypPrXqZVyjkQMnS8HbtmTW7kS1VKeI/ncgoBuVNGTdT3dEG35PM9I+x7RLn246sv2/2A3K1sCA=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/historical/trades?limit=1000",
+   "reference": "kWfS4OjcxCY5jrw+f5Dto7dz7CVSSQXDPEXD3CsYgMT0DmtUZhSCXeMdUCqXEosxwLNT2O6Hl/lyas/pGJg/CQ==",
+   "expect": "kWfS4OjcxCY5jrw+f5Dto7dz7CVSSQXDPEXD3CsYgMT0DmtUZhSCXeMdUCqXEosxwLNT2O6Hl/lyas/pGJg/CQ=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/historical/trades?limit=1000",
+   "reference": "z8Uw3710jDorAIVrC2EhlhIhZVovzRwv9Tp1+Kr2eVqj5dwGq3yyTidY1+jwe8GjdYZkqriMSVn8FdHu+vyzDg==",
+   "expect": "z8Uw3710jDorAIVrC2EhlhIhZVovzRwv9Tp1+Kr2eVqj5dwGq3yyTidY1+jwe8GjdYZkqriMSVn8FdHu+vyzDg=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/historical/trades?limit=1000",
+   "reference": "XlUa3d753jLTzQ1z7CJQ8tYn/6HZUbj796CF7eRpgX7i6JAUROWjjXuv3rQWnXuIt8J2/BcHWRjOBBQjHyuMAQ==",
+   "expect": "XlUa3d753jLTzQ1z7CJQ8tYn/6HZUbj796CF7eRpgX7i6JAUROWjjXuv3rQWnXuIt8J2/BcHWRjOBBQjHyuMAQ=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/historical/trades?limit=1000",
+   "reference": "/ojF740B9SRspHfp0nVM9H5q5p+kNBP3wphsPXC2B++alz/dbV3iXtgmxDpbmB0AWFWNBXT2f+VCVCirEbzbAA==",
+   "expect": "/ojF740B9SRspHfp0nVM9H5q5p+kNBP3wphsPXC2B++alz/dbV3iXtgmxDpbmB0AWFWNBXT2f+VCVCirEbzbAA=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "get",
+   "path": "/trade-api/v2/historical/trades?limit=1000",
+   "reference": "8h8ocWN6RLPWypPrXqZVyjkQMnS8HbtmTW7kS1VKeI/ncgoBuVNGTdT3dEG35PM9I+x7RLn246sv2/2A3K1sCA==",
+   "expect": "8h8ocWN6RLPWypPrXqZVyjkQMnS8HbtmTW7kS1VKeI/ncgoBuVNGTdT3dEG35PM9I+x7RLn246sv2/2A3K1sCA=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "get",
+   "path": "/trade-api/v2/historical/trades?limit=1000",
+   "reference": "kWfS4OjcxCY5jrw+f5Dto7dz7CVSSQXDPEXD3CsYgMT0DmtUZhSCXeMdUCqXEosxwLNT2O6Hl/lyas/pGJg/CQ==",
+   "expect": "kWfS4OjcxCY5jrw+f5Dto7dz7CVSSQXDPEXD3CsYgMT0DmtUZhSCXeMdUCqXEosxwLNT2O6Hl/lyas/pGJg/CQ=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "get",
+   "path": "/trade-api/v2/historical/trades?limit=1000",
+   "reference": "z8Uw3710jDorAIVrC2EhlhIhZVovzRwv9Tp1+Kr2eVqj5dwGq3yyTidY1+jwe8GjdYZkqriMSVn8FdHu+vyzDg==",
+   "expect": "z8Uw3710jDorAIVrC2EhlhIhZVovzRwv9Tp1+Kr2eVqj5dwGq3yyTidY1+jwe8GjdYZkqriMSVn8FdHu+vyzDg=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "get",
+   "path": "/trade-api/v2/historical/trades?limit=1000",
+   "reference": "XlUa3d753jLTzQ1z7CJQ8tYn/6HZUbj796CF7eRpgX7i6JAUROWjjXuv3rQWnXuIt8J2/BcHWRjOBBQjHyuMAQ==",
+   "expect": "XlUa3d753jLTzQ1z7CJQ8tYn/6HZUbj796CF7eRpgX7i6JAUROWjjXuv3rQWnXuIt8J2/BcHWRjOBBQjHyuMAQ=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "get",
+   "path": "/trade-api/v2/historical/trades?limit=1000",
+   "reference": "/ojF740B9SRspHfp0nVM9H5q5p+kNBP3wphsPXC2B++alz/dbV3iXtgmxDpbmB0AWFWNBXT2f+VCVCirEbzbAA==",
+   "expect": "/ojF740B9SRspHfp0nVM9H5q5p+kNBP3wphsPXC2B++alz/dbV3iXtgmxDpbmB0AWFWNBXT2f+VCVCirEbzbAA=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/account/limits",
+   "reference": "R81b+EdzsugQcpXSPX/BTjWri+0P6Txfdp0CbxQJrNjrjBiVOSprbVNLyN4LD4PW+lAPGXNcW5yQLj07AMt2BQ==",
+   "expect": "R81b+EdzsugQcpXSPX/BTjWri+0P6Txfdp0CbxQJrNjrjBiVOSprbVNLyN4LD4PW+lAPGXNcW5yQLj07AMt2BQ=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/account/limits",
+   "reference": "NGj8vDJZDpzMzNZxew3yOcBizLr+vTmLgV8J/+WIAjs6LzRCX9qjpIRBd5cWFJsEYWdLJxXrD4Zly32m73RcBg==",
+   "expect": "NGj8vDJZDpzMzNZxew3yOcBizLr+vTmLgV8J/+WIAjs6LzRCX9qjpIRBd5cWFJsEYWdLJxXrD4Zly32m73RcBg=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/account/limits",
+   "reference": "jXAPj01bgZESjSTfoodPCJORcdSsU5bmo3LD7mjc1qkPKKY4I2G8c5RDRZJXK5bRP3CxIt/HS+fVH9zo6w0MAQ==",
+   "expect": "jXAPj01bgZESjSTfoodPCJORcdSsU5bmo3LD7mjc1qkPKKY4I2G8c5RDRZJXK5bRP3CxIt/HS+fVH9zo6w0MAQ=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/account/limits",
+   "reference": "/8WgFr3NqkGRc7/ce71bVVBF1umvc5Ke05GCt5DK3oRF6wkRC9tDMVxa07n1xYSXFr0kDDL4NgVgpOp7/VXMBw==",
+   "expect": "/8WgFr3NqkGRc7/ce71bVVBF1umvc5Ke05GCt5DK3oRF6wkRC9tDMVxa07n1xYSXFr0kDDL4NgVgpOp7/VXMBw=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/account/limits",
+   "reference": "7a2J+GODwpdZdPzrB2TPzjDVmm5WnwztWC3+UyqrRW6GJcD7/78+IWm/tAZ4gpQeto6AtgPq/ZqSU+ty81mxBA==",
+   "expect": "7a2J+GODwpdZdPzrB2TPzjDVmm5WnwztWC3+UyqrRW6GJcD7/78+IWm/tAZ4gpQeto6AtgPq/ZqSU+ty81mxBA=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "get",
+   "path": "/trade-api/v2/account/limits",
+   "reference": "R81b+EdzsugQcpXSPX/BTjWri+0P6Txfdp0CbxQJrNjrjBiVOSprbVNLyN4LD4PW+lAPGXNcW5yQLj07AMt2BQ==",
+   "expect": "R81b+EdzsugQcpXSPX/BTjWri+0P6Txfdp0CbxQJrNjrjBiVOSprbVNLyN4LD4PW+lAPGXNcW5yQLj07AMt2BQ=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "get",
+   "path": "/trade-api/v2/account/limits",
+   "reference": "NGj8vDJZDpzMzNZxew3yOcBizLr+vTmLgV8J/+WIAjs6LzRCX9qjpIRBd5cWFJsEYWdLJxXrD4Zly32m73RcBg==",
+   "expect": "NGj8vDJZDpzMzNZxew3yOcBizLr+vTmLgV8J/+WIAjs6LzRCX9qjpIRBd5cWFJsEYWdLJxXrD4Zly32m73RcBg=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "get",
+   "path": "/trade-api/v2/account/limits",
+   "reference": "jXAPj01bgZESjSTfoodPCJORcdSsU5bmo3LD7mjc1qkPKKY4I2G8c5RDRZJXK5bRP3CxIt/HS+fVH9zo6w0MAQ==",
+   "expect": "jXAPj01bgZESjSTfoodPCJORcdSsU5bmo3LD7mjc1qkPKKY4I2G8c5RDRZJXK5bRP3CxIt/HS+fVH9zo6w0MAQ=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "get",
+   "path": "/trade-api/v2/account/limits",
+   "reference": "/8WgFr3NqkGRc7/ce71bVVBF1umvc5Ke05GCt5DK3oRF6wkRC9tDMVxa07n1xYSXFr0kDDL4NgVgpOp7/VXMBw==",
+   "expect": "/8WgFr3NqkGRc7/ce71bVVBF1umvc5Ke05GCt5DK3oRF6wkRC9tDMVxa07n1xYSXFr0kDDL4NgVgpOp7/VXMBw=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "get",
+   "path": "/trade-api/v2/account/limits",
+   "reference": "7a2J+GODwpdZdPzrB2TPzjDVmm5WnwztWC3+UyqrRW6GJcD7/78+IWm/tAZ4gpQeto6AtgPq/ZqSU+ty81mxBA==",
+   "expect": "7a2J+GODwpdZdPzrB2TPzjDVmm5WnwztWC3+UyqrRW6GJcD7/78+IWm/tAZ4gpQeto6AtgPq/ZqSU+ty81mxBA=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/ws/v2",
+   "reference": "vGn9trUrrgiNIKuwbk36u2eWvSPcZScVBihdcYbO3SWAwEvucf3il/jUe6d494eluESVGW3VCju4mQkz8QDMBQ==",
+   "expect": "vGn9trUrrgiNIKuwbk36u2eWvSPcZScVBihdcYbO3SWAwEvucf3il/jUe6d494eluESVGW3VCju4mQkz8QDMBQ=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/ws/v2",
+   "reference": "FeLOqe0O8tjKUZBLsd6fdZPWxNzdG5L/s7/Nx0vVWtWOAgnMP62ZdM+2J0k/BZJiWlYCg47dhurzL543IaVNAQ==",
+   "expect": "FeLOqe0O8tjKUZBLsd6fdZPWxNzdG5L/s7/Nx0vVWtWOAgnMP62ZdM+2J0k/BZJiWlYCg47dhurzL543IaVNAQ=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/ws/v2",
+   "reference": "mEX39ZDAG0lHqY8vwK41t5ovOboMchtv9qt0ITZE2H5IZSqyTRDpfHYrXKe3jpPQWQUrkwT/pgAmmR8ghTUGBQ==",
+   "expect": "mEX39ZDAG0lHqY8vwK41t5ovOboMchtv9qt0ITZE2H5IZSqyTRDpfHYrXKe3jpPQWQUrkwT/pgAmmR8ghTUGBQ=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/ws/v2",
+   "reference": "f0Pi1rVm7gtdhDyM+nXua4ZyMEJ2fD7yNyWCGs26muGo9uv5sLL3HTcXwy/v+d8YvZ4lnishCC1KDg/Y5l0VBw==",
+   "expect": "f0Pi1rVm7gtdhDyM+nXua4ZyMEJ2fD7yNyWCGs26muGo9uv5sLL3HTcXwy/v+d8YvZ4lnishCC1KDg/Y5l0VBw=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/ws/v2",
+   "reference": "KnbEyQhrPGi9gyCMWXPUQyu9f82AaR0yX8ZX25iiBSiEI0CuFHMGrCHYqciBIgHcmrZbpT285qFhCSvdo/kZAQ==",
+   "expect": "KnbEyQhrPGi9gyCMWXPUQyu9f82AaR0yX8ZX25iiBSiEI0CuFHMGrCHYqciBIgHcmrZbpT285qFhCSvdo/kZAQ=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "get",
+   "path": "/trade-api/ws/v2",
+   "reference": "vGn9trUrrgiNIKuwbk36u2eWvSPcZScVBihdcYbO3SWAwEvucf3il/jUe6d494eluESVGW3VCju4mQkz8QDMBQ==",
+   "expect": "vGn9trUrrgiNIKuwbk36u2eWvSPcZScVBihdcYbO3SWAwEvucf3il/jUe6d494eluESVGW3VCju4mQkz8QDMBQ=="
+  },
+  {
+   "timestampMs": 1,
+   "method": "get",
+   "path": "/trade-api/ws/v2",
+   "reference": "FeLOqe0O8tjKUZBLsd6fdZPWxNzdG5L/s7/Nx0vVWtWOAgnMP62ZdM+2J0k/BZJiWlYCg47dhurzL543IaVNAQ==",
+   "expect": "FeLOqe0O8tjKUZBLsd6fdZPWxNzdG5L/s7/Nx0vVWtWOAgnMP62ZdM+2J0k/BZJiWlYCg47dhurzL543IaVNAQ=="
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "get",
+   "path": "/trade-api/ws/v2",
+   "reference": "mEX39ZDAG0lHqY8vwK41t5ovOboMchtv9qt0ITZE2H5IZSqyTRDpfHYrXKe3jpPQWQUrkwT/pgAmmR8ghTUGBQ==",
+   "expect": "mEX39ZDAG0lHqY8vwK41t5ovOboMchtv9qt0ITZE2H5IZSqyTRDpfHYrXKe3jpPQWQUrkwT/pgAmmR8ghTUGBQ=="
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "get",
+   "path": "/trade-api/ws/v2",
+   "reference": "f0Pi1rVm7gtdhDyM+nXua4ZyMEJ2fD7yNyWCGs26muGo9uv5sLL3HTcXwy/v+d8YvZ4lnishCC1KDg/Y5l0VBw==",
+   "expect": "f0Pi1rVm7gtdhDyM+nXua4ZyMEJ2fD7yNyWCGs26muGo9uv5sLL3HTcXwy/v+d8YvZ4lnishCC1KDg/Y5l0VBw=="
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "get",
+   "path": "/trade-api/ws/v2",
+   "reference": "KnbEyQhrPGi9gyCMWXPUQyu9f82AaR0yX8ZX25iiBSiEI0CuFHMGrCHYqciBIgHcmrZbpT285qFhCSvdo/kZAQ==",
+   "expect": "KnbEyQhrPGi9gyCMWXPUQyu9f82AaR0yX8ZX25iiBSiEI0CuFHMGrCHYqciBIgHcmrZbpT285qFhCSvdo/kZAQ=="
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/balance",
+   "reference": "b+iB5URZKFr4w1H4djNSUSRmDFrpQjUQGwJvGWg1KhLSJ6mageqHPb/Dwc3i9XnKlfcRWsg7qggaYbjObo6yDA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/balance",
+   "reference": "f+fTMKCg3Ht7FoZFV0/LYoK6UxCiWPpcfKZKHQF8Ukvt6PG9NxbixXtThGQYPejrcBC6EK1SovhqoH2wwGSjDQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/balance",
+   "reference": "SgsupgnHWiFyyF54OWuAPWQMJ1dZi4VXB3zW9JRFpE3oDzi4u+S59snvmWUvo/p+uGhS2gRNsbIzetJZZLfxCQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/balance",
+   "reference": "kfA9D8uTIl151slrmcuHfaBxs+Xd5T/SYdtXSij0k9wms/xBbrYGMWhCEWDWpUWMR/L8w7EVVG+Tsqgx5ufTCw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/balance",
+   "reference": "4mEk+Wf2nU6UzZRN3HmLaxiCdIac15x56qoq9Bc2fC6cb//jPpmoX9R5V8K9k0NzW8xo+aYMOvHZRKZn1uaDDQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "9iMwecz9VF5TcBIcf3ZfuVlTcd2eZr4S63lNwCkHtcOoH7xALK+PxCa+lYrul0gyjVUIPh0fWGSFlet8klqxBQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "On93p7kQ+NCTSOz2oOQ8SaduvYLF+R9AGQfb8vr7vpBuKaP/hABWhdiK50fqHKObymPWWm9W5EWfiman+rPNAw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "PtgBfwPeG2hhtTNWPQVLHqVszv/xRk7zv0kQM/j3O0jnapJnFxrRVCZWuaNz5PMCpsB4xtsZUpBeVZFepH5rBg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "M1/El7nJXH5/d3syMLGyi0T1/em+FoVGtGrDsuDLTMY5O5tSUAGzRwGpokFkZ/tyvIbb08CXNvbRSZF/X7mEAg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "uJg3C+mp3VWx/UI3ixqySLsinYvZmPR5rLe60RXqTwMFwcfjzS5TT9ZsRmZFS4W81fZ3KzoAp/4dyvZKqG5oBA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/positions",
+   "reference": "oUY8tnXgSkEAcoGt8NWFAr8MGmNw5io1mG0t5m8rC3gsHKhw63q6IF2KIWjp0xgL/zLqlZbWjgl0HaIDs+HaBA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/positions",
+   "reference": "ZTfN4Cl7lYjWgqvIMqzZBoggt86S7y2tph6YlZrlQC4kqcHHjEqwO/Ut/iDRLel459+uWD2CsidZT8SE+QkaBg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/positions",
+   "reference": "VESlKGkjpYpI2CqPF/0m3IUyxS9H0bW9MrhyTg4HcD7+51ZMvqLpciW3x45FvFFlabwCBOD3b1hiwBwaK0x7Dg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/positions",
+   "reference": "wRR3LOZvLTaiF+16svFaRHglDOMsXqP+prsg3wGvQKRtuFwxwdxPy7xn45PDu5fCrMwsNvZSTY2itSsg5cLDBQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/positions",
+   "reference": "Gl1lKbFq+QZbxDqNxMsTn1ORRj/XO7W9ykTd5P9YgSDdwouVliFcesDsW/3vet5iKf/zUEt4ZEjB+dEthL1zDg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/fills",
+   "reference": "GLrRTjN6G1tGvVUFPN5jT+t9FtGpvt8DXQRy3DY8Ykh5UUtd1Cw1fEmQbTqgeJCsmzVI2ealqlZBTOo0UNHuBg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/fills",
+   "reference": "2ITr6DRb3fycredIQY8+EROK+ImIprO6hWA2hhj4liZrOptwyc+VGvGKwhIRU87XpI5HKq99i6pO4bLwwfMuCw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/fills",
+   "reference": "ny3Fk8xFiQLvQMVIGe0qdcpHObx0ytHtgoZvQy0sw4KOjbizw+J6twNXNvd7bkgtaH+v2FR+44F7Vzphr2oUAg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/fills",
+   "reference": "DN3Afv0Jhh7O05h3YPzM7iCG2KU8vb6DULlDJ7TkZD0Qc1AZOfGqGNdxz2dOiY+Om3jBBCkO11YwWoUOdsDFAw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/portfolio/fills",
+   "reference": "4hyA/lO+C/vVvuq//m+/zKgK3NUmbbD0zt0dsTEP++iLjKE6bcxkP4cK0MVN71MO7K5n2XzW6HKcduPhtM45Aw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/account",
+   "reference": "1TiPPdXC/v9O3vhNhhSGfKN8dSL+OyKCbwODCwoD8EpZVbuhDz30ROxvqvCzlpp6nvSdgWoSelXdImphvbULBw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/account",
+   "reference": "iFlUFcjhseDRxvjO69CB9gT01S509JyrEDRcB1b1In3IqiE2ln2V4OuwVu2icjbKsqeUTfQWBRu9ojMHEoclDQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/account",
+   "reference": "XAB1vMG5uaApJRvP5r4Def83e/mqhGxTXat6cv39UmDRTD2L5n6E3kXBpJ1Lx61mhZwuQdTNIMJX70O7znMkCg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/account",
+   "reference": "zt0wXeluBVQ/UGMOdtPbiPS3cCfVS2dcOfX37lyOltMcbm9xL2KV65fbtkBMOPquY8ANTf2uUwHhzun6PSgUCw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/account",
+   "reference": "LxdWtzeqtPpMrQa7QvnEkIx7Dv0lddJzHt0hQgmI90r6T/3uPQeMoN+GK0fKVQNv74pa4oTjU3o1XJYaZmzTDA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/../portfolio/orders",
+   "reference": "mtsLwwbG3adLl7vvD0V6E3nO7gSaFuX1Wy+VhV0VpMyWMJjSd9L0Ic0fA394/djQBz2DwarDr8rzh3rWv7G9Ag==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/../portfolio/orders",
+   "reference": "b7gGStovnolyID1aPRnwDN/FtnD0ASxaiqTye+MLartDhKaCf56ZLUvtbcjYZV925qHN5+ob0QewQGJaC8QBCg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/../portfolio/orders",
+   "reference": "f2R5JBUVtcprgKnSMZMTekGSV95A+dIG1nTuxE36hRdMPiKL+GOByzA4ZNbwrrWJvp5Pejf7QxDMXzWM/JYKBA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/../portfolio/orders",
+   "reference": "p+4fN8t8c4vcVtaw+XfsK/UKW7Yh0/EsVsDc8MJIKGwdth1EESn7X14B1fqsD9b0RSgNeiWzPHhCZgTxPVtTAw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/../portfolio/orders",
+   "reference": "qHhkj2TowGsvYpckBrbCtFkCtUMWjqOI1WWNqor3/07/zVW6VrT4+rPF2ZItF3dmS6EkQoICSf8A9/OR8Tc/CQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/./x",
+   "reference": "ytcVu+myy2iRSgG+BQmzcJXYs2ZUCNspk+WvCun5Dz/DALSlr1k+/29Id7Eii4D2MyNHqyeb4rIvGrtwqvd/Bw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/./x",
+   "reference": "7IwZY+ZPMdm7SXoHWhE5ZiAgJngMSdgfgYKfrDljWZTrgltd6RedAHK82qRRExrClheBqN4H+nE8vbxhtNd4Cw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/./x",
+   "reference": "lswg3xsvSNvac4PP56Ay/DIm1esNVWu1px8dO9WJWYoDW9+WQyR7YqgCNIYXZdyZBxJOkoaue2L5ftu0TMVMBg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/./x",
+   "reference": "hN/h9vvG4OnrrBaa6dBJiiE0oviLT81JvGFNya5pdYtBy4IJcefrH3MKtulskltWIr75CmWIJOygvnVf8pM5BQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/markets/./x",
+   "reference": "NrwrrHxcxTa0V2/qn1ofF2fVyC2OpFyEh4XaUiFDwc5cF7xHDY9hWh90p+kYCL1FTvCpum0cOe2H763pPCpkDg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/marketsX",
+   "reference": "VquB60cEGsb+tfzD21W37SpjV+LtVNqAVelNqtda2JYVEVXV9h0hAhOctMCyUF0FhBva20DfVDfc27+PUbV3AA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/marketsX",
+   "reference": "+zrVm50/vE2/69R+H0np9MtStyDvLQRBks44XoVcK/iboFUkB7WdYs+Bb3pFFtWP1FmF9ou67UDN/GlMOKRZCA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/marketsX",
+   "reference": "xd8GBx0iWoaAaZBw+umRYHYFMUTleNdo6J6brPg+HBqfeT+T+EjTgaicfCgbNp41PrupBpU/yLaTQnzNGWgmBA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/marketsX",
+   "reference": "Rb0kKGWBYoBqPL7Hdm62weOAYTpgnhnzMooYl0As/sgQRWudICn7F3BkF1t4marpu76kU8XhPExI8r+PFJNQAQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/marketsX",
+   "reference": "cEY3dzsqQzR2yek1gYfTPZJ3fqIB/9ZbluTLpQhxTsDKeQDko0yp4IiEzsrGuRN6O6IBtYpOmz1Lzaa1BfBBAQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/status/",
+   "reference": "yEbcLIdNoof6ktFQMlOzgRyCmNwPz3mLHZseDNwJVsn9w/zWtOtp+0r8n1hOVdIiMvacyuqVSoib2CZgppg+AA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/status/",
+   "reference": "vhm9k2cuWMmyxTZl1FRL7z7PMNe7XkKobOGr9hkMOuDUUYyHgAgPi8B7y9mHc/b0cy/Iqy2MQ8rN4VtzrMUTBA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/status/",
+   "reference": "NqwNvhxVbRBFUq5HLUku655bYTA3y5RhTm4EMwoBgQkAFJDy1f3GXVmEhGFnCQGlIeD620cQJ5d/WRFH42FkBg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/status/",
+   "reference": "JZtx52KNo/CuqNxDLAULkzggxcf2l/lhvK6n9g9lIUJlxLSDgegVFwWvZYKch2V2t83256OoUXRDWhkjDCaCDQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v2/exchange/status/",
+   "reference": "rmxWObg3+l1VWeJRVlZmkaJWbBrwiDRvLfRALEAPkhTW1BqUQt0uCLELc9VoI+00bhvcq5vnrg+et9Akxgf0Ag==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/markets",
+   "reference": "z9XV1Xs2nhhgi6KhSXV5biwEn2JlmS5NlCrCIVfvjw6XR4qmRVUR8MBO///N2lQqHC9zw9VoQPkUzsTZqhw0AQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/markets",
+   "reference": "VEBMjN6fM4DlppUzeY+hECPgdYKL9ITQjVhg5mmwlU4688mXdU0MxIqKK35tk2sOu5PrZBfF5Hf7p8oRXegDDA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/markets",
+   "reference": "lO3/uwQT+BO95ZCfsa/HSNZfSCwe9kSAsEIq8apSIDXpQQoIVttLuFYvdaBNmehjwjhFjreIDlFr8z74ijYZDg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/markets",
+   "reference": "p8v2NyGHRZwLJYh+FzPcOEnRFsB5A5V5+6qtRywS2psEBpUClNYmkoMr7YortvoqvEdoOIKdEq9Xp1SXIX9cDg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/markets",
+   "reference": "MZT2TEkQZkVIIZOPLaJhCxXl6ZvsfqZw07T/4E79SpRLJWyu8D+iqTfYNYbdS3TD4pDqQqW32fgr/kET5d2tCQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/v1/markets",
+   "reference": "/X5SluVxvRGumlhtyUSRo5JQl1G/naaPP2vfCl+zc23uefDR6PgqghmzapvrKErsFGE+9qPlEY1y3S8aHdZQBQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/v1/markets",
+   "reference": "JsH3eEAcOAyAKso0ZQIaOdEF9ISx6DC/4tuDxyQuXDdluF8uco4+f6j/DKfl8l97YDFiF+Wr8bPE4PzNWLbjAQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/v1/markets",
+   "reference": "ATSwZnQLglXcUnN6J9ADqxSc3XuucQKH/nGGv7tZjbiJl0GIkFIDw/JWV5Q1dyC6xpO2w6Q5JjcYWMOy9yicDg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/v1/markets",
+   "reference": "TLmcHaxAUXOr+5DF/h0Lgw7T57lTEQMT+Ase5i+N2e8Rnyew8xWU64TegSXZlS5PlfLUaCYFxoWKYMDt9G5vCQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/v1/markets",
+   "reference": "93YyGzFf5GeAaFU/7Zu2Y20T/X4G3OM78VVIES2FeK7drTPfKKecMNA4TSzgtg1SLCNhwhl+gKsijHZFwlIKDA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "/trade-api/ws/v2/extra",
+   "reference": "v6+IyOeZAZ30TDcjnK1Uopc7+mKLyuGOMZriEyjtPajUXfdfeAo5Wov6ynYYgi3glcQZGF2JNRJDoSZNKX/VCw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "/trade-api/ws/v2/extra",
+   "reference": "95LMC93uyaTNGETnCnudvOJPP7jNtvS2B5l5qhg/yL9/in3ph8zWMLuAh/AHOiw/Eqt5UnTv86QPnPIO1Ty6CQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "/trade-api/ws/v2/extra",
+   "reference": "qOk64P8euajfzyr7W1F8+cxRiCP0UL+8LYcwWpZgZ44PvN1Fe6ah9D6/UXMa3miNehKN+MYPfqAj9vfY6MLUDg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "/trade-api/ws/v2/extra",
+   "reference": "Wyxck3fbkpfj/TYlPD7xIUoffjhCJELXX+C3NlANts7lds/Qob7YGwAjNjG4xwG7FtwxOFJN0pa5amHeDtyoAg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "/trade-api/ws/v2/extra",
+   "reference": "2413oiuVr/EvyEl9OT8WVBBv2RiWV88U9vPyYYaRpKdpXW7Sz0g9smMj0tjH6axWeKCHq3Pz3EFK5AdGcqWSAg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "",
+   "reference": "HAIRZHacz6wXtGrfNnGD0XQp9BDvXlvSMPpiPTFfsgNm2Vpt25caihmMJbwC6fXqU3iTfLCLZTDpM3ONFeIaDw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "",
+   "reference": "wmK9tCEo8VLYFzVp/yleJgzcezn+hAySYILnKpkD8FfbovE/mG955OeaScP7P0soxHrdqcWwTMjXwQPI/aEGBQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "",
+   "reference": "2Cm4S1SwrCOR5ojgxP0hOzVqjj7INZ6YXdOgzkYcW66MpFp2+LxCTE4TDkApAy6GUxAUC27Uh4eEgmLa1yprDg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "",
+   "reference": "q2EpWsi3kLjUbwrDWFP6Yr+DbWpUFgXFRX5UcuyzHW00W2BCFZRZfPI7dOYkNCU2MqTL17KycgtxgNNb85TVCg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "",
+   "reference": "JtzCvzEDt1X/ah809MecyT69f60me+ebXFZI+bP1nj1XZW/VYVtT8RceTLxoS6/mh44C2IXkWWXKnOoMclDJDw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "GET",
+   "path": "markets",
+   "reference": "W7sTuGBRs+WxkD6qtYTFH16LF2siwkjas+9YuHcRShsXO8lrBeugxz9m3dUJ9+UQ9wV6n5OROjGoCUZZA2UOBw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "GET",
+   "path": "markets",
+   "reference": "h2A3tCP8C70iX/DEAUwrUoKd+BIMZb48sbnnMxMsQ4h2p9af1z7O6xODNYLxkkTq/V5+LmDv8jtu0Masf3FdCg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "GET",
+   "path": "markets",
+   "reference": "Tv0RRTnzpvVcwIRtGzIleGlu5dbqtRNO4GL3jpNGxxe9mp2QOPL3FXYj9nvp1Xs8gulQXp+u/V1wvkAAoQHXAQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "GET",
+   "path": "markets",
+   "reference": "i06UBtKAMkx2OWR4SG8qgkrhQmY1wAIxkMPM/QiGSf18kKjXlLfyryklG++CyKmDkvMSep4mYIzEsmukcJRPBg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "GET",
+   "path": "markets",
+   "reference": "ODQRpWfr15odI2dEiXHbPnaJqKgufBdOarZKMsbN45K/i7OnodepEQA7TZDcD6PAJmoqbss5tcGerqBfQl97Bg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "POST",
+   "path": "/trade-api/v2/markets",
+   "reference": "4gCvt8TL6FarYUGh774w0PDIs4ckgvUwTcyIFoa8NDde4qhVPoEKGCrRBGXgO3nYzTgxcvXov8UoiIAjUilwAQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "POST",
+   "path": "/trade-api/v2/markets",
+   "reference": "PcsMnWqznqM/zMP16dgbJzUawDFwUSR6RgupKIfnyuLGSVxFrisT7C45pGxhkkp/GyShTx1Vimrh8GZJrU0rCw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "POST",
+   "path": "/trade-api/v2/markets",
+   "reference": "KbQhs8d1SxDPi5Lwj+KJX8tWcD4vuY8Y7xU7997ZKXyzlC4/dgeCelyEQSO/JCpFg0CF5Bk81BDwEmrTv+sYDA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "POST",
+   "path": "/trade-api/v2/markets",
+   "reference": "6Pv0kSLjoB5pcVY8AurME5EfxtB2bSfo+I6rsa0z4ulHfCDOovgF1Q6sXQFaQCCT0bXeI/eluCOYXz/IvwKZCQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "POST",
+   "path": "/trade-api/v2/markets",
+   "reference": "ZO+hw6LJvgWSXKCMXKam44pT73ws91Vg//Wu1cgU2DtoPfzi0TqOfWzfLlcwp3Ey2qNXrh9mVoSCwdupPeaDBg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "POST",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "FTL7U2Wogti1DrpujjusRq0SK1TPzTAdCJO9bmNVI8NANqi4czmykBFXooHaruiYaXZg6ricSZ4wxwEU3w1RCQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "POST",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "7zyLBwC4jA+3JUdSnNFkXTrTamHYzIdiQdQDFE9Rg0bP89SVh3OYp8YuQe6TSsz640zXUXYZAH7UiiVCEor7BA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "POST",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "RBjgO094O5EPKuXH0seyxzuDyZu4NI1F/3/5Y/sag87WBa7uSYa+z0Rwrc4nR7sNbUSMnQbg8BplPWT2YtAQBA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "POST",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "ClxbhUouRWhkNej/9BFqaQh8XAol7FF87iUk7M1fnH9I5Eb9HAivxS9NzTEKXa1eYn2UzuJxVc3C6449664gDA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "POST",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "jKCMQC/Rgqbqn/2uJViJfVn9C1C+Tv0ZBMOIeGR9BP1hKFZMgQu4fCHpxKW2Ew3ZT89UfhX3pFM6L/eKLJ1QAA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "PUT",
+   "path": "/trade-api/v2/markets",
+   "reference": "iesjnOcxMl5mUfqPqkfpa4pxTWYn68MZOi1thGqf4GAv8RqL8E3DMF4ethqRetjKCE9rwpPJxmaE64Br503ABA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "PUT",
+   "path": "/trade-api/v2/markets",
+   "reference": "PRTlb4s9DXcGrkQJGJ/WMV+a9ggZr5+DFIR/hnGRYDxTopjsBycWeNtWnbIdhrTeXLZVBztSwZrwIsG99FRsBg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "PUT",
+   "path": "/trade-api/v2/markets",
+   "reference": "x0Xks4tiTe5Hjq7ylq/etPWUstStJ8WJWgI0MuF/w9hpMWqYYMqF9Sn+v7kohxh7cLmSrJjG72ASbUhYXQZHAA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "PUT",
+   "path": "/trade-api/v2/markets",
+   "reference": "MELVniFhL3N+dFVHYYMuAdHrqw67Ux9iD/W7T5YWceIecRf1TzBwphNltNLNtZqOulk5Ycrtp1kay2YtNiKtCw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "PUT",
+   "path": "/trade-api/v2/markets",
+   "reference": "728SvSqYnOWzqyJvqjQsYyngNXPAA5GIlA7IVCcc+fBYXzymru3CBrvX5afsQdkRNsJP42/KDhaEcKhvM24jBQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "PUT",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "PPqizVoPZEgHVQr/jjMi3pmgDqBvj8FZoy8++dyT9c+ZXTdYJkskPvOI1YqS+dENH5cqaT8TdmPHhGORrEiqBA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "PUT",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "smlsTfvjvua7CgvzWR4T1pT3+r//gA1zQ0eMsu3MPjcs1foelJnAO4ixwaUqj56mDS/QneHUH0+WHICHwxvUDA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "PUT",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "zUDARvtQ4e6c4NGxdFT9+S/DdpYID9uUGK6crp5TT9w4dDMZc6b2ykZZWsZbQHdJcLrIujG74+fjvU3BTZWYDg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "PUT",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "1omvjGuY00WmoMAkdHeiYgoSvNgjy1AHBFHZIw+Nr2W8GPcPwJNxJD/QXzsSyMAffyXTkqxcxRB1LOtm1MXrDA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "PUT",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "nKPurINwdIoIdt4w4Bjy0OSREcFTj0LFKezlfWQuJSx9MW8YcnFBDYSf+goh9YyOsuKFEEoLz3kz7RGyvbgoDA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "DELETE",
+   "path": "/trade-api/v2/markets",
+   "reference": "By4ApnNvbrLQQNfZcOdUtISPDCt0+7gezdrQMusqgTU5rN0QtlRYi6rrEWNuelcA3upVWz7Y5Ue3Bqct+JyKCw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "DELETE",
+   "path": "/trade-api/v2/markets",
+   "reference": "u8QGTJjmUK8MyioviIcRNMotDM4yawHbZHWln+TLpT/hNE0sdDfNNdOQYDSb/RGjINuk4zEifdN3FDJJXKvMCg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "DELETE",
+   "path": "/trade-api/v2/markets",
+   "reference": "4TB/XZneJdGqCh1Izuje9i3/7xevTAasZRSRCTW3iEfkFEKrF9G8Xdlblgr/Of4o+7BSP50CD355+9To/l3EAg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "DELETE",
+   "path": "/trade-api/v2/markets",
+   "reference": "UG1aBdfRP4/Kvik5hEFx/Xjb0p2bf2hC7uhPe5I5eGqmi6N3+WkBonztAHDydd63mXri4b+sK50kyYEMnq1+CA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "DELETE",
+   "path": "/trade-api/v2/markets",
+   "reference": "Yh70e/5FMvqA1bw7S6RcqbEhU8H1Yo+gH3aAqWU3YBf/OVSr3LVKPC8f7FjBjOh6DRf4VipF7KunwGijafrxDw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "DELETE",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "BouTiUhNKvE/wvDXP1eLGx/UKj9tXWwlI+rKlCYV50dNb3GFntuE1HbQBuNUtKz4oxCsxuApKvXr+QvGksaEAA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "DELETE",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "/83uuq7R100Vfr1SE1bzLgmJ1J6cHqkw6jex11JhjE+rvw9xDjW57Fpy8RyDdFyZ+wNtUEOxrOKcNgJ9rnugCQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "DELETE",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "RCr7WXf+uLBclBnnHCzvhnIfnDXdTveeRzTbyj8H5CAGh4VFJ5s5DxsPnr+c+VAECSbG2HzT7ztbvJETmiHICg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "DELETE",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "Sl79IlqLNjFXKcfaNVTuDlm0HYUTpzzWvpp6NoSAfXOxQIvKCvtV+NRvAvSh939X32TDjzZyYYvs/3G6a6uABA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "DELETE",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "DLFf793om4ZoUz4zWMibu5r7yXI0aVB8zipJMLmCBsbTVvgttKPQcemRoYtvg32lXJCo/YUAW9gB6nB0s6ErBw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "PATCH",
+   "path": "/trade-api/v2/markets",
+   "reference": "68ol0/y/sCGYgyJnr/gzBMFLmOVPyxR7mBDLbkPIJdMPTvg5Bfq8wPmmFJlTDtA4Mj0S5yWN4as+wX4Fhv2rDw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "PATCH",
+   "path": "/trade-api/v2/markets",
+   "reference": "vlIHIEztz7QetZFy1RMlOwi9GNMTNWpu400oK7yL3WuMogOUQBN1TqSHeXWqEcilwyOq8bBasAnx7UebujbEBg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "PATCH",
+   "path": "/trade-api/v2/markets",
+   "reference": "Dz0YetVddC3+Qecy876jv8GcKxz4SZgErfqliVP+KcA547tQb59IrRvoBVxH1zZS9khnkP0q19OhtKyF74kqDA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "PATCH",
+   "path": "/trade-api/v2/markets",
+   "reference": "AcRyHWN0x/a6Yhwux+rwopEclsP67YnNLlsFHebwqTcmxDAhKkj+JZXMKc69nWM5IuMkQ7f29c64dH/ugpR4Ag==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "PATCH",
+   "path": "/trade-api/v2/markets",
+   "reference": "pv+7TQTerUAynn4X1Cl27y9kVh4wu3rZoeRLHa9vtdTSNgeRvAlrz7peU6QyqbQdMridOr5DyxUrziJ+Izw2Dw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "PATCH",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "sU6zJM+C1iXrwraNDuOGu4ajjau57lUMzWTS59VumOrjx/yC3FOt5ai2JgdOf3TdvTBT6/M0Ey1jL1aZLraQDQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "PATCH",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "/+dlCT0reqdG3pFmj97lQ97Pxqt8WWeUeZxF+E8fhQ0O8O+UbffjAznsQ9ZN/tQBVP53ihjp4wI/Fp/Ym28wBA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "PATCH",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "VMStjb/MhQutJkFw9+FCr8Nh3ety6QO0Se86J3e5kjII9kDeJqkMbdpfNXWoQeKC1X7EnGwJenBuWZPvMzMgAA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "PATCH",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "Gr5/AKTf3s6U6cIEQ/3O6DQazEk/TcgjlJgwZ3GoEmzixvZlpgGHLTCMWKcpsgQPvD8OO18TXRbPbj+zsgx4DQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "PATCH",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "zBsB6UTV/ZkOAilocZ/At8uKI/pFLgU+aElVevCqL0XO7BV8eHUaehCaKXV3rr+/kBqpMhQpl1CpMM8KTwjeDg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "HEAD",
+   "path": "/trade-api/v2/markets",
+   "reference": "dE/wR9mVGPfCwufEcvJagw7KIMD6ohDonSHY+7J7PRmrQcRUYsehLpoaX8DP7wdPFo472uMWcL7iTK1n8FwYCw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "HEAD",
+   "path": "/trade-api/v2/markets",
+   "reference": "/ELoHE4SKij0Cd3C8MUMJCv0j+sIForZ+Xq7w+sADPfE/MJ9ypy8MnNWwDUhQMbUdDNojJvRP1AQT1A6pvWlAg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "HEAD",
+   "path": "/trade-api/v2/markets",
+   "reference": "1j4/9elFdyvaoDwlDUIvRpobEowQRtfxBK3gwn4lCs1sOeui0CskTArp5QO3xkDyspN2Bs2P+PLKaDRiWeOpAQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "HEAD",
+   "path": "/trade-api/v2/markets",
+   "reference": "p5l9G+bdyg2/+FEyxCSDl1qvsIM9lRERfanXn8DKPSC2VJh8xF5DCvO2sa94f2v0gGIfbVoiGx9E4xHRM/DADw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "HEAD",
+   "path": "/trade-api/v2/markets",
+   "reference": "dTATf2kYIS0IfWX3HoosrLDZVOI0jd4PLUcf0/wtFqQX9jHwv+n0yv0hdEQQrBIq7fbFdJw+TeDr8uNxP0taBg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "HEAD",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "ynX9Sg3ftn8+ErkD/PxEKQdmbKCgYuomRkJHzxfKcW5dvRq3rtkW6PQFQivOLzhc3XyTvpJgH04vRbArCgV/AA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "HEAD",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "DlvoaGHse27AkI3Zqkt57GhRhfFim21j2QUjk0b6XHp6SKwpswi8/PSJeGX7l8AWR4pOXU0zc1C3NonEP9xSAQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "HEAD",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "TeLMtcA13stPN7pOAsZowQk6G2CVDiTLvfubNGBp7qvtsk90PorVY23itEl06aVIAinZO2Hez5eO3cTSRisDBA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "HEAD",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "FQQUJ4d8ASC6XlwsrC3edfteBPt6GdKreRycYcSpWhzaI00+XjGKXGeHF4LWTsPPwagj7GPMcSElCfbpGTe4AQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "HEAD",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "C7GXQgWto1s9e39f4alT821jo6nBJjEyUloeLwHPwAAJM/Zdt9UokZle59Qi3hm7See9At7Ido0DqmGFA1UZCQ==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "OPTIONS",
+   "path": "/trade-api/v2/markets",
+   "reference": "NRp4YHzWzl51kMVB4Csp5lpWzyFLTysaAwMaMC30mndEydRU9HJDblv5ySfZsCBRgResUZddwb//NYbIRhqCCA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "OPTIONS",
+   "path": "/trade-api/v2/markets",
+   "reference": "rCZv7/GZZnMtay3flW9BBQ4fkr/9g3GCNouBjLVyHbCJEdaEvs2oYAy9v6ZHKDByG7eHylzJbB2Xl3Q+uv+tAA==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "OPTIONS",
+   "path": "/trade-api/v2/markets",
+   "reference": "+Ni8+S8h2e5KBE6fUK6o0wUEGY16vZQGd0N3XcrSt9C37ZPWcCqWXZNf2PbapqywCKS3wJtdXxVpRjRS+3wtDg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "OPTIONS",
+   "path": "/trade-api/v2/markets",
+   "reference": "E7K6cpWx+dryrDPtQWtCHSuYQyif8n4Bbib3Zfm3IgQBt/7M45tvYAw5QBDg0nXOfv5HU5IcfEh4BkMHOBnDBw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "OPTIONS",
+   "path": "/trade-api/v2/markets",
+   "reference": "BJj/lKAD4x+czICaJgEochE8F/BiVVaWAUCF7BuInh/FChypnPb8E5GehITblkzTLvivIhxF+kr3Wwab4AyBDw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 0,
+   "method": "OPTIONS",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "9w3l/Hj94IPidGyA0ceQ//9789NoWGyblk4CpBEfqcleW7iIkRJlP7HdvhcPA/HvkWlmrYqSzLCHFKxL35UXCw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1,
+   "method": "OPTIONS",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "4FLAhvkzSNY5bIyPrWaYbBEGlnCRizotZLZoVyq9OR+VV45qNrCf8o2p9QSo70dipPjDA2AxeOBsGO9JGgbICw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1700000000000,
+   "method": "OPTIONS",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "x5UZi58P4UIstaNF0NNP3y2GZZYcw8hA1zPGNsIvnrNeIghR6O+L3Kb4cPjNM8ESSA4eoXkrYiOl2NHLHLMVCg==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 1792785174669,
+   "method": "OPTIONS",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "y6vMlOLfQE32p9G3hzxH16rimKw+uZadCXtF97AqHNQ20TRC2tj3t6x5etTel5IzECQUG9ND1+suvfhtv8L7Dw==",
+   "expect": "refuse"
+  },
+  {
+   "timestampMs": 9999999999999,
+   "method": "OPTIONS",
+   "path": "/trade-api/v2/portfolio/orders",
+   "reference": "HfZMBt+9UYc5UxCrzMfmpEPOjIUYBRerwCZ/AYaw28vcxX2L6dFLDHPNUXhQ9pM8G8jM1t+mUOKrBG5J7w/HCQ==",
+   "expect": "refuse"
+  }
+ ]
+}

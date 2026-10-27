@@ -1,0 +1,18 @@
+{
+ "end_period_ts": 1767272400,
+ "open_interest_fp": "0.00",
+ "volume_fp": "0.00",
+ "price": {},
+ "yes_bid": {
+  "open_dollars": "0.0000",
+  "high_dollars": "0.0000",
+  "low_dollars": "0.0000",
+  "close_dollars": "0.0000"
+ },
+ "yes_ask": {
+  "open_dollars": "0.9900",
+  "high_dollars": "0.9900",
+  "low_dollars": "0.9900",
+  "close_dollars": "0.9900"
+ }
+}

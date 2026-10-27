@@ -1,0 +1,1088 @@
+{
+ "generator": "tools/vectors/generate_fixedpoint.py",
+ "referenceCommit": "3d19d501c84ddf89e9b7df63185e5d17eecec320",
+ "python": "3.14.7",
+ "cases": [
+  {
+   "text": "0",
+   "scale": "e6",
+   "reference": 0,
+   "expect": 0
+  },
+  {
+   "text": "1",
+   "scale": "e6",
+   "reference": 1000000,
+   "expect": 1000000
+  },
+  {
+   "text": "-1",
+   "scale": "e6",
+   "reference": -1000000,
+   "expect": -1000000
+  },
+  {
+   "text": "+1",
+   "scale": "e6",
+   "reference": 1000000,
+   "expect": 1000000
+  },
+  {
+   "text": "0.0",
+   "scale": "e6",
+   "reference": 0,
+   "expect": 0
+  },
+  {
+   "text": "00.00",
+   "scale": "e6",
+   "reference": 0,
+   "expect": 0
+  },
+  {
+   "text": "-0",
+   "scale": "e6",
+   "reference": 0,
+   "expect": 0
+  },
+  {
+   "text": "-0.000000",
+   "scale": "e6",
+   "reference": 0,
+   "expect": 0
+  },
+  {
+   "text": "+0.5",
+   "scale": "e6",
+   "reference": 500000,
+   "expect": 500000
+  },
+  {
+   "text": "0.4100",
+   "scale": "e6",
+   "reference": 410000,
+   "expect": 410000
+  },
+  {
+   "text": "0.41",
+   "scale": "e6",
+   "reference": 410000,
+   "expect": 410000
+  },
+  {
+   "text": ".5",
+   "scale": "e6",
+   "reference": 500000,
+   "expect": 500000
+  },
+  {
+   "text": "1.",
+   "scale": "e6",
+   "reference": 1000000,
+   "expect": 1000000
+  },
+  {
+   "text": "-.5",
+   "scale": "e6",
+   "reference": -500000,
+   "expect": -500000
+  },
+  {
+   "text": "000123.4500",
+   "scale": "e6",
+   "reference": 123450000,
+   "expect": 123450000
+  },
+  {
+   "text": "7",
+   "scale": "e6",
+   "reference": 7000000,
+   "expect": 7000000
+  },
+  {
+   "text": "104.24",
+   "scale": "e6",
+   "reference": 104240000,
+   "expect": 104240000
+  },
+  {
+   "text": "0.03",
+   "scale": "e6",
+   "reference": 30000,
+   "expect": 30000
+  },
+  {
+   "text": "118.7499",
+   "scale": "e6",
+   "reference": 118749900,
+   "expect": 118749900
+  },
+  {
+   "text": "-3.5",
+   "scale": "e6",
+   "reference": -3500000,
+   "expect": -3500000
+  },
+  {
+   "text": "100",
+   "scale": "e6",
+   "reference": 100000000,
+   "expect": 100000000
+  },
+  {
+   "text": "99.99",
+   "scale": "e6",
+   "reference": 99990000,
+   "expect": 99990000
+  },
+  {
+   "text": "0.99",
+   "scale": "e6",
+   "reference": 990000,
+   "expect": 990000
+  },
+  {
+   "text": "0.01",
+   "scale": "e6",
+   "reference": 10000,
+   "expect": 10000
+  },
+  {
+   "text": "0.0001",
+   "scale": "e6",
+   "reference": 100,
+   "expect": 100
+  },
+  {
+   "text": "0.000001",
+   "scale": "e6",
+   "reference": 1,
+   "expect": 1
+  },
+  {
+   "text": "0.01",
+   "scale": "e6",
+   "reference": 10000,
+   "expect": 10000
+  },
+  {
+   "text": "0.000010",
+   "scale": "e6",
+   "reference": 10,
+   "expect": 10
+  },
+  {
+   "text": "0.010000",
+   "scale": "e6",
+   "reference": 10000,
+   "expect": 10000
+  },
+  {
+   "text": "0.1234567",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.0000001",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.001",
+   "scale": "e6",
+   "reference": 1000,
+   "expect": 1000
+  },
+  {
+   "text": "0.123",
+   "scale": "e6",
+   "reference": 123000,
+   "expect": 123000
+  },
+  {
+   "text": "1.0000001",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "-0.0000001",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "9223372036854.775807",
+   "scale": "e6",
+   "reference": 9223372036854775807,
+   "expect": 9223372036854775807
+  },
+  {
+   "text": "9223372036854.775808",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "-9223372036854.775807",
+   "scale": "e6",
+   "reference": -9223372036854775807,
+   "expect": -9223372036854775807
+  },
+  {
+   "text": "-9223372036854.775808",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "92233720368547758.07",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "92233720368547758.08",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "-92233720368547758.07",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "-92233720368547758.08",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "9000000000000",
+   "scale": "e6",
+   "reference": 9000000000000000000,
+   "expect": 9000000000000000000
+  },
+  {
+   "text": "10000000000000",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "9223372036854775807",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "99999999999999999999",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "1.000000000000000000000000000",
+   "scale": "e6",
+   "reference": 1000000,
+   "expect": 1000000
+  },
+  {
+   "text": "0.100000000000000000000000000",
+   "scale": "e6",
+   "reference": 100000,
+   "expect": 100000
+  },
+  {
+   "text": "123456789012345678.00",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.000000000000000000000000000000000001",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "1.0000000000000000000000000001",
+   "scale": "e6",
+   "reference": 1000000,
+   "expect": "refuse",
+   "reason": "inexact"
+  },
+  {
+   "text": "0.4100000000000000000000000000001",
+   "scale": "e6",
+   "reference": 410000,
+   "expect": "refuse",
+   "reason": "inexact"
+  },
+  {
+   "text": "1234567890123456789012345.67",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.00000000000000000000000000000001",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "1e6",
+   "scale": "e6",
+   "reference": 1000000000000,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1E-6",
+   "scale": "e6",
+   "reference": 1,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "2.5e-1",
+   "scale": "e6",
+   "reference": 250000,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1e400",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": " 1",
+   "scale": "e6",
+   "reference": 1000000,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1 ",
+   "scale": "e6",
+   "reference": 1000000,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "\t1",
+   "scale": "e6",
+   "reference": 1000000,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1_000",
+   "scale": "e6",
+   "reference": 1000000000,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1,000",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0x10",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "--1",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "+-1",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "1.2.3",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": ".",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "+",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "-",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "NaN",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "Infinity",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "-Infinity",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "nan",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "inf",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "\u0661\u0662",
+   "scale": "e6",
+   "reference": 12000000,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "\uff11",
+   "scale": "e6",
+   "reference": 1000000,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1\u00a0",
+   "scale": "e6",
+   "reference": 1000000,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1/2",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.5%",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "$1",
+   "scale": "e6",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0",
+   "scale": "e2",
+   "reference": 0,
+   "expect": 0
+  },
+  {
+   "text": "1",
+   "scale": "e2",
+   "reference": 100,
+   "expect": 100
+  },
+  {
+   "text": "-1",
+   "scale": "e2",
+   "reference": -100,
+   "expect": -100
+  },
+  {
+   "text": "+1",
+   "scale": "e2",
+   "reference": 100,
+   "expect": 100
+  },
+  {
+   "text": "0.0",
+   "scale": "e2",
+   "reference": 0,
+   "expect": 0
+  },
+  {
+   "text": "00.00",
+   "scale": "e2",
+   "reference": 0,
+   "expect": 0
+  },
+  {
+   "text": "-0",
+   "scale": "e2",
+   "reference": 0,
+   "expect": 0
+  },
+  {
+   "text": "-0.000000",
+   "scale": "e2",
+   "reference": 0,
+   "expect": 0
+  },
+  {
+   "text": "+0.5",
+   "scale": "e2",
+   "reference": 50,
+   "expect": 50
+  },
+  {
+   "text": "0.4100",
+   "scale": "e2",
+   "reference": 41,
+   "expect": 41
+  },
+  {
+   "text": "0.41",
+   "scale": "e2",
+   "reference": 41,
+   "expect": 41
+  },
+  {
+   "text": ".5",
+   "scale": "e2",
+   "reference": 50,
+   "expect": 50
+  },
+  {
+   "text": "1.",
+   "scale": "e2",
+   "reference": 100,
+   "expect": 100
+  },
+  {
+   "text": "-.5",
+   "scale": "e2",
+   "reference": -50,
+   "expect": -50
+  },
+  {
+   "text": "000123.4500",
+   "scale": "e2",
+   "reference": 12345,
+   "expect": 12345
+  },
+  {
+   "text": "7",
+   "scale": "e2",
+   "reference": 700,
+   "expect": 700
+  },
+  {
+   "text": "104.24",
+   "scale": "e2",
+   "reference": 10424,
+   "expect": 10424
+  },
+  {
+   "text": "0.03",
+   "scale": "e2",
+   "reference": 3,
+   "expect": 3
+  },
+  {
+   "text": "118.7499",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "-3.5",
+   "scale": "e2",
+   "reference": -350,
+   "expect": -350
+  },
+  {
+   "text": "100",
+   "scale": "e2",
+   "reference": 10000,
+   "expect": 10000
+  },
+  {
+   "text": "99.99",
+   "scale": "e2",
+   "reference": 9999,
+   "expect": 9999
+  },
+  {
+   "text": "0.99",
+   "scale": "e2",
+   "reference": 99,
+   "expect": 99
+  },
+  {
+   "text": "0.01",
+   "scale": "e2",
+   "reference": 1,
+   "expect": 1
+  },
+  {
+   "text": "0.0001",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.000001",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.01",
+   "scale": "e2",
+   "reference": 1,
+   "expect": 1
+  },
+  {
+   "text": "0.000010",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.010000",
+   "scale": "e2",
+   "reference": 1,
+   "expect": 1
+  },
+  {
+   "text": "0.1234567",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.0000001",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.001",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.123",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "1.0000001",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "-0.0000001",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "9223372036854.775807",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "9223372036854.775808",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "-9223372036854.775807",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "-9223372036854.775808",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "92233720368547758.07",
+   "scale": "e2",
+   "reference": 9223372036854775807,
+   "expect": 9223372036854775807
+  },
+  {
+   "text": "92233720368547758.08",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "-92233720368547758.07",
+   "scale": "e2",
+   "reference": -9223372036854775807,
+   "expect": -9223372036854775807
+  },
+  {
+   "text": "-92233720368547758.08",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "9000000000000",
+   "scale": "e2",
+   "reference": 900000000000000,
+   "expect": 900000000000000
+  },
+  {
+   "text": "10000000000000",
+   "scale": "e2",
+   "reference": 1000000000000000,
+   "expect": 1000000000000000
+  },
+  {
+   "text": "9223372036854775807",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "99999999999999999999",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "1.000000000000000000000000000",
+   "scale": "e2",
+   "reference": 100,
+   "expect": 100
+  },
+  {
+   "text": "0.100000000000000000000000000",
+   "scale": "e2",
+   "reference": 10,
+   "expect": 10
+  },
+  {
+   "text": "123456789012345678.00",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.000000000000000000000000000000000001",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "1.0000000000000000000000000001",
+   "scale": "e2",
+   "reference": 100,
+   "expect": "refuse",
+   "reason": "inexact"
+  },
+  {
+   "text": "0.4100000000000000000000000000001",
+   "scale": "e2",
+   "reference": 41,
+   "expect": "refuse",
+   "reason": "inexact"
+  },
+  {
+   "text": "1234567890123456789012345.67",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.00000000000000000000000000000001",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "1e6",
+   "scale": "e2",
+   "reference": 100000000,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1E-6",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "2.5e-1",
+   "scale": "e2",
+   "reference": 25,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1e400",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": " 1",
+   "scale": "e2",
+   "reference": 100,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1 ",
+   "scale": "e2",
+   "reference": 100,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "\t1",
+   "scale": "e2",
+   "reference": 100,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1_000",
+   "scale": "e2",
+   "reference": 100000,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1,000",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0x10",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "--1",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "+-1",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "1.2.3",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": ".",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "+",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "-",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "NaN",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "Infinity",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "-Infinity",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "nan",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "inf",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "\u0661\u0662",
+   "scale": "e2",
+   "reference": 1200,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "\uff11",
+   "scale": "e2",
+   "reference": 100,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1\u00a0",
+   "scale": "e2",
+   "reference": 100,
+   "expect": "refuse",
+   "reason": "grammar"
+  },
+  {
+   "text": "1/2",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "0.5%",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  },
+  {
+   "text": "$1",
+   "scale": "e2",
+   "reference": "refuse",
+   "expect": "refuse"
+  }
+ ],
+ "roundTrips": [
+  {
+   "value": 0,
+   "e6": "0",
+   "e2": "0"
+  },
+  {
+   "value": 1,
+   "e6": "0.000001",
+   "e2": "0.01"
+  },
+  {
+   "value": -1,
+   "e6": "-0.000001",
+   "e2": "-0.01"
+  },
+  {
+   "value": 99,
+   "e6": "0.000099",
+   "e2": "0.99"
+  },
+  {
+   "value": 100,
+   "e6": "0.0001",
+   "e2": "1"
+  },
+  {
+   "value": 101,
+   "e6": "0.000101",
+   "e2": "1.01"
+  },
+  {
+   "value": 410000,
+   "e6": "0.41",
+   "e2": "4100"
+  },
+  {
+   "value": -3500000,
+   "e6": "-3.5",
+   "e2": "-35000"
+  },
+  {
+   "value": 118749900,
+   "e6": "118.7499",
+   "e2": "1187499"
+  },
+  {
+   "value": 10424,
+   "e6": "0.010424",
+   "e2": "104.24"
+  },
+  {
+   "value": 9223372036854775807,
+   "e6": null,
+   "e2": null
+  },
+  {
+   "value": -9223372036854775807,
+   "e6": null,
+   "e2": null
+  }
+ ]
+}

@@ -9,7 +9,12 @@ description = "Kalshi client: signing, REST, WebSocket, fixed-point money and fe
 license = "MIT"
 license-files = ["../../LICENSE"]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "cryptography>=44",
+    "httpx>=0.28",
+    "pydantic>=2.11",
+    "websockets>=15",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ikars_core"]
