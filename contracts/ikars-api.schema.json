@@ -795,6 +795,37 @@
       "title": "RecommendationView",
       "type": "object"
     },
+    "SessionCode": {
+      "additionalProperties": false,
+      "description": "``POST /v1/session``: the terminal trades its one-time code for the session cookie.",
+      "properties": {
+        "code": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "SessionCode",
+      "type": "object"
+    },
+    "SessionCodeIssued": {
+      "description": "``POST /v1/session/code`` (the bearer token only, for ``ikars open``): a one-time code, and\nthe address that opens the terminal with it.",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "url"
+      ],
+      "title": "SessionCodeIssued",
+      "type": "object"
+    },
     "StreamOpened": {
       "description": "The first event of every stream: its id, for ``PUT .../subscriptions``.",
       "properties": {

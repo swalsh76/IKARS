@@ -447,7 +447,7 @@ def test_a_dropped_book_is_announced_once_as_not_ready(ctx: ApiContext) -> None:
     assert b'"ready":true' in changes(ctx, state)[0]  # rebuilt: sent again
 
 
-async def test_a_websocket_is_refused_before_anything_runs() -> None:
+async def test_a_websocket_is_refused_before_anything_runs(ctx: ApiContext) -> None:
     """M1.R 14: the guard let every non-HTTP scope through unchecked."""
     from ikars_engine.api import Guard
 
@@ -463,7 +463,7 @@ async def test_a_websocket_is_refused_before_anything_runs() -> None:
     async def receive() -> Any:
         return {}
 
-    guard = Guard(app, TOKEN)
+    guard = Guard(app, ctx)
     await guard({"type": "websocket", "headers": []}, receive, send)
     assert reached == [] and sent == [{"type": "websocket.close", "code": 1008}]
     await guard({"type": "lifespan"}, receive, send)
@@ -576,3 +576,168 @@ async def test_candles_are_served_cached_and_refused_cleanly(ctx: ApiContext) ->
     assert refused.error == "unavailable" and "said no" not in refused.detail
     again = await get(ctx, "/v1/markets/KXB/candles", c.ApiError, 503)
     assert again == refused and len(failures) == 1  # a failure is not asked again within a minute
+
+
+# --- M1.8a-web-1a: the terminal's files, the browser hardening and the sign-in ------------------
+
+PORT = 47821
+OWN = f"http://127.0.0.1:{PORT}"
+PAGE = {"Origin": OWN, "Sec-Fetch-Site": "same-origin"}
+
+
+@pytest.fixture
+def web(ctx: ApiContext, tmp_path: Path) -> ApiContext:
+    from ikars_engine.session import Sessions
+    from ikars_engine.webserve import PLACEHOLDER
+
+    ctx.port = PORT
+    ctx.sessions = Sessions(tmp_path / "keys", 30)
+    ctx.web_root = PLACEHOLDER
+    return ctx
+
+
+async def signed_in(ctx: ApiContext) -> dict[str, str]:
+    """A session cookie, as the terminal gets it: a code over the bearer token, then the page."""
+    issued = await call(ctx, "POST", "/v1/session/code")
+    assert issued.status_code == 200 and issued.json()["url"].startswith(f"{OWN}/#code=")
+    answer = await call(ctx, "POST", "/v1/session", headers=PAGE,
+                        body={"code": issued.json()["code"]})  # fmt: skip
+    assert answer.status_code == 204, answer.text
+    cookie = answer.headers["set-cookie"]
+    assert "HttpOnly" in cookie and "SameSite=Strict" in cookie
+    return {"Cookie": cookie.split(";", 1)[0]}
+
+
+async def test_every_response_carries_the_browser_hardening(web: ApiContext) -> None:
+    for path, headers, cache in (
+        ("/v1/hello", AUTH, "no-store"),
+        ("/v1/hello", {}, "no-store"),  # a refusal too
+        ("/", {}, "no-cache"),
+    ):
+        response = await call(web, "GET", path, headers=headers)
+        assert "script-src 'self'" in response.headers["content-security-policy"]
+        assert "unsafe" not in response.headers["content-security-policy"]
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["referrer-policy"] == "no-referrer"
+        assert response.headers["x-frame-options"] == "DENY"
+        assert response.headers["cache-control"] == cache
+
+
+async def test_the_terminal_s_files_and_screen_addresses(web: ApiContext) -> None:
+    from ikars_engine.webserve import PLACEHOLDER
+
+    page = await call(web, "GET", "/", headers={})
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+    script = await call(web, "GET", "/signin.js", headers={})
+    assert script.headers["content-type"].startswith("text/javascript")  # never the registry's
+    screen = await call(web, "GET", "/market/KXA", headers={})
+    assert screen.status_code == 200 and screen.text == page.text  # the app routes it
+    assert (await call(web, "GET", "/assets/missing.js", headers={})).status_code == 404
+    # a served kind of file outside the terminal's folder: only the folder check refuses it
+    assert (PLACEHOLDER.parents[4] / "contracts" / "ikars-api.schema.json").is_file()
+    escape = await call(
+        web, "GET", "/" + "..%2F" * 5 + "contracts/ikars-api.schema.json", headers={}
+    )
+    assert escape.status_code == 404
+    unknown = await call(web, "GET", "/v1/nothing", headers=AUTH)
+    assert unknown.status_code == 404 and unknown.json()["error"] == "not_found"
+    assert (await call(web, "POST", "/", headers={})).status_code == 405
+
+
+async def test_only_the_engine_s_own_origin_is_answered(web: ApiContext) -> None:
+    foreign = {**AUTH, "Origin": "http://127.0.0.1:9999"}
+    assert (await call(web, "GET", "/v1/hello", headers=foreign)).status_code == 403
+    assert (
+        await call(web, "GET", "/", headers={"Origin": "https://evil.example"})
+    ).status_code == 403
+    assert (await call(web, "GET", "/v1/hello", headers={**AUTH, "Origin": OWN})).status_code == 200
+
+
+async def test_signing_in_and_using_the_session(web: ApiContext) -> None:
+    cookie = await signed_in(web)
+    assert (await call(web, "GET", "/v1/hello", headers=cookie)).status_code == 200
+    path = "/v1/stream/none/subscriptions"
+    change = await call(web, "PUT", path, headers=cookie, body={"quotes": []})
+    assert change.status_code == 403  # not from the terminal's own page
+    change = await call(web, "PUT", path, headers={**cookie, **PAGE}, body={"quotes": []})
+    assert change.status_code == 404  # let through; no such stream
+    assert (
+        await call(web, "GET", "/v1/hello", headers={"Cookie": "ikars_session=1.2.x"})
+    ).status_code == 401
+
+
+async def test_a_code_is_only_for_the_command_line_and_works_once(web: ApiContext) -> None:
+    cookie = await signed_in(web)
+    by_cookie = await call(web, "POST", "/v1/session/code", headers={**cookie, **PAGE})
+    assert by_cookie.status_code == 403
+    code = (await call(web, "POST", "/v1/session/code")).json()["code"]
+    not_page = await call(web, "POST", "/v1/session", headers={"Origin": OWN}, body={"code": code})
+    assert not_page.status_code == 403  # Sec-Fetch-Site missing
+    assert (
+        await call(web, "POST", "/v1/session", headers=PAGE, body={"code": code})
+    ).status_code == 204
+    again = await call(web, "POST", "/v1/session", headers=PAGE, body={"code": code})
+    assert again.status_code == 401
+    bad = await call(web, "POST", "/v1/session", headers=PAGE, body={"code": 1})
+    assert bad.status_code == 400
+
+
+async def test_a_day_old_cookie_comes_back_renewed(web: ApiContext, tmp_path: Path) -> None:
+    from ikars_engine.session import RENEW_AFTER_S, Sessions
+
+    now = [1_767_225_600.0]
+    web.sessions = Sessions(tmp_path / "keys", 30, lambda: now[0])
+    cookie = await signed_in(web)
+    assert "set-cookie" not in (await call(web, "GET", "/v1/hello", headers=cookie)).headers
+    now[0] += RENEW_AFTER_S
+    renewed = await call(web, "GET", "/v1/hello", headers=cookie)
+    assert renewed.status_code == 200 and "ikars_session=" in renewed.headers["set-cookie"]
+
+
+async def test_without_sign_in_only_the_token_works(ctx: ApiContext) -> None:
+    ctx.port = PORT
+    assert (await call(ctx, "POST", "/v1/session/code")).status_code == 404
+    signin = await call(ctx, "POST", "/v1/session", headers=PAGE, body={"code": "x"})
+    assert signin.status_code == 404
+    assert (
+        await call(ctx, "GET", "/v1/hello", headers={"Cookie": "ikars_session=x"})
+    ).status_code == 401
+    assert (await call(ctx, "GET", "/", headers={})).status_code == 404  # no files served
+
+
+async def test_the_fixed_port_and_its_fallback(
+    ctx: ApiContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import socket
+
+    def context_for(token: str) -> ApiContext:
+        ctx.token = token
+        return ctx
+
+    holder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    holder.bind(("127.0.0.1", 0))
+    taken = holder.getsockname()[1]
+    holder.listen()
+    try:
+        monkeypatch.setattr("ikars_engine.api.PORT_RETRY_S", 0.0)
+        server = ApiServer(context_for, tmp_path, port=taken)
+        await server.start()
+        assert server.port != taken and server.health()["port_fallback"] is True
+        assert ctx.port == server.port  # the guard's own origin follows the real port
+        await server.stop()
+    finally:
+        holder.close()
+    free = ApiServer(context_for, tmp_path, port=taken)  # free again: taken as asked
+    await free.start()
+    assert free.port == taken and free.health()["port_fallback"] is False
+    await free.stop()
+
+
+def test_the_built_terminal_is_served_when_it_exists(tmp_path: Path) -> None:
+    from ikars_engine.webserve import PLACEHOLDER, terminal_root
+
+    assert terminal_root(tmp_path) == PLACEHOLDER
+    built = tmp_path / "web" / "dist"
+    built.mkdir(parents=True)
+    (built / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    assert terminal_root(tmp_path) == built

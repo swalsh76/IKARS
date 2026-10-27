@@ -214,6 +214,20 @@ class QuoteUpdate(msgspec.Struct, kw_only=True):
     received_ns: int | None  # when the engine received what changed it
 
 
+class SessionCode(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
+    """``POST /v1/session``: the terminal trades its one-time code for the session cookie."""
+
+    code: str
+
+
+class SessionCodeIssued(msgspec.Struct, kw_only=True):
+    """``POST /v1/session/code`` (the bearer token only, for ``ikars open``): a one-time code, and
+    the address that opens the terminal with it."""
+
+    code: str
+    url: str
+
+
 class ApiError(msgspec.Struct, kw_only=True):
     error: str  # a short code: unauthorised, not_found, bad_request, unavailable
     detail: str
@@ -224,7 +238,8 @@ CONTRACTS: tuple[type[msgspec.Struct], ...] = (
     LedgerStatusView, LedgerRecordView, LedgerPage, AlertView, AlertPage, Candle, CandlePage,
     GapView, GapPage,
     RecommendationView,
-    RecommendationPage, Subscriptions, StreamOpened, QuoteUpdate, ApiError,
+    RecommendationPage, Subscriptions, StreamOpened, QuoteUpdate, SessionCode, SessionCodeIssued,
+    ApiError,
 )  # fmt: skip
 
 # The stream's event names and the payload each carries.
@@ -363,6 +378,10 @@ def examples() -> dict[str, Any]:
             yes_ask_e6=430_000,
             last_price_e6=420_000,
             received_ns=1_767_225_600_000_000_000,
+        ),
+        "SessionCode": SessionCode(code="made-up-code"),
+        "SessionCodeIssued": SessionCodeIssued(
+            code="made-up-code", url="http://127.0.0.1:47821/#code=made-up-code"
         ),
         "ApiError": ApiError(error="not_found", detail="no such market"),
     }

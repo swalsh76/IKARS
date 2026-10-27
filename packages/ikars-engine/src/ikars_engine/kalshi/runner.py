@@ -51,11 +51,13 @@ from ikars_engine.paths import Paths
 from ikars_engine.portfolio import Held, Portfolio, holdings, portfolio
 from ikars_engine.recorder import Recorder
 from ikars_engine.runmode import at
+from ikars_engine.session import Sessions
 from ikars_engine.settings import Settings
 from ikars_engine.share import configured, migration_copier
 from ikars_engine.skew import SkewMonitor
 from ikars_engine.store import StateStore
 from ikars_engine.threads import in_daemon_thread
+from ikars_engine.webserve import terminal_root
 
 log = logging.getLogger("ikars_engine.kalshi.runner")
 SAMPLE_EVERY_S = 60.0
@@ -194,6 +196,9 @@ async def build(paths: Paths, settings: Settings) -> Live:
     held = PortfolioHealth(ledger, source.quotes, index.fees.get, index.categories.get)
     engine.health_parts["portfolio"] = held
 
+    sessions = Sessions(paths.data, settings.terminal.session_days)
+    web_root = terminal_root()
+
     def api_context(token: str) -> ApiContext:
         return ApiContext(
             token=token,
@@ -216,9 +221,11 @@ async def build(paths: Paths, settings: Settings) -> Live:
             candles=lambda series, ticker, start, end, interval: data.candlesticks(
                 series, ticker, start_ts=start, end_ts=end, period_interval=interval
             ),
+            sessions=sessions,
+            web_root=web_root,
         )
 
-    api = ApiServer(api_context, paths.data)
+    api = ApiServer(api_context, paths.data, port=settings.terminal.port)
     engine.health_parts["api"] = api.health
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
     return Live(
