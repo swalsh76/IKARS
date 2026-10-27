@@ -83,14 +83,19 @@ internal sealed class UpdateHub
     /// <summary>A screen closed: its markets are no longer wanted (unless another screen shows them).</summary>
     public void Release(object screen) => _wantedChanged |= _wanted.Remove(screen);
 
-    /// <summary>On the UI thread: hands every changed value to the screens once, and updates the stream's subscriptions when the screens changed.</summary>
-    public async Task Flush()
+    /// <summary>
+    /// On the UI thread: hands every changed value to the screens once, and updates the stream's subscriptions when the screens changed. Returns whether anything
+    /// was handed over (the frame meter times only ticks that change the screen).
+    /// </summary>
+    public async Task<bool> Flush()
     {
+        var handed = false;
         foreach (var ticker in _quotes.Keys)
         {
             if (_quotes.TryRemove(ticker, out var quote))
             {
                 Quote?.Invoke(quote);
+                handed = true;
             }
         }
 
@@ -99,22 +104,26 @@ internal sealed class UpdateHub
             if (_books.TryRemove(ticker, out var book))
             {
                 Book?.Invoke(book);
+                handed = true;
             }
         }
 
         if (Interlocked.Exchange(ref _portfolio, null) is { } portfolio)
         {
             Portfolio?.Invoke(portfolio);
+            handed = true;
         }
 
         if (Interlocked.Exchange(ref _health, null) is { } health)
         {
             Health?.Invoke(health);
+            handed = true;
         }
 
         while (_alerts.TryDequeue(out var alert))
         {
             Alert?.Invoke(alert);
+            handed = true;
         }
 
         Notice?.Invoke(Connection);
@@ -134,5 +143,7 @@ internal sealed class UpdateHub
                 throw;
             }
         }
+
+        return handed;
     }
 }

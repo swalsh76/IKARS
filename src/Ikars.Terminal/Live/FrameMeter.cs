@@ -1,67 +1,96 @@
 namespace Ikars.Terminal.Live;
 
 /// <summary>
-/// Frame time (PLAN D20 J; owner's target: p99 at most 33 ms while 100 markets stream): the gaps between WPF's rendered frames, kept for the last
-/// <see cref="Window"/> frames, as p50 and p99.
+/// Frame time (PLAN D20 J; owner's target, as amended 2026-10-27: an update reaches the screen within <see cref="TargetP99Ms"/> at p99 while 100 markets
+/// stream). For each tick that changed the screen: the UI thread's work (the hand-over and its layout) and the time from the tick until WPF starts the frame
+/// <em>after</em> the one that shows it, by when that frame has gone to the display (an upper bound, conservative by up to a refresh); the last
+/// <see cref="Window"/> of each, as percentiles. Gaps between frames are not measured: WPF draws only when something changed, so an idle gap is not a
+/// slow frame (M1.8a, measured at the console).
 /// </summary>
 internal sealed class FrameMeter
 {
-    /// <summary>How many frames the percentiles cover.</summary>
+    /// <summary>How many updates the percentiles cover.</summary>
     public const int Window = 600;
 
-    /// <summary>The owner's target for p99, in milliseconds.</summary>
+    /// <summary>The owner's target for p99 update-to-screen time, in milliseconds (two refreshes at 60 Hz).</summary>
     public const double TargetP99Ms = 33.0;
 
-    /// <summary>A longer gap is a pause (minimised, dragged, locked), not a slow frame.</summary>
-    public const double PauseMs = 1000.0;
+    private readonly Samples _toScreen = new();
+    private readonly Samples _work = new();
+    private TimeSpan? _pending;
+    private int _framesSince;
 
-    private readonly double[] _gaps = new double[Window];
-    private int _count;
-    private int _next;
-    private TimeSpan? _last;
-
-    /// <summary>A frame was rendered at <paramref name="renderingTime"/> (WPF's RenderingEventArgs.RenderingTime). WPF repeats a time when it skips a frame; that is not a frame.</summary>
-    public void Frame(TimeSpan renderingTime)
+    /// <summary>A tick that began at <paramref name="began"/> changed the screen, and the UI thread spent <paramref name="work"/> on it.</summary>
+    public void Changed(TimeSpan began, TimeSpan work)
     {
-        if (_last is { } last && renderingTime > last && (renderingTime - last).TotalMilliseconds <= PauseMs)
-        {
-            _gaps[_next] = (renderingTime - last).TotalMilliseconds;
-            _next = (_next + 1) % Window;
-            _count = Math.Min(_count + 1, Window);
-        }
+        _work.Add(work.TotalMilliseconds);
+        _pending ??= began;   // a change still waiting for its frame keeps the earlier time
+    }
 
-        if (_last is null || renderingTime > _last)
+    /// <summary>Whether a change is waiting for its frame (the window listens for the next frame only then).</summary>
+    public bool Waiting => _pending is not null;
+
+    /// <summary>
+    /// WPF starts a frame at <paramref name="at"/> (the same clock as <see cref="Changed"/>). The first after a change draws it; the second means the first has gone
+    /// to the display, and the change is timed.
+    /// </summary>
+    public void Frame(TimeSpan at)
+    {
+        if (_pending is { } began && ++_framesSince == 2)
         {
-            _last = renderingTime;
+            _toScreen.Add(Math.Max(0, (at - began).TotalMilliseconds));
+            _pending = null;
+            _framesSince = 0;
         }
     }
 
-    /// <summary>The frames measured (up to <see cref="Window"/>).</summary>
-    public int Count => _count;
+    /// <summary>The updates measured (up to <see cref="Window"/>).</summary>
+    public int Count => _toScreen.Count;
 
-    /// <summary>The median gap in milliseconds, or <see langword="null"/> before two frames.</summary>
-    public double? P50 => Percentiles()?.P50;
+    /// <summary>The median update-to-screen time in milliseconds, or <see langword="null"/> before the first.</summary>
+    public double? P50 => _toScreen.Percentiles()?.P50;
 
-    /// <summary>The 99th-percentile gap in milliseconds, or <see langword="null"/> before two frames.</summary>
-    public double? P99 => Percentiles()?.P99;
+    /// <summary>The 99th-percentile update-to-screen time in milliseconds, or <see langword="null"/> before the first.</summary>
+    public double? P99 => _toScreen.Percentiles()?.P99;
+
+    /// <summary>The 99th-percentile UI work per update in milliseconds, or <see langword="null"/> before the first.</summary>
+    public double? WorkP99 => _work.Percentiles()?.P99;
 
     /// <summary>Whether p99 is within the target.</summary>
     public bool WithinTarget => P99 is { } p99 && p99 <= TargetP99Ms;
 
     /// <summary>One line for the status bar.</summary>
-    public string Text => Percentiles() is { } p ? $"frame p50 {p.P50:0} ms, p99 {p.P99:0} ms" : "frame time: measuring";
+    public string Text => _toScreen.Percentiles() is { } p
+        ? $"to screen p50 {p.P50:0} ms, p99 {p.P99:0} ms · work p99 {WorkP99:0} ms"
+        : "to screen: measuring";
 
-    private (double P50, double P99)? Percentiles()
+    /// <summary>The last <see cref="Window"/> values, as p50 and p99 (nearest rank).</summary>
+    private sealed class Samples
     {
-        if (_count == 0)
+        private readonly double[] _values = new double[Window];
+        private int _next;
+
+        public int Count { get; private set; }
+
+        public void Add(double value)
         {
-            return null;
+            _values[_next] = value;
+            _next = (_next + 1) % Window;
+            Count = Math.Min(Count + 1, Window);
         }
 
-        var sorted = _gaps.AsSpan(0, _count).ToArray();
-        Array.Sort(sorted);
-        return (At(50), At(99));
+        public (double P50, double P99)? Percentiles()
+        {
+            if (Count == 0)
+            {
+                return null;
+            }
 
-        double At(double p) => sorted[Math.Clamp((int)Math.Ceiling(p / 100.0 * _count) - 1, 0, _count - 1)];
+            var sorted = _values.AsSpan(0, Count).ToArray();
+            Array.Sort(sorted);
+            return (At(50), At(99));
+
+            double At(double p) => sorted[Math.Clamp((int)Math.Ceiling(p / 100.0 * sorted.Length) - 1, 0, sorted.Length - 1)];
+        }
     }
 }

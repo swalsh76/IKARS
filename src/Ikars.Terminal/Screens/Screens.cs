@@ -146,7 +146,7 @@ internal sealed class OverviewScreen(ScreenContext ctx) : Screen(Ref.Overview)
             new Fact("Ledger", exact == "True" ? "reconciles exactly" : exact is null ? "checking" : "differs from Kalshi", exact != "False"),
             new Fact("Backup", backupHours is null ? "none yet" : $"{backupHours} h ago", backupHours is not null && int.TryParse(backupHours, out var h) && h <= 36),
             new Fact("Open gaps", Read(parts, "kalshi", "open_gaps") ?? "—", Read(parts, "kalshi", "open_gaps") is "0" or null),
-            new Fact("Frame time", ctx.Frames.Text, ctx.Frames.Count == 0 || ctx.Frames.WithinTarget),
+            new Fact("Update to screen", ctx.Frames.Text, ctx.Frames.Count == 0 || ctx.Frames.WithinTarget),
         ]);
     }
 

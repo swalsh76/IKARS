@@ -160,7 +160,7 @@ public class HubTests
         object first = new(), second = new();
         hub.Want(first, ["B", "A"], ["A"]);
         hub.Want(second, ["A", "C"], []);
-        await hub.Flush();
+        Assert.True(await hub.Flush());
         Assert.Equal(400_799, Assert.Single(quotes).YesBidE6);   // only the latest
         Assert.Single(Assert.Single(books).Yes);
         Assert.Single(portfolios);
@@ -168,7 +168,7 @@ public class HubTests
         Assert.Equal(2, alerts.Count);
         Assert.Equal("connected", hub.Connection);
         Assert.Equal(["A", "B", "C"], Assert.Single(applied).Quotes);
-        await hub.Flush();   // nothing new, screens unchanged
+        Assert.False(await hub.Flush());   // nothing new, screens unchanged
         Assert.Single(quotes);
         Assert.Single(applied);
         hub.Release(first);
@@ -257,43 +257,54 @@ public class FormattingTests
 
 public class FrameMeterTests
 {
+    private static TimeSpan Ms(double ms) => TimeSpan.FromMilliseconds(ms);
+
     [Fact]
-    public void GapsBetweenFramesGivePercentiles()
+    public void EachChangeIsTimedToTheFrameThatShowsIt()
     {
         var meter = new FrameMeter();
         Assert.Null(meter.P99);
-        Assert.Equal("frame time: measuring", meter.Text);
-        Assert.False(meter.WithinTarget);
-        var at = TimeSpan.Zero;
-        for (var n = 0; n < 99; n++)
+        Assert.Null(meter.WorkP99);
+        Assert.Equal("to screen: measuring", meter.Text);
+        Assert.False(meter.WithinTarget || meter.Waiting);
+        meter.Frame(Ms(5));   // a frame with nothing waiting: not measured
+        Assert.Equal(0, meter.Count);
+        var at = 0.0;
+        for (var n = 0; n < 98; n++)
         {
-            at += TimeSpan.FromMilliseconds(16);
-            meter.Frame(at);
-            meter.Frame(at);   // WPF repeats a time when it skips: not a frame
+            at += 100;
+            meter.Changed(Ms(at), Ms(1));
+            meter.Frame(Ms(at + 1));   // the frame that draws it
+            Assert.True(meter.Waiting);
+            meter.Frame(Ms(at + 16));   // the next: the change is on the display
         }
 
         for (var n = 0; n < 2; n++)
         {
-            at += TimeSpan.FromMilliseconds(100);   // two slow frames in a hundred
-            meter.Frame(at);
+            at += 100;
+            meter.Changed(Ms(at), Ms(40));   // two slow updates in a hundred
+            meter.Frame(Ms(at + 30));
+            meter.Changed(Ms(at + 35), Ms(1));   // another change before its frame went out: timed from the first
+            meter.Frame(Ms(at + 50));
         }
 
+        Assert.False(meter.Waiting);
         Assert.Equal(100, meter.Count);
         Assert.Equal(16, meter.P50);
-        Assert.Equal(100, meter.P99);
+        Assert.Equal(50, meter.P99);
+        Assert.Equal(40, meter.WorkP99);
         Assert.False(meter.WithinTarget);
         for (var n = 0; n < FrameMeter.Window; n++)
         {
-            at += TimeSpan.FromMilliseconds(16);
-            meter.Frame(at);
+            at += 100;
+            meter.Changed(Ms(at), Ms(2));
+            meter.Frame(Ms(at + 1));
+            meter.Frame(Ms(at + 17));
         }
 
         Assert.Equal(FrameMeter.Window, meter.Count);
         Assert.True(meter.WithinTarget);
-        Assert.Equal("frame p50 16 ms, p99 16 ms", meter.Text);
-        at += TimeSpan.FromSeconds(4);   // minimised, then restored: a pause, not a slow frame
-        meter.Frame(at);
-        Assert.True(meter.WithinTarget);
+        Assert.Equal("to screen p50 17 ms, p99 17 ms · work p99 2 ms", meter.Text);
     }
 }
 
@@ -362,7 +373,7 @@ public class ScreenTests
         Assert.Equal("Demo", Assert.Single(overview.Exposure).Label);
         Assert.Equal(8, overview.Alerts.Count);
         Assert.Equal(10, overview.Alerts[0].Line);   // newest first
-        Assert.Equal(["Feed", "Ledger", "Backup", "Open gaps", "Frame time"], overview.HealthStrip.Select(f => f.Label));
+        Assert.Equal(["Feed", "Ledger", "Backup", "Open gaps", "Update to screen"], overview.HealthStrip.Select(f => f.Label));
         Assert.All(overview.HealthStrip, f => Assert.True(f.Good));
         Assert.Equal(6, OverviewScreen.Planned.Count);
         Assert.Contains(OverviewScreen.Planned, p => p.Title == "Top recommendations" && p.ArrivesIn == "M1.12");
@@ -559,7 +570,7 @@ public class ShellTests : IDisposable
         var connector = new EngineConnector(_folder, new NoStarter(), _ => engine);
         using var shell = new ShellViewModel(connector, new FrameMeter());
         Assert.Throws<InvalidOperationException>(() => shell.Build(Ref.Overview));   // not connected yet
-        await shell.TickAsync();   // nothing to flush yet
+        Assert.False(await shell.TickAsync());   // not connected: nothing to flush
         await shell.StartAsync();
         Assert.IsType<OverviewScreen>(shell.Navigator.Current);
         Assert.Equal(5, shell.Menu.Count);
@@ -573,8 +584,10 @@ public class ShellTests : IDisposable
         }
 
         Assert.Throws<ArgumentException>(() => shell.Build(new Ref("nowhere")));
-        await shell.TickAsync();
-        Assert.Equal("frame time: measuring", shell.FrameTime);
+        Assert.False(await shell.TickAsync());   // nothing streamed yet
+        shell.Context!.Hub.Receive(new StreamEvent.Health(engine.Health));
+        Assert.True(await shell.TickAsync());   // a change for the screen
+        Assert.Equal("to screen: measuring", shell.FrameTime);
         Assert.Same(shell.Frames, shell.Frames);
         shell.Problem = "shown";
         Assert.Equal("shown", shell.Problem);

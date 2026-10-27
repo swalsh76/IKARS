@@ -113,18 +113,19 @@ internal sealed class ShellViewModel : ObservableObject, IDisposable
         await Navigator.GoAsync(Ref.Overview).ConfigureAwait(true);
     }
 
-    /// <summary>About ten times a second, on the UI thread: hands the stream's changes to the screens.</summary>
-    public async Task TickAsync()
+    /// <summary>About ten times a second, on the UI thread: hands the stream's changes to the screens; returns whether the screen changed.</summary>
+    public async Task<bool> TickAsync()
     {
         if (_hub is null || _ticking)
         {
-            return;   // a slow subscription change still running: no overlapping flush can send an older set last
+            return false;   // a slow subscription change still running: no overlapping flush can send an older set last
         }
 
         _ticking = true;
+        var changed = false;
         try
         {
-            await _hub.Flush().ConfigureAwait(true);
+            changed = await _hub.Flush().ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -141,6 +142,7 @@ internal sealed class ShellViewModel : ObservableObject, IDisposable
 
         Connection = _hub.Connection;
         Raise(nameof(FrameTime));
+        return changed;
     }
 
     public void Stop() => _stop.Cancel();
