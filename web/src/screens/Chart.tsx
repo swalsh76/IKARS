@@ -14,27 +14,50 @@ export function PriceChart({ points }: { points: readonly ChartPoint[] }) {
   const chart = useRef<IChartApi | null>(null);
   const series = useRef<ReturnType<IChartApi["addSeries"]> | null>(null);
 
+  const drawn = useRef<string>("");
+
   useEffect(() => {
     if (!box.current) return;
     const made = createChart(box.current, {
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: token("--sub"), attributionLogo: false },
-      grid: { vertLines: { color: token("--line") }, horzLines: { color: token("--line") } },
-      rightPriceScale: { borderColor: token("--line") },
-      timeScale: { borderColor: token("--line"), timeVisible: true },
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, attributionLogo: false },
+      timeScale: { timeVisible: true },
       localization: { priceFormatter: (cents: number) => `${cents.toFixed(1)}¢` },
     });
-    series.current = made.addSeries(LineSeries, { color: token("--accent"), lineWidth: 2 });
+    const line = made.addSeries(LineSeries, { lineWidth: 2 });
+    // the colours follow the theme, also when Windows switches it while the chart is open
+    const paint = () => {
+      made.applyOptions({
+        layout: { textColor: token("--sub") },
+        grid: { vertLines: { color: token("--line") }, horzLines: { color: token("--line") } },
+        rightPriceScale: { borderColor: token("--line") },
+        timeScale: { borderColor: token("--line") },
+      });
+      line.applyOptions({ color: token("--accent") });
+    };
+    paint();
+    const scheme = window.matchMedia("(prefers-color-scheme: light)");
+    scheme.addEventListener("change", paint);
+    series.current = line;
     chart.current = made;
     return () => {
+      scheme.removeEventListener("change", paint);
       made.remove();
       chart.current = series.current = null;
+      drawn.current = "";
     };
   }, []);
 
   useEffect(() => {
+    // a refresh with the same candles changes nothing, and only the first drawing fits the view, so
+    // the owner's zoom stays (merge review 5)
+    const last = points.at(-1);
+    const shape = `${points.length}:${last?.time ?? 0}:${last?.value ?? 0}`;
+    if (shape === drawn.current) return;
+    const first = drawn.current === "";
+    drawn.current = shape;
     series.current?.setData(points.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
-    chart.current?.timeScale().fitContent();
+    if (first) chart.current?.timeScale().fitContent();
   }, [points]);
 
   return (

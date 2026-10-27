@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Candle, LedgerRecordView, MarketView } from "../api/contracts";
 import { drawingCents, e6 } from "../money";
-import { bookRows, categories, chartPoints, emptyChart, marketRow, recordRow } from "./market";
+import { bookRows, cachedRow, categories, chartPoints, emptyChart, isOpen, marketRow, recordRow } from "./market";
 
 const MARKET: MarketView = {
   ticker: "KXDEMO-26JAN01-T50",
@@ -35,12 +35,26 @@ describe("market rows", () => {
   it("format the engine's market, and a streamed quote wins", () => {
     expect(marketRow(MARKET)).toMatchObject({ bid: "41¢", ask: "43¢", last: "–", volume: "1,250.5", watched: "yes", category: "Demo" });
     const quote = { ticker: MARKET.ticker, yes_bid_e6: 425_000, yes_ask_e6: null, last_price_e6: 420_000, received_ns: 1 };
-    expect(marketRow(MARKET, quote)).toMatchObject({ bid: "42.5¢", ask: "43¢", last: "42¢" });
+    expect(marketRow(MARKET, quote)).toMatchObject({ bid: "42.5¢", ask: "–", last: "42¢" }); // an emptied side
     expect(marketRow({ ...MARKET, category: "", close_time_utc: null, watched: false })).toMatchObject({ category: "Other", closes: "–", watched: "" });
+  });
+
+  it("come back as the same object for the same market and quote", () => {
+    const quote = { ticker: MARKET.ticker, yes_bid_e6: 1, yes_ask_e6: 2, last_price_e6: null, received_ns: 1 };
+    expect(cachedRow(MARKET)).toBe(cachedRow(MARKET));
+    expect(cachedRow(MARKET, quote)).toBe(cachedRow(MARKET, quote));
+    expect(cachedRow(MARKET, quote)).not.toBe(cachedRow(MARKET));
+    expect(cachedRow(MARKET, { ...quote })).not.toBe(cachedRow(MARKET, quote)); // a new quote: a new row
   });
 
   it("list the categories once each, sorted", () => {
     expect(categories([MARKET, { ...MARKET, category: "" }, { ...MARKET, category: "Climate" }, MARKET])).toEqual(["Climate", "Demo", "Other"]);
+  });
+});
+
+describe("market status", () => {
+  it("is open only when trading", () => {
+    expect(["active", "open", "closed", "settled"].map(isOpen)).toEqual([true, true, false, false]);
   });
 });
 
@@ -82,7 +96,7 @@ describe("ledger records", () => {
       context: {},
       note: null,
     };
-    expect(recordRow(record)).toEqual({ seq: 7, when: "2026-01-01 05:00", kind: "fill", cash: "-$1.52", note: "" });
+    expect(recordRow(record, "America/Denver")).toEqual({ seq: 7, when: "Jan 1, 05:00", kind: "fill", cash: "-$1.52", note: "" });
     expect(recordRow({ ...record, cash_e6: null, note: "made up" })).toMatchObject({ cash: "", note: "made up" });
   });
 });

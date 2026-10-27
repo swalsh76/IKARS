@@ -21,7 +21,7 @@ function Screen() {
     case "health":
       return <Health />;
     case "markets":
-      return <Markets query={route.query} />;
+      return <Markets query={route.query} category={route.category} />;
     case "market":
       return <Market ticker={route.ticker} />;
     case "ledger":

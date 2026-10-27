@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { BookView, QuoteUpdate } from "../api/contracts";
 import { useMarkets, useSnapshot, useTerminal } from "../app/hooks";
 import { href } from "../nav/route";
-import { bookRows, chartPoints, emptyChart, marketRow, recordRow } from "../view/market";
+import { bookRows, chartPoints, emptyChart, isOpen, marketRow, recordRow } from "../view/market";
 import { PriceChart } from "./Chart";
 import { Guarded } from "./Guarded";
 import { Link } from "./Shell";
@@ -47,7 +47,9 @@ export function Market({ ticker }: { ticker: string }) {
   const quote = hub.get(`quote:${ticker}`) as QuoteUpdate | undefined;
   const book = hub.get(`book:${ticker}`) as BookView | undefined;
   const candles = useSnapshot(`/v1/markets/${path}/candles?interval=1&hours=24`, "CandlePage", 60_000);
-  const siblings = useSnapshot(info ? `/v1/markets?limit=50&q=${encodeURIComponent(info.event_ticker)}` : null, "MarketPage", 60_000);
+  // the engine has no event filter: the event ticker as a search, up to a page, and say if it is cut
+  // (merge review 7)
+  const siblings = useSnapshot(info ? `/v1/markets?limit=200&q=${encodeURIComponent(info.event_ticker)}` : null, "MarketPage", 60_000);
   const records = useSnapshot(`/v1/ledger/records?limit=50&ticker=${path}`, "LedgerPage", 60_000);
   const points = useMemo(() => (candles.state === "ready" ? chartPoints(candles.value.items) : []), [candles]);
 
@@ -68,7 +70,7 @@ export function Market({ ticker }: { ticker: string }) {
       <section className="card span-3" aria-label="Quote">
         <div className="card-head">
           <h2>{info.title}</h2>
-          <span className="state level-ok">{info.status}</span>
+          <span className={`state ${isOpen(info.status) ? "level-ok" : "level-watch"}`}>{info.status}</span>
         </div>
         <div className="muted small">
           {ticker} · {row.category} · closes {row.closes}
@@ -127,12 +129,17 @@ export function Market({ ticker }: { ticker: string }) {
                         <Link to={href({ screen: "market", ticker: m.ticker })}>{m.title}</Link>
                       </div>
                     ))}
+                {siblings.state === "ready" && siblings.value.total > siblings.value.items.length && (
+                  <div className="muted small">
+                    {siblings.value.items.length} of {siblings.value.total} matches shown
+                  </div>
+                )}
               </div>
               <div>
                 <div className="muted small">Your ledger records</div>
                 {records.state === "ready" && records.value.items.length === 0 && <div className="muted small">None.</div>}
                 {records.state === "ready" &&
-                  records.value.items.map(recordRow).map((r) => (
+                  records.value.items.map((record) => recordRow(record)).map((r) => (
                     <div key={r.seq} className="small">
                       {r.when} · {r.kind} {r.cash} {r.note}
                     </div>

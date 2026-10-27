@@ -96,6 +96,11 @@ test("markets: the grid fills, a search narrows it and a row opens the market", 
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Markets" }).click();
   await expect(page.getByTestId("market-count")).toHaveText("30 found");
   await expect(page.locator(".ag-row").first()).toBeVisible();
+  await page.locator("#market-category").selectOption("Weather");
+  await expect(page).toHaveURL(/category=Weather/);
+  await expect(page.getByTestId("market-count")).toHaveText("10 found");
+  await expect(page.locator("#market-category option")).toHaveCount(4); // the others stay listed
+  await page.locator("#market-category").selectOption("");
   await page.locator("#market-search").fill("market 12");
   await expect(page.getByTestId("market-count")).toHaveText("1 found");
   await expect(page).toHaveURL(/\/markets\?q=market(\+|%20)12$/);

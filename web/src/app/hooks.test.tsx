@@ -185,6 +185,42 @@ describe("useMarkets", () => {
   });
 });
 
+describe("a changing list of markets", () => {
+  it("keeps a market in both lists live (merge review 2)", async () => {
+    const { terminal } = fakeTerminal();
+    function View({ books }: { books: string[] }) {
+      useMarkets(["KXA"], books);
+      return <p>{terminal.hub.get("quote:KXA")?.yes_bid_e6 ?? "-"}</p>;
+    }
+    await show(terminal, <View books={[]} />);
+    await act(async () => {
+      terminal.hub.handle({ event: "quote", data: { ticker: "KXA", yes_bid_e6: 7, yes_ask_e6: null, last_price_e6: null, received_ns: 1 } });
+      terminal.hub.flush();
+    });
+    await show(terminal, <View books={["KXA"]} />); // the market was found to be watched
+    expect(container.textContent).toBe("7");
+  });
+});
+
+describe("a snapshot whose address changes", () => {
+  it("never shows the last address's value under the new one (merge review 3)", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [] }), { status: 200 }))
+      .mockResolvedValue(new Response(JSON.stringify({ error: "unavailable", detail: "busy" }), { status: 503 }));
+    vi.stubGlobal("fetch", fetch);
+    const { terminal } = fakeTerminal();
+    function View({ path }: { path: string }) {
+      const page = useSnapshot(path, "GapPage");
+      return <p>{page.state === "failed" ? page.message : page.state}</p>;
+    }
+    await show(terminal, <View path="/v1/gaps?a" />);
+    expect(container.textContent).toBe("ready");
+    await show(terminal, <View path="/v1/gaps?b" />);
+    expect(container.textContent).toBe("busy");
+  });
+});
+
 describe("a snapshot with nothing to ask yet", () => {
   it("waits without a request", async () => {
     const fetch = vi.fn();

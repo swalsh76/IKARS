@@ -11,6 +11,7 @@ describe("addresses", () => {
     ["/alerts", "", { screen: "alerts" }],
     ["/markets", "?q=rain%20nyc", { screen: "markets", query: "rain nyc" }],
     ["/markets", "", { screen: "markets", query: "" }],
+    ["/markets", "?q=rain&category=Climate", { screen: "markets", query: "rain", category: "Climate" }],
     ["/market/KXDEMO-26JAN01-T50", "", { screen: "market", ticker: "KXDEMO-26JAN01-T50" }],
     ["/market/A%2FB", "", { screen: "market", ticker: "A/B" }],
     ["/health/extra", "", { screen: "missing", path: "/health/extra" }],
@@ -25,6 +26,7 @@ describe("addresses", () => {
       { screen: "overview" },
       { screen: "markets", query: "a b" },
       { screen: "markets", query: "" },
+      { screen: "markets", query: "", category: "Climate & Weather" },
       { screen: "market", ticker: "A/B" },
       { screen: "ledger" },
     ] as Route[]) {

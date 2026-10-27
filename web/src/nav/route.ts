@@ -5,7 +5,7 @@
 export type Route =
   | { screen: "overview" }
   | { screen: "health" }
-  | { screen: "markets"; query: string }
+  | { screen: "markets"; query: string; category?: string }
   | { screen: "market"; ticker: string }
   | { screen: "ledger" }
   | { screen: "alerts" }
@@ -37,7 +37,9 @@ export function parse(pathname: string, search = ""): Route {
   if (parts.length === 0 || (first === "overview" && parts.length === 1)) return { screen: "overview" };
   if (parts.length === 1 && (first === "health" || first === "ledger" || first === "alerts")) return { screen: first };
   if (parts.length === 1 && first === "markets") {
-    return { screen: "markets", query: new URLSearchParams(search).get("q") ?? "" };
+    const params = new URLSearchParams(search);
+    const category = params.get("category");
+    return category ? { screen: "markets", query: params.get("q") ?? "", category } : { screen: "markets", query: params.get("q") ?? "" };
   }
   if (parts.length === 2 && first === "market" && second) return { screen: "market", ticker: second };
   return { screen: "missing", path: pathname };
@@ -48,8 +50,13 @@ export function href(route: Route): string {
   switch (route.screen) {
     case "overview":
       return "/overview";
-    case "markets":
-      return route.query ? `/markets?q=${encodeURIComponent(route.query)}` : "/markets";
+    case "markets": {
+      const params = new URLSearchParams();
+      if (route.query) params.set("q", route.query);
+      if (route.category) params.set("category", route.category);
+      const text = params.toString();
+      return text ? `/markets?${text}` : "/markets";
+    }
     case "market":
       return `/market/${encodeURIComponent(route.ticker)}`;
     case "missing":

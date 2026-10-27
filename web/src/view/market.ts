@@ -19,20 +19,37 @@ export interface MarketRow {
 
 const price = (value: number | null | undefined): string => (value === null || value === undefined ? "–" : cents(e6(value)));
 
-/** One grid row: the engine's market with its latest streamed quote (the quote wins when it has one). */
+/** One grid row: the engine's market with its latest streamed quote. A streamed quote wins for every
+ * field, an empty side (null) included: the snapshot's older price is not one you can trade at
+ * (M1.8a-web-2a merge review 1). */
 export function marketRow(m: MarketView, quote?: QuoteUpdate): MarketRow {
+  const now = quote ?? m;
   return {
     ticker: m.ticker,
     title: m.title,
     category: m.category || "Other",
     status: m.status,
-    bid: price(quote?.yes_bid_e6 ?? m.yes_bid_e6),
-    ask: price(quote?.yes_ask_e6 ?? m.yes_ask_e6),
-    last: price(quote?.last_price_e6 ?? m.last_price_e6),
+    bid: price(now.yes_bid_e6),
+    ask: price(now.yes_ask_e6),
+    last: price(now.last_price_e6),
     volume: contracts(e2(m.volume_24h_e2)),
     closes: m.close_time_utc ? local(m.close_time_utc) : "–",
     watched: m.watched ? "yes" : "",
   };
+}
+
+const NO_QUOTE = {}; // the key for "no streamed quote yet"
+const rows = new WeakMap<MarketView, WeakMap<object, MarketRow>>();
+
+/** ``marketRow``, the same object again for the same market and quote objects: the grid redraws only
+ * rows whose data changed (M1.8a-web-2a merge review 4). Held weakly, so old rows are let go. */
+export function cachedRow(m: MarketView, quote?: QuoteUpdate): MarketRow {
+  let byQuote = rows.get(m);
+  if (!byQuote) rows.set(m, (byQuote = new WeakMap()));
+  const key = quote ?? NO_QUOTE;
+  let row = byQuote.get(key);
+  if (!row) byQuote.set(key, (row = marketRow(m, quote)));
+  return row;
 }
 
 /** The categories in a page of markets, sorted, for the filter. */
@@ -58,6 +75,11 @@ export interface ChartPoint {
 }
 
 /** The traded closes to draw; a period with no trade is skipped (a gap, not a made-up price). */
+/** A market is open for trading (Kalshi's REST and stream names). */
+export function isOpen(status: string): boolean {
+  return status === "active" || status === "open";
+}
+
 export function chartPoints(candles: readonly Candle[]): ChartPoint[] {
   return candles
     .filter((c): c is Candle & { close_e6: number } => c.close_e6 !== null)
@@ -79,11 +101,11 @@ export interface RecordRow {
   note: string;
 }
 
-/** Your ledger records for a market (local only). */
-export function recordRow(r: LedgerRecordView): RecordRow {
+/** Your ledger records for a market (local only), with times as everywhere else (merge review 9). */
+export function recordRow(r: LedgerRecordView, zone?: string): RecordRow {
   return {
     seq: r.seq,
-    when: r.time_local.slice(0, 16).replace("T", " "),
+    when: local(r.time_utc, zone),
     kind: r.kind,
     cash: r.cash_e6 === null ? "" : dollars(e6(r.cash_e6), { signed: true }),
     note: r.note ?? "",

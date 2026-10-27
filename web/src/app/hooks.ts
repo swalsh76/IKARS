@@ -1,7 +1,7 @@
 // React's view of the terminal: values from the hub and the route, each re-rendering only its own
 // screen part when it changes.
 
-import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ContractName, Contracts } from "../api/contracts";
 import type { Values } from "../api/hub";
 import { ApiFailure, get } from "../api/client";
@@ -30,16 +30,27 @@ export function useMarkets(quotes: readonly string[], books: readonly string[] =
   const { hub } = useTerminal();
   const [changes, setChanges] = useState(0);
   const key = JSON.stringify([quotes, books]);
+  const held = useRef<(() => void) | null>(null);
   useEffect(() => {
+    // the new list is wanted before the old one is let go: a market in both keeps its value and its
+    // subscription (released first, it was dropped and the engine would not resend it: merge review 2)
     const [q, b] = JSON.parse(key) as [string[], string[]];
     const release = hub.want(q, b);
+    held.current?.();
+    held.current = release;
     const changed = () => setChanges((n) => n + 1);
     const stops = [...q.map((t) => hub.listen(`quote:${t}`, changed)), ...b.map((t) => hub.listen(`book:${t}`, changed))];
     return () => {
       for (const stop of stops) stop();
-      release();
     };
   }, [hub, key]);
+  useEffect(
+    () => () => {
+      held.current?.(); // the screen is left
+      held.current = null;
+    },
+    [],
+  );
   return changes;
 }
 
@@ -55,6 +66,12 @@ export type Loaded<T> = { state: "loading" } | { state: "ready"; value: T; stale
  * ``path`` null: nothing to ask yet (it waits on something else). */
 export function useSnapshot<K extends ContractName>(path: string | null, name: K, refreshMs = 0): Loaded<Contracts[K]> {
   const [loaded, setLoaded] = useState<Loaded<Contracts[K]>>({ state: "loading" });
+  const [asked, setAsked] = useState(path);
+  if (path !== asked) {
+    // another address (a new search): never the last one's value under it (merge review 3)
+    setAsked(path);
+    setLoaded({ state: "loading" });
+  }
   useEffect(() => {
     if (path === null) return;
     const controller = new AbortController();
