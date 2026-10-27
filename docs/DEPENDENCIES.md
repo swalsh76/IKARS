@@ -51,6 +51,7 @@ exact set and versions are in `uv.lock`.
 | Windows Task Scheduler | M1.6 | base | built in | A per-user logon task and a watchdog task; no admin. |
 | ntfy | M1.6 | base | service (Apache-2.0 / GPL-2.0 server) | A private topic, stored with DPAPI (D8); plain HTTP, no client library. |
 | DPAPI | M1.5 / M1.6 | base | built in | Through the standard library (`ctypes`) or `pywin32`; chosen in the slice. |
+| `tzdata` (time-zone database for `zoneinfo`; Windows has none) | M1.5 (proposed) | base | Apache-2.0 | Python wheel; nothing for the user to install. |
 | DuckDB | M1.5 onward (queries, D4) | base | MIT | Python wheel. |
 | PDF/A writer for the tax package | M5 (D18) | base | to choose | Library chosen in M5's plan. |
 | Claude API (`anthropic` SDK) | M2 (D9) | base | MIT | An API key in an environment variable or DPAPI; a monthly cost ceiling (D21-5). |

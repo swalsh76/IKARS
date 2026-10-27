@@ -94,8 +94,10 @@ slice still needs its own approved plan before code.
   **M1.4a done** (PR #4 merged as `b29a86e`). **M1.4b done** (PR #5 merged as `58abbe5`; BUILD-LOG 1.4b).
   Owner 2026-10-27: GPU detection moved to M1.6; recording volume (about 2.1 GB a day) kept. **Keep
   [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) current** in every slice that adds or drops a dependency (for the
-  install instructions). Branch `docs/m1-4b-close` carries these doc updates (PR to merge when the owner asks).
-  **Next:** the M1.5 (audit and tax ledger, portfolio) slice plan, for the owner's approval. The owner allows
+  install instructions). Those docs merged as PR #6 (`a8ff41a`).
+  **M1.5 plan PROPOSED** (BUILD-LOG 1.5, branch `m1/5-ledger`): split M1.5a ledger / M1.5b share and portfolio;
+  waiting for the owner's answers to its 6 open questions (split, NAS go-ahead, tax time zone, import cadence,
+  unexplained balance changes, FIFO). No code before approval. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
