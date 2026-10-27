@@ -19,7 +19,7 @@ from ikars_core.fixedpoint import PrecisionError, to_e6
 
 from ikars_engine.files import backup_name, write_text_atomic
 
-VERSION = 3
+VERSION = 4
 
 
 class KalshiSettings(msgspec.Struct, frozen=True, kw_only=True):
@@ -64,6 +64,13 @@ class AlertSettings(msgspec.Struct, frozen=True, kw_only=True):
     digest_minutes: int = 60
 
 
+class TerminalSettings(msgspec.Struct, frozen=True, kw_only=True):
+    # the loopback port the engine serves the web terminal and API on: fixed, so an open terminal
+    # reconnects after a restart (review 1.R2 item 1); when it is taken, a free one and an alert
+    port: int = 47821
+    session_days: int = 30  # a terminal signs in again after this many days unused (owner)
+
+
 class PluginDefaults(msgspec.Struct, frozen=True, kw_only=True):
     queue_size: int = 10_000
     call_timeout_seconds: float = 30.0
@@ -81,6 +88,7 @@ class Settings(msgspec.Struct, frozen=True, kw_only=True):
     plugins: PluginDefaults = PluginDefaults()
     backup: BackupSettings = BackupSettings()
     alerts: AlertSettings = AlertSettings()
+    terminal: TerminalSettings = TerminalSettings()
     plugin_settings: dict[str, dict[str, Any]] = {}
 
 
@@ -144,8 +152,16 @@ def _v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
     return {**data, "tax_time_zone": "" if zone == OLD_DEFAULT_ZONE else zone or "", "version": 3}
 
 
+def _v3_to_v4(data: dict[str, Any]) -> dict[str, Any]:
+    # version 4 adds [terminal] (the web terminal's port and session length) with its defaults;
+    # rewriting the file shows the new settings to the owner
+    return {**data, "version": 4}
+
+
 OLD_DEFAULT_ZONE = "America/New_York"
-MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {1: _v1_to_v2, 2: _v2_to_v3}
+MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4,
+}  # fmt: skip
 
 
 def _version(data: dict[str, Any]) -> int:
