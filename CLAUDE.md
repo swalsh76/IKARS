@@ -112,6 +112,8 @@ slice still needs its own approved plan before code.
   **M1.R Base hardening** (owner 2026-10-27: a whole-code-base review before the web terminal; items 1 to 26
   approved): **done** (PR #14 merged as `fca7941`, CI green on `main`; BUILD-LOG 1.R). Pending from the owner: a
   resting order to confirm the reconciliation rule live (GET only), and the M1.6 auto-start sign-out check.
+  **Web review and security posture decided** (owner 2026-10-27; BUILD-LOG 1.8w-sec): browser hardening and npm
+  rules fold into M1.8a-web; **CodeQL** added (`codeql.yml`, PR pending, not a required check).
   **Next:** the **M1.8a-web** plan for approval, on branch `m1/8a-web`; then M1.8b. The owner allows `gh pr merge`
   by a local permission rule; merge only when asked.
 

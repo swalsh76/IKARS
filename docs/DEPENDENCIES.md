@@ -45,6 +45,7 @@ None yet. The .NET WPF terminal and its packages (ScottPlot, xUnit, coverlet) we
 |---|---|---|
 | Kalshi REST and WebSocket (production) | markets, trades, books, exchange status | IKARS's own **read-only** key in `IKARS_KALSHI_KEY_ID` and `IKARS_KALSHI_PRIVATE_KEY_PATH` (D8, D21-3) |
 | GitHub (Actions, Releases, Dependabot) | CI and, later, downloads | nothing on the user's machine |
+| GitHub CodeQL (`github/codeql-action`, MIT) | static security analysis in CI (2026-10-27) | nothing on the user's machine |
 
 ## Needed later (planned)
 
