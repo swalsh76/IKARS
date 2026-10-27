@@ -1,10 +1,15 @@
-"""``python -m ikars_engine smoke``: run the engine core once, offline, and print its health.
+"""The engine's command line.
 
-It writes a synthetic recording in a temporary folder, replays it deterministically through a tiny
-built-in counting plugin, and prints the health summary as JSON. Nothing is written outside the
-temporary folder, nothing touches the network, and the result is the same on every run.
+``python -m ikars_engine smoke``: run the engine core once, offline, and print its health. It writes
+a synthetic recording in a temporary folder, replays it deterministically through a tiny built-in
+counting plugin, and prints the health summary as JSON. Nothing is written outside the temporary
+folder, nothing touches the network, and the result is the same on every run.
+
+``python -m ikars_engine run [--minutes N] [--root PATH]``: the live engine on Kalshi, in the
+foreground (M1.4b), with IKARS's read-only key from its two environment variables.
 """
 
+import argparse
 import asyncio
 import json
 import sys
@@ -69,13 +74,36 @@ async def smoke(folder: Path) -> dict[str, object]:
 
 
 def main(argv: list[str]) -> int:
-    if argv[1:] != ["smoke"]:
-        print("usage: python -m ikars_engine smoke", file=sys.stderr)
-        return 2
-    with tempfile.TemporaryDirectory(prefix="ikars-smoke-") as folder:
-        report = asyncio.run(smoke(Path(folder)))
-    print(json.dumps(report, indent=2, default=str))
-    return 0
+    parser = argparse.ArgumentParser(prog="python -m ikars_engine")
+    commands = parser.add_subparsers(dest="command")
+    commands.add_parser("smoke", help="an offline replay through a test plugin")
+    live = commands.add_parser("run", help="the live engine on Kalshi, in the foreground")
+    live.add_argument("--minutes", type=float, default=None, help="stop after this long")
+    live.add_argument(
+        "--root", type=Path, default=None, help="the data folder (default: the usual)"
+    )
+    try:
+        args = parser.parse_args(argv[1:])
+    except SystemExit as exc:
+        return int(exc.code or 2)
+    if args.command == "smoke":
+        with tempfile.TemporaryDirectory(prefix="ikars-smoke-") as folder:
+            report = asyncio.run(smoke(Path(folder)))
+        print(json.dumps(report, indent=2, default=str))
+        return 0
+    if args.command == "run":
+        from ikars_engine.kalshi.runner import default_paths, run
+        from ikars_engine.settings import load
+
+        paths = default_paths(args.root)
+        try:
+            health = asyncio.run(run(paths, load(paths.settings), args.minutes))
+        except KeyboardInterrupt:
+            return 0
+        print(json.dumps(health.get("kalshi"), indent=2, default=str))
+        return 0
+    parser.print_usage(sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

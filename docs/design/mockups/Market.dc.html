@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IKARS Market drill-down</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#60cdff;text-decoration:none}a:hover{color:#99ebff;text-decoration:underline}
+</style>
+</helmet>
+<div style="min-height: 960px; background: #1c1c1c; color: #f3f3f3; font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 10px 20px; background: #242424; border-bottom: 1px solid #3d3d3d">
+    <a href="Main.dc.html" aria-label="Back to Overview" style="display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 34px; border-radius: 6px; border: 1px solid #3d3d3d; color: #f3f3f3">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <button type="button" aria-label="Forward" disabled style="width: 44px; height: 34px; border-radius: 6px; border: 1px solid #3d3d3d; background: transparent; color: #8a8a8a">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+    <nav aria-label="Breadcrumb" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: #cfcfcf">
+      <a href="Main.dc.html">Overview</a><span aria-hidden="true">›</span>
+      <a href="Main.dc.html">Climate and weather</a><span aria-hidden="true">›</span>
+      <a href="Main.dc.html">NYC daily high</a><span aria-hidden="true">›</span>
+      <a href="Main.dc.html">Oct 28</a><span aria-hidden="true">›</span>
+      <span style="color: #f3f3f3; font-weight: 600">Above 61°F</span>
+    </nav>
+    <span style="margin-left: auto; padding: 4px 10px; border-radius: 999px; border: 1px solid #3d3d3d; color: #cfcfcf; font-size: 12px">SAMPLE DATA</span>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex: 1">
+    <main style="flex: 999 1 640px; min-width: 0; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+
+      <section aria-labelledby="title" style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 24px">
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <h1 id="title" style="margin: 0; font-size: 22px">NYC high on Oct 28 above 61°F</h1>
+          <span style="color: #ababab; font-size: 12px">KXDEMO-HIGHNY-28OCT-T61 · settles on the station's daily high · closes in 3 h 10 m</span>
+        </div>
+        <div style="display: flex; gap: 24px; font-variant-numeric: tabular-nums">
+          <div><div style="color: #ababab; font-size: 12px">YES bid / ask</div><div style="font-size: 20px; font-weight: 600">$0.41 / $0.42</div></div>
+          <div><div style="color: #ababab; font-size: 12px">Model</div><div style="font-size: 20px; font-weight: 600; color: #60cdff">0.53</div></div>
+          <div><div style="color: #ababab; font-size: 12px">Volume today</div><div style="font-size: 20px; font-weight: 600">18,420</div></div>
+        </div>
+      </section>
+
+      <section aria-labelledby="chart" style="background: #2c2c2c; border: 1px solid #3d3d3d; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
+          <h2 id="chart" style="margin: 0; font-size: 16px">YES price, today</h2>
+          <span style="color: #ababab; font-size: 12px">Markers: source items linked to this market</span>
+        </div>
+        <svg viewBox="0 0 900 220" role="img" aria-label="YES price chart with two news markers: the price rose after the NWS forecast was raised" style="width: 100%; height: auto">
+          <g stroke="#3d3d3d" stroke-width="1">
+            <line x1="40" y1="20" x2="890" y2="20"/><line x1="40" y1="80" x2="890" y2="80"/><line x1="40" y1="140" x2="890" y2="140"/><line x1="40" y1="200" x2="890" y2="200"/>
+          </g>
+          <g fill="#ababab" font-size="11" font-family="Segoe UI, sans-serif">
+            <text x="0" y="24">$0.50</text><text x="0" y="84">$0.40</text><text x="0" y="144">$0.30</text><text x="0" y="204">$0.20</text>
+          </g>
+          <polyline fill="none" stroke="#60cdff" stroke-width="2" points="40,150 90,148 140,152 190,146 240,149 290,144 340,140 390,142 440,138 490,120 540,104 590,96 640,92 690,90 740,94 790,88 840,86 890,86"/>
+          <line x1="480" y1="20" x2="480" y2="200" stroke="#ffb27a" stroke-dasharray="4 4"/>
+          <circle cx="480" cy="128" r="6" fill="#ffb27a"/>
+          <text x="488" y="36" fill="#ffb27a" font-size="12" font-family="Segoe UI, sans-serif">NWS raises high to 64°F</text>
+          <line x1="700" y1="20" x2="700" y2="200" stroke="#ffb27a" stroke-dasharray="4 4"/>
+          <circle cx="700" cy="91" r="6" fill="#ffb27a"/>
+          <text x="708" y="56" fill="#ffb27a" font-size="12" font-family="Segoe UI, sans-serif">Station reads 59°F at 1 pm</text>
+        </svg>
+      </section>
+
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+        <section aria-labelledby="book" style="background: #2c2c2c; border: 1px solid #3d3d3d; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+          <h2 id="book" style="margin: 0; font-size: 16px">Order book (both sides are bids)</h2>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; font-variant-numeric: tabular-nums; font-size: 13px">
+            <div style="display: flex; flex-direction: column; gap: 4px">
+              <div style="color: #ababab; font-size: 12px">YES bids</div>
+              <sc-for list="{{yes}}" as="l" hint-placeholder-count="5">
+                <div style="display: grid; grid-template-columns: 56px minmax(0, 1fr) 56px; gap: 8px; align-items: center"><span>{{l.p}}</span><div style="{{l.bar}}"></div><span style="text-align: right">{{l.q}}</span></div>
+              </sc-for>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px">
+              <div style="color: #ababab; font-size: 12px">NO bids (YES ask = $1 − bid)</div>
+              <sc-for list="{{no}}" as="l" hint-placeholder-count="5">
+                <div style="display: grid; grid-template-columns: 56px minmax(0, 1fr) 56px; gap: 8px; align-items: center"><span>{{l.p}}</span><div style="{{l.bar}}"></div><span style="text-align: right">{{l.q}}</span></div>
+              </sc-for>
+            </div>
+          </div>
+          <span style="color: #ababab; font-size: 12px">Book live · 214 deltas/s · last snapshot 4 m ago · no gaps</span>
+        </section>
+
+        <section aria-labelledby="pnl" style="background: #2c2c2c; border: 1px solid #3d3d3d; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+          <h2 id="pnl" style="margin: 0; font-size: 16px">P&amp;L for Buy YES 40 @ $0.42 (after all costs)</h2>
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums">
+            <tbody>
+              <tr><td style="padding: 4px 0; color: #ababab">Cost basis (40 × $0.42 + taker fee $0.69)</td><td style="padding: 4px 0; text-align: right">$17.49</td></tr>
+              <tr><td style="padding: 4px 0; color: #ababab">Spread paid against the mid (shown, already in the price)</td><td style="padding: 4px 0; text-align: right">$0.20</td></tr>
+              <tr style="border-top: 1px solid #3d3d3d"><td style="padding: 6px 0">Hold to settlement, YES wins (no exit fee)</td><td style="padding: 6px 0; text-align: right; color: #60cdff; font-weight: 600">+$22.51</td></tr>
+              <tr><td style="padding: 4px 0">Hold to settlement, NO wins</td><td style="padding: 4px 0; text-align: right; color: #ffb27a; font-weight: 600">−$17.49</td></tr>
+              <tr><td style="padding: 4px 0">Sell at target $0.55 (maker exit, fee $0.18)</td><td style="padding: 4px 0; text-align: right; color: #60cdff">+$4.33</td></tr>
+              <tr><td style="padding: 4px 0">Stop at current bid $0.41 (taker exit, fee $0.68)</td><td style="padding: 4px 0; text-align: right; color: #ffb27a">−$1.77</td></tr>
+              <tr style="border-top: 1px solid #3d3d3d"><td style="padding: 6px 0; font-weight: 600">Expected value at model 0.53</td><td style="padding: 6px 0; text-align: right; color: #60cdff; font-weight: 600">+$3.71</td></tr>
+              <tr><td style="padding: 4px 0; color: #ababab">Break-even probability · return per day</td><td style="padding: 4px 0; text-align: right">0.437 · +3.1%</td></tr>
+            </tbody>
+          </table>
+          <a href="Recommendation.dc.html" style="font-size: 13px">Recommendation details →</a>
+        </section>
+      </div>
+    </main>
+
+    <aside aria-labelledby="xref" style="flex: 1 1 320px; max-width: 380px; padding: 20px 16px; background: #242424; border-left: 1px solid #3d3d3d; display: flex; flex-direction: column; gap: 14px">
+      <h2 id="xref" style="margin: 0; font-size: 16px">Linked to this market</h2>
+      <sc-for list="{{xref}}" as="g" hint-placeholder-count="4">
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <div style="color: #ababab; font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px">{{g.group}}</div>
+          <sc-for list="{{g.rows}}" as="r" hint-placeholder-count="2">
+            <a href="{{r.href}}" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 6px; background: #2c2c2c; color: #f3f3f3">
+              <span style="font-size: 13px">{{r.title}}</span>
+              <span style="color: #ababab; font-size: 12px">{{r.meta}}</span>
+            </a>
+          </sc-for>
+        </div>
+      </sc-for>
+      <span style="color: #ababab; font-size: 12px; margin-top: auto">Selecting any row here opens it and keeps this panel in step.</span>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const level = (p, q, max) => ({ p, q: q.toLocaleString('en-US'), bar: 'height: 10px; border-radius: 3px; background: #3a6f87; width: ' + Math.round(100 * q / max) + '%' });
+    return {
+      yes: [level('$0.41', 820, 1500), level('$0.40', 1500, 1500), level('$0.39', 640, 1500), level('$0.38', 410, 1500), level('$0.35', 1200, 1500)],
+      no: [level('$0.58', 300, 1500), level('$0.57', 960, 1500), level('$0.56', 450, 1500), level('$0.55', 1400, 1500), level('$0.52', 700, 1500)],
+      xref: [
+        { group: 'Source items', rows: [
+          { title: 'NWS raises Central Park high to 64°F', meta: '3 min ago · moved +6¢ in 10 min', href: 'Recommendation.dc.html' },
+          { title: 'Station reads 59°F at 1 pm', meta: '12 min ago · observation', href: 'Recommendation.dc.html' }
+        ] },
+        { group: 'Related markets', rows: [
+          { title: 'NYC high Oct 28 above 63°F', meta: 'same event · YES $0.24', href: 'Market.dc.html' },
+          { title: 'NYC high Oct 28 59–60°F', meta: 'same event · YES $0.18', href: 'Market.dc.html' }
+        ] },
+        { group: 'Hedge', rows: [
+          { title: 'No perp or venue hedge for weather', meta: 'none available', href: 'Market.dc.html' }
+        ] },
+        { group: 'Past recommendations', rows: [
+          { title: 'Buy YES @ $0.36 · Oct 21 · taken', meta: 'settled YES · +$18.40 after costs', href: 'Recommendation.dc.html' },
+          { title: 'Buy NO @ $0.70 · Oct 14 · ignored', meta: 'would have lost $6.10', href: 'Recommendation.dc.html' }
+        ] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

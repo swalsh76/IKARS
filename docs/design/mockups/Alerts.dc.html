@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IKARS Alerts and hotkeys</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#60cdff;text-decoration:none}a:hover{color:#99ebff;text-decoration:underline}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #1c1c1c; color: #f3f3f3; font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif; font-size: 14px; padding: 24px; box-sizing: border-box; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-content: start">
+
+  <section aria-labelledby="levels" style="display: flex; flex-direction: column; gap: 14px">
+    <h1 id="levels" style="margin: 0; font-size: 20px">Alerts by priority</h1>
+
+    <div style="display: flex; gap: 14px; padding: 14px; border-radius: 8px; background: #2c2c2c; border: 2px solid #60cdff">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60cdff" stroke-width="2" aria-hidden="true"><path d="M13 2L3 14h8l-1 8 10-12h-8z"/></svg>
+      <div style="display: flex; flex-direction: column; gap: 4px; flex: 1">
+        <strong>P1 · Snipe: Seattle rain YES ask $0.31 × 25 is stale</strong>
+        <span style="color: #cfcfcf; font-size: 13px">EV +$2.05 after costs · quote unchanged 38 s while radar moved · expires in 20 s</span>
+        <span style="color: #ababab; font-size: 12px">Toast + phone push + Overview highlight · interrupts even in quiet hours</span>
+        <div style="display: flex; gap: 8px; margin-top: 4px"><a href="Recommendation.dc.html" style="padding: 8px 12px; border-radius: 6px; background: #60cdff; color: #10202a; font-weight: 600">Open (Enter)</a><button type="button" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #3d3d3d; background: transparent; color: #f3f3f3; font: inherit">Dismiss (Esc)</button></div>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 14px; padding: 14px; border-radius: 8px; background: #2c2c2c; border: 1px solid #3d3d3d">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#cfcfcf" stroke-width="2" aria-hidden="true"><path d="M12 3a6 6 0 0 1 6 6v4l2 3H4l2-3V9a6 6 0 0 1 6-6z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <strong>P2 · NWS raised Central Park high to 64°F</strong>
+        <span style="color: #cfcfcf; font-size: 13px">3 linked markets · 1 new recommendation</span>
+        <span style="color: #ababab; font-size: 12px">Toast only · held during quiet hours, then delivered</span>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 14px; padding: 14px; border-radius: 8px; background: #242424; border: 1px solid #3d3d3d">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ababab" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <strong>P3 · Digest: 7 low-priority items</strong>
+        <span style="color: #cfcfcf; font-size: 13px">5 source items with weak links · 2 movers below threshold</span>
+        <span style="color: #ababab; font-size: 12px">Collected into a digest every 30 min · never interrupts</span>
+      </div>
+    </div>
+
+    <div style="padding: 14px; border-radius: 8px; background: #242424; border: 1px solid #3d3d3d; display: flex; flex-direction: column; gap: 6px; font-size: 13px">
+      <strong>Rules</strong>
+      <span>Duplicates within 10 min are merged · at most 6 P1 alerts an hour per strategy</span>
+      <span>Quiet hours 23:00–07:00: only P1 and "engine down" reach the phone</span>
+      <span>Every alert is kept in the journal with when it was seen and what you did</span>
+    </div>
+  </section>
+
+  <section aria-labelledby="keys" style="background: #2c2c2c; border: 1px solid #3d3d3d; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 10px; align-self: start">
+    <h1 id="keys" style="margin: 0; font-size: 20px">Hotkeys (press ? to show)</h1>
+    <sc-for list="{{keys}}" as="k" hint-placeholder-count="10">
+      <div style="display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; align-items: center; font-size: 13px; padding: 4px 0; border-top: 1px solid #3d3d3d">
+        <kbd style="justify-self: start; padding: 3px 8px; border-radius: 4px; border: 1px solid #5a5a5a; background: #1c1c1c; font-family: 'Cascadia Mono', Consolas, monospace; font-size: 12px">{{k.key}}</kbd>
+        <span>{{k.does}}</span>
+      </div>
+    </sc-for>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      keys: [
+        { key: 'Ctrl+K', does: 'Search markets, sources, strategies' },
+        { key: 'Ctrl+1', does: 'Overview' },
+        { key: 'Enter', does: 'Open the newest P1 alert' },
+        { key: 'Alt+Left / Alt+Right', does: 'Back and forward' },
+        { key: 'X', does: 'Show or hide the cross-reference panel' },
+        { key: 'T / I / D', does: 'Mark the open recommendation taken, ignored or dismissed' },
+        { key: 'C', does: 'Copy the order (ticker, side, price, size) for Kalshi' },
+        { key: 'B', does: 'Order book of the selected market' },
+        { key: 'Ctrl+Shift+L', does: 'Light or dark theme' },
+        { key: '?', does: 'This list' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

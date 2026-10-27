@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IKARS Overview</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#60cdff;text-decoration:none}a:hover{color:#99ebff;text-decoration:underline}
+</style>
+</helmet>
+<div style="min-height: 960px; background: {{t.bg}}; color: {{t.text}}; font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 10px 20px; background: {{t.panel}}; border-bottom: 1px solid {{t.line}}">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="{{t.accent}}" stroke-width="2" aria-hidden="true"><path d="M3 17l5-6 4 4 8-10"/><path d="M15 5h5v5"/></svg>
+      <strong style="font-size: 16px; letter-spacing: 0.5px">IKARS</strong>
+    </div>
+    <nav aria-label="Breadcrumb" style="color: {{t.sub}}">Overview</nav>
+    <div style="flex: 1 1 240px; min-width: 200px">
+      <label for="search" style="position: absolute; left: -9999px">Search markets, sources, strategies</label>
+      <input id="search" type="search" placeholder="Search markets, sources, strategies   (Ctrl+K)" style="width: 100%; box-sizing: border-box; height: 34px; padding: 0 12px; border-radius: 6px; border: 1px solid {{t.line}}; background: {{t.card}}; color: {{t.text}}; font: inherit">
+    </div>
+    <span style="padding: 4px 10px; border-radius: 999px; border: 1px solid {{t.line}}; color: {{t.sub}}; font-size: 12px">SAMPLE DATA</span>
+    <a href="Health.dc.html" style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: {{t.card}}; color: {{t.text}}">
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="5" fill="{{t.pos}}"/></svg>
+      Engine live · feed 46 ms
+    </a>
+    <button type="button" onClick="{{toggle}}" style="height: 34px; padding: 0 12px; border-radius: 6px; border: 1px solid {{t.line}}; background: {{t.card}}; color: {{t.text}}; font: inherit; cursor: pointer">{{themeLabel}}</button>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex: 1">
+    <nav aria-label="Main" style="flex: 0 0 196px; padding: 16px 12px; background: {{t.panel}}; border-right: 1px solid {{t.line}}; display: flex; flex-direction: column; gap: 4px">
+      <sc-for list="{{nav}}" as="item" hint-placeholder-count="8">
+        <a href="{{item.href}}" style="{{item.style}}">{{item.label}}</a>
+      </sc-for>
+    </nav>
+
+    <main style="flex: 999 1 560px; min-width: 0; padding: 20px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-content: start">
+
+      <section aria-labelledby="recs" style="grid-column: span 2; background: {{t.card}}; border: 1px solid {{t.line}}; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+          <h2 id="recs" style="margin: 0; font-size: 16px">Top recommendations</h2>
+          <span style="color: {{t.muted}}; font-size: 12px">Ranked by return per day of capital tied up · after fees, spread and slippage · recommend-only</span>
+        </div>
+        <div style="overflow-x: auto">
+          <table style="width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums">
+            <thead>
+              <tr style="text-align: left; color: {{t.muted}}; font-size: 12px">
+                <th style="padding: 6px 8px; font-weight: 600">Market</th>
+                <th style="padding: 6px 8px; font-weight: 600">Action</th>
+                <th style="padding: 6px 8px; font-weight: 600; text-align: right">Size</th>
+                <th style="padding: 6px 8px; font-weight: 600; text-align: right">EV after costs</th>
+                <th style="padding: 6px 8px; font-weight: 600; text-align: right">Return/day</th>
+                <th style="padding: 6px 8px; font-weight: 600; text-align: right">Fill</th>
+                <th style="padding: 6px 8px; font-weight: 600">Strategy</th>
+                <th style="padding: 6px 8px; font-weight: 600">Expires</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{recs}}" as="r" hint-placeholder-count="5">
+                <tr style="border-top: 1px solid {{t.line}}">
+                  <td style="padding: 8px; max-width: 280px">
+                    <a href="Market.dc.html" style="color: {{t.text}}; font-weight: 600">{{r.market}}</a>
+                    <div style="color: {{t.muted}}; font-size: 12px">{{r.why}}</div>
+                  </td>
+                  <td style="padding: 8px; white-space: nowrap"><a href="Recommendation.dc.html">{{r.action}}</a></td>
+                  <td style="padding: 8px; text-align: right">{{r.size}}</td>
+                  <td style="padding: 8px; text-align: right; color: {{t.pos}}; font-weight: 600">{{r.ev}}</td>
+                  <td style="padding: 8px; text-align: right">{{r.perday}}</td>
+                  <td style="padding: 8px; text-align: right">{{r.fill}}</td>
+                  <td style="padding: 8px"><span style="padding: 2px 8px; border-radius: 999px; border: 1px solid {{t.line}}; font-size: 12px; white-space: nowrap">{{r.strategy}}</span></td>
+                  <td style="padding: 8px; color: {{t.sub}}; white-space: nowrap">{{r.expires}}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section aria-labelledby="portfolio" style="background: {{t.card}}; border: 1px solid {{t.line}}; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+        <h2 id="portfolio" style="margin: 0; font-size: 16px">Portfolio and exposure</h2>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; font-variant-numeric: tabular-nums">
+          <div><div style="color: {{t.muted}}; font-size: 12px">Balance</div><div style="font-size: 20px; font-weight: 600">$[BALANCE]</div></div>
+          <div><div style="color: {{t.muted}}; font-size: 12px">Unrealised, after exit costs</div><div style="font-size: 20px; font-weight: 600; color: {{t.pos}}">+$12.40</div></div>
+          <div><div style="color: {{t.muted}}; font-size: 12px">Open positions</div><div style="font-size: 20px; font-weight: 600">6</div></div>
+          <div><div style="color: {{t.muted}}; font-size: 12px">Daily loss stop</div><div style="font-size: 20px; font-weight: 600">$18 of $50</div></div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <div style="color: {{t.muted}}; font-size: 12px">Exposure by category</div>
+          <sc-for list="{{exposure}}" as="e" hint-placeholder-count="5">
+            <div style="display: grid; grid-template-columns: 96px minmax(0, 1fr) 44px; align-items: center; gap: 8px; font-size: 13px">
+              <span>{{e.name}}</span>
+              <div style="height: 8px; border-radius: 4px; background: {{t.line}}"><div style="{{e.bar}}"></div></div>
+              <span style="text-align: right; color: {{t.sub}}">{{e.pct}}</span>
+            </div>
+          </sc-for>
+        </div>
+        <a href="Market.dc.html" style="font-size: 13px">Open positions →</a>
+      </section>
+
+      <section aria-labelledby="movers" style="background: {{t.card}}; border: 1px solid {{t.line}}; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+        <h2 id="movers" style="margin: 0; font-size: 16px">Live movers (5 min)</h2>
+        <sc-for list="{{movers}}" as="m" hint-placeholder-count="5">
+          <a href="Market.dc.html" style="display: grid; grid-template-columns: minmax(0, 1fr) 64px 72px; gap: 8px; color: {{t.text}}; font-size: 13px; font-variant-numeric: tabular-nums">
+            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{m.name}}</span>
+            <span style="text-align: right; font-weight: 600">{{m.move}}</span>
+            <span style="text-align: right; color: {{t.muted}}">{{m.vol}}</span>
+          </a>
+        </sc-for>
+      </section>
+
+      <section aria-labelledby="sources" style="background: {{t.card}}; border: 1px solid {{t.line}}; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+        <h2 id="sources" style="margin: 0; font-size: 16px">Latest source items</h2>
+        <sc-for list="{{items}}" as="s" hint-placeholder-count="4">
+          <div style="display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px; border-bottom: 1px solid {{t.line}}">
+            <span style="font-size: 13px">{{s.title}}</span>
+            <span style="color: {{t.muted}}; font-size: 12px">{{s.meta}} · <a href="Market.dc.html">{{s.links}}</a></span>
+          </div>
+        </sc-for>
+      </section>
+
+      <section aria-labelledby="score" style="background: {{t.card}}; border: 1px solid {{t.line}}; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+        <h2 id="score" style="margin: 0; font-size: 16px">Journal scorecard (30 days)</h2>
+        <sc-for list="{{score}}" as="s" hint-placeholder-count="4">
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) 72px 52px; gap: 8px; font-size: 13px; font-variant-numeric: tabular-nums">
+            <span>{{s.name}}</span>
+            <span style="text-align: right; font-weight: 600">{{s.edge}}</span>
+            <span style="text-align: right; color: {{t.muted}}">{{s.n}}</span>
+          </div>
+        </sc-for>
+        <span style="color: {{t.muted}}; font-size: 12px">P&amp;L per recommendation after costs · n = scored</span>
+      </section>
+
+      <section aria-labelledby="perps" style="background: {{t.card}}; border: 1px solid {{t.line}}; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+        <h2 id="perps" style="margin: 0; font-size: 16px">Perp funding</h2>
+        <div style="color: {{t.sub}}; font-size: 13px">BTC perp · next funding in 2 h 14 m</div>
+        <div style="font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums">+0.012% / 8 h</div>
+        <div style="color: {{t.muted}}; font-size: 12px">Research slice M1.10 pending: costs not yet modelled</div>
+      </section>
+
+      <section aria-labelledby="book" style="background: {{t.card}}; border: 1px solid {{t.line}}; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+        <h2 id="book" style="margin: 0; font-size: 16px">Book signals</h2>
+        <div style="font-size: 13px">Stale YES ask in <a href="Market.dc.html">Seattle rain Oct 27</a> · 38 s old</div>
+        <div style="font-size: 13px">Bot-like refill (&lt; 1 s) in <a href="Market.dc.html">BTC 15-min 8 pm</a></div>
+        <div style="font-size: 13px">Wall pulled twice near $0.55 in <a href="Market.dc.html">Fed holds in Dec</a></div>
+      </section>
+
+      <section aria-labelledby="alerts" style="background: {{t.card}}; border: 1px solid {{t.line}}; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+        <h2 id="alerts" style="margin: 0; font-size: 16px">Alerts</h2>
+        <a href="Alerts.dc.html" style="font-size: 13px">P1 · Snipe: Seattle rain YES ask $0.31 × 25 is stale</a>
+        <span style="font-size: 13px; color: {{t.sub}}">P2 · NWS raised Central Park high to 64°F</span>
+        <span style="font-size: 13px; color: {{t.muted}}">Digest · 7 low-priority items</span>
+      </section>
+    </main>
+  </div>
+
+  <footer style="display: flex; flex-wrap: wrap; gap: 20px; padding: 8px 20px; background: {{t.panel}}; border-top: 1px solid {{t.line}}; color: {{t.sub}}; font-size: 12px; font-variant-numeric: tabular-nums">
+    <a href="Health.dc.html" style="color: {{t.sub}}">Feed live · 46 ms</a>
+    <span>Books 3 watched · 0 broken</span>
+    <span>Clock skew +12 ms</span>
+    <span>Ledger reconciled 06:00</span>
+    <span>Backup OK 01:30</span>
+    <span>Storage 41 of 250 GB</span>
+    <span>Cost $3.20 of $40 this month</span>
+    <span>GPU: RTX 5070 Ti</span>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { theme: null };
+  }
+  renderVals() {
+    const theme = this.state.theme ?? this.props.theme ?? 'dark';
+    const dark = { bg: '#1c1c1c', panel: '#242424', card: '#2c2c2c', line: '#3d3d3d', text: '#f3f3f3', sub: '#cfcfcf', muted: '#ababab', accent: '#60cdff', pos: '#60cdff', neg: '#ffb27a', navOn: '#383838' };
+    const light = { bg: '#f3f3f3', panel: '#fafafa', card: '#ffffff', line: '#dcdcdc', text: '#1a1a1a', sub: '#3d3d3d', muted: '#595959', accent: '#005fb8', pos: '#005fb8', neg: '#a8440a', navOn: '#e6e6e6' };
+    const t = theme === 'light' ? light : dark;
+    const navItems = [
+      ['Overview', 'Main.dc.html'], ['Markets', 'Market.dc.html'], ['Sources', 'Main.dc.html'], ['Strategies', 'Main.dc.html'],
+      ['Portfolio', 'Main.dc.html'], ['Ledger', 'Main.dc.html'], ['Health', 'Health.dc.html'], ['Settings', 'Main.dc.html']
+    ];
+    const nav = navItems.map(([label, href], i) => ({
+      label, href,
+      style: 'display: block; padding: 8px 12px; border-radius: 6px; color: ' + t.text + '; ' + (i === 0 ? 'background: ' + t.navOn + '; font-weight: 600' : '')
+    }));
+    const exposure = [['Weather', 38], ['Crypto', 22], ['Economics', 18], ['Politics', 12], ['Other', 10]].map(([name, p]) => ({
+      name, pct: p + '%', bar: 'height: 8px; border-radius: 4px; width: ' + p + '%; background: ' + t.accent
+    }));
+    return {
+      t,
+      themeLabel: theme === 'light' ? 'Dark theme' : 'Light theme',
+      toggle: () => this.setState({ theme: theme === 'light' ? 'dark' : 'light' }),
+      nav,
+      exposure,
+      recs: [
+        { market: 'NYC high on Oct 28 above 61°F', why: 'NWS forecast 64°F (σ 2.1) vs market 42¢', action: 'Buy YES @ $0.42', size: '40', ev: '+$3.71', perday: '+3.1%', fill: '0.92', strategy: 'News/data', expires: '3 h 10 m' },
+        { market: 'Seattle rain on Oct 27', why: 'Stale ask: radar moved, quote unchanged 38 s', action: 'Buy YES @ $0.31', size: '25', ev: '+$2.05', perday: '+9.8%', fill: '0.60', strategy: 'Snipe', expires: '20 s' },
+        { market: 'ETH above $[LEVEL] at 8 pm', why: 'Volume surge ×4, 3 higher closes', action: 'Buy YES @ $0.55', size: '30', ev: '+$1.12', perday: '+2.0%', fill: '0.88', strategy: 'Momentum', expires: '11 m' },
+        { market: 'Fed holds rate in December', why: 'Nowcast 91% vs market 86¢', action: 'Buy YES @ $0.86', size: '50', ev: '+$1.90', perday: '+0.1%', fill: '0.97', strategy: 'News/data', expires: '1 d' },
+        { market: 'Mayor mentions "transit" at presser', why: 'Pre-released agenda item on buses', action: 'Buy YES @ $0.47', size: '20', ev: '+$1.04', perday: '+0.9%', fill: '0.81', strategy: 'News/data', expires: '5 h' }
+      ],
+      movers: [
+        { name: 'BTC 15-min, 8 pm above $[LEVEL]', move: '+9¢', vol: '×6.2 vol' },
+        { name: 'NYC high Oct 28 above 61°F', move: '+7¢', vol: '×3.0 vol' },
+        { name: 'ETH 15-min, 8 pm above $[LEVEL]', move: '+5¢', vol: '×4.1 vol' },
+        { name: 'Chicago rain Oct 27', move: '−6¢', vol: '×2.2 vol' },
+        { name: 'Senate vote passes by Friday', move: '−4¢', vol: '×1.8 vol' }
+      ],
+      items: [
+        { title: 'NWS: forecast high for Central Park raised to 64°F', meta: 'NWS · 3 min ago', links: '3 markets' },
+        { title: 'Radar: rain band reaching Seattle earlier than forecast', meta: 'NWS · 6 min ago', links: '2 markets' },
+        { title: 'City agenda lists transit item for Tuesday briefing', meta: 'RSS · Example Wire · 18 min ago', links: '1 market' },
+        { title: 'Central bank official: policy "well positioned"', meta: 'GDELT · 41 min ago', links: '4 markets' }
+      ],
+      score: [
+        { name: 'News/data', edge: '+2.1¢', n: '84' },
+        { name: 'Momentum', edge: '−0.4¢', n: '212' },
+        { name: 'Snipe (alerts)', edge: '+5.3¢', n: '37' },
+        { name: 'Perps', edge: '—', n: '0' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

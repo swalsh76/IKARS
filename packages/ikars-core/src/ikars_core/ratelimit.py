@@ -25,6 +25,7 @@ class BucketStats:
     """What the bucket has done, for the downloader's progress and the rate-limit measurement."""
 
     acquired: int = 0
+    spent: float = 0.0  # tokens
     waits: int = 0
     waited_seconds: float = 0.0
 
@@ -86,3 +87,4 @@ class TokenBucket:
                 self._refill()
             self._tokens = max(0.0, self._tokens - cost)
             self.stats.acquired += 1
+            self.stats.spent += cost

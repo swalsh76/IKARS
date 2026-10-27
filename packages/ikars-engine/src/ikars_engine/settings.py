@@ -39,6 +39,14 @@ class BudgetSettings(msgspec.Struct, frozen=True, kw_only=True):
     degrade_at_percent: int = 80
 
 
+class FeedSettings(msgspec.Struct, frozen=True, kw_only=True):
+    watch: list[str] = []  # markets always in the watched set
+    watched_max_markets: int = 100  # owner, 2026-10-27
+    watched_max_deltas_per_second: int = 3_000
+    read_share_percent: int = 25  # of the account's read bucket (owner, 2026-10-27)
+    storage_budget_gb: int = 200  # for raw recordings (owner, 2026-10-27)
+
+
 class PluginDefaults(msgspec.Struct, frozen=True, kw_only=True):
     queue_size: int = 10_000
     call_timeout_seconds: float = 30.0
@@ -52,6 +60,7 @@ class Settings(msgspec.Struct, frozen=True, kw_only=True):
     kalshi: KalshiSettings = KalshiSettings()
     logs: LogSettings = LogSettings()
     budget: BudgetSettings = BudgetSettings()
+    feed: FeedSettings = FeedSettings()
     plugins: PluginDefaults = PluginDefaults()
     plugin_settings: dict[str, dict[str, Any]] = {}
 

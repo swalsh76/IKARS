@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import random
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from types import TracebackType
@@ -119,10 +120,14 @@ class KalshiPublicClient:
         jitter: Callable[[], float] = lambda: random.uniform(0.5, 1.0),  # noqa: S311 - not security
         allowed: Callable[[str], bool] = path_allowed,
         signer: Signer | None = None,
+        observe: Callable[[float, float, Mapping[str, str]], None] | None = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self._config = config
         self._allowed = allowed
         self._signer = signer
+        self._observe = observe  # (sent, received, headers) of each reply, for the clock check
+        self._clock = clock
         parsed = urlparse(config.rest_url)
         self._base = config.rest_url
         self._base_path = parsed.path.rstrip("/")
@@ -184,7 +189,10 @@ class KalshiPublicClient:
                 headers = (
                     self._signer.headers("GET", self._base_path + path) if self._signer else None
                 )
+                sent = self._clock()
                 response = await self._http.get(self._base + path, params=query, headers=headers)
+                if self._observe is not None:
+                    self._observe(sent, self._clock(), response.headers)
             except httpx.TransportError as exc:
                 self.stats.transport_errors += 1
                 if attempt == cfg.max_retries:
@@ -269,6 +277,7 @@ class KalshiAccountClient(KalshiPublicClient):
         bucket: TokenBucket | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        observe: Callable[[float, float, Mapping[str, str]], None] | None = None,
     ) -> None:
         if not isinstance(signer, AccountSigner):
             raise TypeError("the account client signs with an AccountSigner only")
@@ -279,4 +288,5 @@ class KalshiAccountClient(KalshiPublicClient):
             sleep=sleep,
             allowed=account_path_allowed,
             signer=signer,
+            observe=observe,
         )

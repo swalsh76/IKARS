@@ -22,7 +22,7 @@ slice still needs its own approved plan before code.
 
 ### Resume point (keep this current at every step that changes it)
 
-*Last updated 2026-10-26.*
+*Last updated 2026-10-27.*
 
 - Survey of KAPS, KalTerm3 and SPARQ done (BUILD-LOG 0.1).
 - **Direction:** beat the humans, not the big bots. Strategies, in order: news/data estimates and momentum, then
@@ -90,9 +90,10 @@ slice still needs its own approved plan before code.
   `IKARS_KALSHI_PRIVATE_KEY_PATH` (separate from KAPS/SPARQ's `KALSHI_*`). Never print or read the id, the path or the
   file; check with `Test-Path` only; load into a single command's process. First use: M1.2's live tests.
 - **M1 slice list and gates approved (2026-10-26).** **M1.1 done:** PR #1 merged as `2f19222`, CI green on `main`
-  (BUILD-LOG 1.1). **M1.2 done** (PR #3 merged as `3485b16`; BUILD-LOG 1.2). **M1.3 mock-ups round 1 published** (a private canvas;
-  the link is in memory, not the repository) and awaiting the owner. **M1.4a engine core built** (BUILD-LOG 1.4a;
-  1,118 tests; reviews: 9 + 13 findings, all fixed); its PR awaits the owner's merge. Next: the M1.4b plan. The owner allows
+  (BUILD-LOG 1.1). **M1.2 done** (PR #3 merged as `3485b16`; BUILD-LOG 1.2). **M1.3 approved for now** (source in `docs/design/mockups/`).
+  **M1.4a done** (PR #4 merged as `b29a86e`). **M1.4b built and verified live** on `m1/4b-feeds` (BUILD-LOG 1.4b;
+  commits `b2cfe8c`, `71489fc`, `f2d57fb`): PR #5 open with CI green, waiting for the owner's merge; open question: where GPU
+  detection goes (recommended M1.6 or M2). Next after the merge: M1.5 (ledger) plan. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
