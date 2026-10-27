@@ -251,6 +251,8 @@ class KalshiFeed:
         """Send a remembered subscription again (after a failed restore); returns its new sid."""
         for sub in self._subscriptions:
             if sub.channel == channel:
+                if sub.sid is not None:  # restored meanwhile (a reconnect): never a second one
+                    return sub.sid
                 reply = await self._command("subscribe", sub.params)
                 sub.sid = self._sid_of(reply)
                 return sub.sid
@@ -506,6 +508,7 @@ class KalshiFeed:
             except FeedError as exc:
                 if exc.code is None:
                     raise  # transport trouble: the session ends and tries again
+                sub.sid = None  # the old link's id means nothing (or another channel) on this one
                 log.warning("resubscribe to %s failed: %s", sub.channel, exc)
                 self._queue.put_nowait(ResubscribeFailed(sub.channel, str(exc), generation))
 
@@ -520,7 +523,9 @@ class KalshiFeed:
             return
         self._by_type[frame.type] += 1
         if frame.is_response:
-            self._count_sequence(frame)
+            gap = self._count_sequence(frame)  # a reply uses up a number, so it can show a gap
+            if gap is not None:
+                self._emit(gap)
             self._resolve(frame)
             return
         if frame.error:

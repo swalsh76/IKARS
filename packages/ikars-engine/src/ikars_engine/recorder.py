@@ -14,17 +14,23 @@ written to a temporary file, the IPC file is renamed ``.merged`` (from then on i
 temporary file), the temporary file replaces the hour's Parquet, and the ``.merged`` file goes.
 ``recover`` at the next start finishes whichever step was interrupted, and compacts any hour a
 crash left open (a torn last batch is read up to the last complete one). A compaction that fails
-(a file held by another program) is logged and left for later; it never stops the recording.
+(a file held by another program) is logged and left for later; it never stops the recording or a
+start. An hour whose earlier file could not be folded in is never overwritten: new rows go to a part
+file beside it (``<HH>.1.arrow``, compacted to ``<HH>.1.parquet``), and readers take every part. A
+compacted file that cannot be read (a crash or a bad disk) is moved aside as ``.damaged``, never
+deleted, and logged; the hour's other rows are kept (M1.R 3 and 5).
 
 Money and counts are stored as the fixed-point integers the models give (dollar millionths,
 contract hundredths), never floats; times as integers (nanoseconds received, Kalshi's milliseconds).
 """
 
 import logging
+import os
 import time
 from collections import defaultdict
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from itertools import count
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +38,8 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.ipc as ipc
 import pyarrow.parquet as pq
+
+from ikars_engine.files import first_free
 
 log = logging.getLogger("ikars_engine.recorder")
 _I64 = pa.int64()
@@ -165,10 +173,15 @@ class Recorder:
     def _writer(self, channel: str, hour: Hour) -> tuple[Any, Any, Path]:
         key = (channel, hour)
         if key not in self._open:
-            path = self.root / channel / hour[0] / f"{hour[1]}.arrow"
-            path.parent.mkdir(parents=True, exist_ok=True)
+            folder = self.root / channel / hour[0]
+            path = folder / f"{hour[1]}.arrow"
+            folder.mkdir(parents=True, exist_ok=True)
             if path.exists():  # this hour was open before (a restart within the hour): fold it in
                 self._compact_now(path, channel)
+            part = 0
+            while path.exists():  # it could not be folded in: never overwrite it, write beside it
+                part += 1
+                path = folder / f"{hour[1]}.{part}.arrow"
             sink = pa.OSFile(str(path), "wb")
             self._open[key] = (ipc.new_stream(sink, SCHEMAS[channel]), sink, path)
         return self._open[key]
@@ -201,7 +214,7 @@ class Recorder:
         try:
             compact(path, channel)
             return 1
-        except OSError as exc:  # a file held by another program: left for the next start
+        except Exception as exc:  # held by another program, or worse: left for later, never fatal
             self.compaction_failures += 1
             log.warning(
                 "compaction failed; left for later", extra={"file": path.name, "error": repr(exc)}
@@ -223,8 +236,14 @@ class Recorder:
         run left open. Returns how many files were dealt with."""
         count = 0
         for merged in sorted(self.root.glob("*/*/*.arrow.merged")):
-            finish_compaction(merged)
-            count += 1
+            try:
+                finish_compaction(merged)
+                count += 1
+            except OSError as exc:  # held: finished at a later start
+                self.compaction_failures += 1
+                log.warning(
+                    "compaction not finished", extra={"file": merged.name, "error": repr(exc)}
+                )
         for path in sorted(self.root.glob("*/*/*.arrow")):
             count += self._compact_now(path, path.parent.parent.name)
         return count
@@ -238,17 +257,16 @@ class Recorder:
         while hour <= end_ns:
             day, hh = hour_of(hour)
             folder = self.root / "trade" / day
-            # a compaction may be running in a worker thread: its rows are in one of these
-            compacted = folder / f"{hh}.parquet"
-            if compacted.exists():
+            # a compaction may be running in a worker thread: its rows are in one of these; an
+            # hour can have part files (HH.1.parquet, ...) beside the first
+            for compacted in folder.glob(f"{hh}.*parquet"):
                 try:
                     table = pq.read_table(compacted, columns=["trade_id"])
                     found.update(table["trade_id"].to_pylist())
                 except (pa.ArrowInvalid, OSError):
                     pass  # being replaced this instant; the stream it came from is read below
-            for stream in (folder / f"{hh}.arrow", folder / f"{hh}.arrow.merged"):
-                if stream.exists():
-                    found.update(_read_stream(stream, SCHEMAS["trade"])["trade_id"].to_pylist())
+            for stream in [*folder.glob(f"{hh}.*arrow"), *folder.glob(f"{hh}.*arrow.merged")]:
+                found.update(_read_stream(stream, SCHEMAS["trade"])["trade_id"].to_pylist())
             hour += HOUR_NS
         return found
 
@@ -275,17 +293,45 @@ def compact(path: Path, channel: str) -> Path:
     schema = SCHEMAS[channel]
     target = path.with_suffix(".parquet")
     temporary = path.with_suffix(".parquet.tmp")
+    merged = path.with_suffix(".arrow.merged")
+    if merged.exists():
+        # an earlier fold-in of this hour stopped between its steps (its Parquet was held): finish
+        # it first, or this one would overwrite the rows it still holds (M1.R merge review 1)
+        finish_compaction(merged)
     tables = [_read_stream(path, schema)]
     if target.exists():
-        tables.insert(0, pq.read_table(target, schema=schema))
+        try:
+            tables.insert(0, pq.read_table(target, schema=schema))
+        except pa.ArrowInvalid as exc:
+            if _readable(target):
+                raise  # a sound file that differs from the schema: never set aside, left for later
+            # not a readable Parquet file: kept aside, never deleted
+            damaged = first_free(
+                target.with_name(target.name + ".damaged" + ("" if n == 0 else f".{n}"))
+                for n in count()
+            )
+            target.replace(damaged)
+            log.error(
+                "a recorded hour could not be read; set aside",
+                extra={"file": target.name, "kept_as": damaged.name, "error": repr(exc)},
+            )
     table = pa.concat_tables(tables)
     table = table.take(pc.sort_indices(table, sort_keys=[("received_ns", "ascending")]))
     if channel == "trade" and table.num_rows:
         table = _first_of_each(table, "trade_id")
     pq.write_table(table, temporary, compression="zstd")
-    merged = path.with_suffix(".arrow.merged")
+    with open(temporary, "rb+") as written:  # on disk before it replaces anything (a power cut)
+        os.fsync(written.fileno())
     path.replace(merged)  # step 1: from here the rows live in the temporary file
     return finish_compaction(merged)
+
+
+def _readable(path: Path) -> bool:
+    """Whether ``path`` is a Parquet file whose footer can be read (whatever its schema)."""
+    try:
+        return pq.ParquetFile(path).metadata is not None
+    except (pa.ArrowInvalid, OSError):
+        return False
 
 
 def finish_compaction(merged: Path) -> Path:

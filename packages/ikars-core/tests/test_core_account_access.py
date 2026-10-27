@@ -76,7 +76,7 @@ def test_the_account_reader_signs_exactly_the_account_reads(path: str) -> None:
 
 @pytest.mark.parametrize(
     "path",
-    ["/portfolio/orders", "/portfolio/balance/x", "/portfolio/fills/../orders", "/portfolio",
+    ["/portfolio/orders/o-1", "/portfolio/balance/x", "/portfolio/fills/../orders", "/portfolio",
      "/historical/orders", "/markets", "/exchange/status", "/portfolio/subaccounts/transfer",
      "/portfolio/order_groups", "/account", ""],
 )  # fmt: skip
@@ -136,7 +136,7 @@ async def test_the_account_client_refuses_market_data_before_sending() -> None:
     with pytest.raises(ReadOnlyViolation):
         await client.get_json("/markets")
     with pytest.raises(ReadOnlyViolation):
-        await client.get_json("/portfolio/orders")
+        await client.get_json("/portfolio/order_groups")
     assert seen == []
 
 
@@ -144,7 +144,7 @@ async def test_the_account_client_transport_guard_refuses_other_paths() -> None:
     seen: list[httpx.Request] = []
     client = account_client(lambda _: httpx.Response(200, content=b"{}"), seen)
     with pytest.raises(ReadOnlyViolation, match="not an allowed read path"):
-        await client._http.get(CONFIG.rest_url + "/portfolio/orders")
+        await client._http.get(CONFIG.rest_url + "/portfolio/order_groups")
     with pytest.raises(ReadOnlyViolation, match="read-only"):
         await client._http.post(CONFIG.rest_url + "/portfolio/balance")
     assert seen == []

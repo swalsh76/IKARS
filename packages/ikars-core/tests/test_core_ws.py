@@ -203,6 +203,7 @@ async def test_a_refused_subscription_can_be_sent_again_and_its_sid_looked_up() 
         assert feed.sid_of("trade") is None
         assert await feed.subscribe("trade") == 1 and feed.sid_of("trade") == 1
         await take(feed.events(), 2)  # Reconnected, ResubscribeFailed
+        assert feed.sid_of("trade") is None  # refused: the old link's id is not kept (M1.R 1)
         assert await feed.resubscribe("trade") == 9 and feed.sid_of("trade") == 9
         with pytest.raises(FeedError, match="no subscription"):
             await feed.resubscribe("ticker")
@@ -255,6 +256,15 @@ async def test_added_markets_are_remembered_for_the_next_reconnect() -> None:
 # --- sequence numbers ---------------------------------------------------------------------------
 
 
+async def test_a_resubscribe_of_a_restored_subscription_sends_nothing() -> None:
+    """M1.R merge review 6: a retry waking after a reconnect restored the channel opened a second
+    subscription beside it."""
+    async with FakeKalshi(subscribe_then()) as srv, feed_for(srv) as feed:
+        sid = await feed.subscribe("trade")
+        assert await feed.resubscribe("trade") == sid
+    assert [c["cmd"] for c in srv.commands[0]] == ["subscribe"]  # one, not two
+
+
 async def test_a_jump_in_seq_is_reported_before_the_message_that_shows_it() -> None:
     frames = [trade(1, seq=1), trade(2, seq=2), trade(4, seq=4), trade(5, seq=5)]
     async with FakeKalshi(subscribe_then(*frames)) as srv, feed_for(srv) as feed:
@@ -286,6 +296,33 @@ async def test_a_reply_that_used_a_number_makes_the_next_message_a_gap_if_it_ski
         await feed.update_subscription(sid, "add_markets", [])
         events = await take(feed.events(), 2)
     assert isinstance(events[0], SequenceGap) and (events[0].expected, events[0].got) == (2, 3)
+
+
+async def test_a_reply_that_skips_a_number_is_itself_reported_as_a_gap() -> None:
+    """M1.R 2: a gap seen on a command's reply was counted and dropped."""
+
+    async def first(ws: ServerConnection) -> None:
+        await ws.send(subscribed(await read_command(ws), 1))
+        await ws.send(trade(1, seq=1))
+        update = await read_command(ws)
+        reply = {
+            "id": update["id"],
+            "type": "ok",
+            "sid": 1,
+            "seq": 4,
+            "msg": {"market_tickers": []},
+        }
+        await ws.send(json.dumps(reply))  # 2 and 3 are missing
+        await ws.send(trade(2, seq=5))
+        await ws.wait_closed()
+
+    async with FakeKalshi(first) as srv, feed_for(srv) as feed:
+        sid = await feed.subscribe("trade", ["A"])
+        await take(feed.events(), 1)
+        await feed.update_subscription(sid, "add_markets", [])
+        events = await take(feed.events(), 2)
+    assert isinstance(events[0], SequenceGap) and (events[0].expected, events[0].got) == (2, 4)
+    assert numbers(events) == ["t-2"] and feed.stats()["sequence_gaps"] == 1
 
 
 async def test_messages_without_a_seq_are_never_a_gap() -> None:

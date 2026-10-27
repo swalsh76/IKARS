@@ -50,6 +50,7 @@ from ikars_engine.metrics import Metrics
 from ikars_engine.paths import Paths
 from ikars_engine.portfolio import Held, Portfolio, holdings, portfolio
 from ikars_engine.recorder import Recorder
+from ikars_engine.runmode import at
 from ikars_engine.settings import Settings
 from ikars_engine.share import configured, migration_copier
 from ikars_engine.skew import SkewMonitor
@@ -60,6 +61,7 @@ log = logging.getLogger("ikars_engine.kalshi.runner")
 SAMPLE_EVERY_S = 60.0
 TICK_S = 2.0  # how often the run loop looks for a stop request
 MINUTE_S = 60.0
+FINISH_S = 10.0  # how long the engine may take to drain at shutdown before it is cancelled
 
 
 def clock_observer(skew: SkewMonitor) -> Callable[[float, float, Mapping[str, str]], None]:
@@ -105,6 +107,7 @@ class Live:
     account_client: KalshiAccountClient
     gpu_task: asyncio.Task[None]
     api: ApiServer
+    public_client: KalshiPublicClient
 
 
 def describer(index: MarketIndex) -> Describe:
@@ -218,7 +221,9 @@ async def build(paths: Paths, settings: Settings) -> Live:
     api = ApiServer(api_context, paths.data)
     engine.health_parts["api"] = api.health
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
-    return Live(engine, source, state, ledger, service, backups, account_client, gpu_task, api)
+    return Live(
+        engine, source, state, ledger, service, backups, account_client, gpu_task, api, client
+    )
 
 
 class PortfolioHealth:
@@ -265,33 +270,24 @@ def requests_used(
     }
 
 
-def _at(tree: object, *keys: str) -> object:
-    """``tree[k1][k2]...``, or None where a level is missing or not a mapping."""
-    for key in keys:
-        if not isinstance(tree, dict):
-            return None
-        tree = tree.get(key)
-    return tree
-
-
 def summary(health: dict[str, object]) -> str:
     """One line for the console: the numbers that say whether the feed is healthy."""
 
     def ms(percentile: str) -> float | None:
-        ns = _at(health, "metrics", "timings", "engine.feed_to_route_ns", f"{percentile}_ns")
+        ns = at(health, "metrics", "timings", "engine.feed_to_route_ns", f"{percentile}_ns")
         return round(ns / 1e6, 1) if isinstance(ns, int) else None
 
     return json.dumps(
         {
-            "frames": _at(health, "kalshi", "frames"),
-            "watched": _at(health, "kalshi", "watched"),
-            "books_ready": _at(health, "kalshi", "books_ready"),
-            "open_gaps": _at(health, "kalshi", "open_gaps"),
+            "frames": at(health, "kalshi", "frames"),
+            "watched": at(health, "kalshi", "watched"),
+            "books_ready": at(health, "kalshi", "books_ready"),
+            "open_gaps": at(health, "kalshi", "open_gaps"),
             "feed_to_route_p50_ms": ms("p50"),
             "feed_to_route_p99_ms": ms("p99"),
-            "rest_tokens_spent": _at(health, "request_budget", "tokens_spent"),
-            "ledger_records": _at(health, "ledger", "records"),
-            "ledger_exact": _at(health, "ledger", "reconciled_exact"),
+            "rest_tokens_spent": at(health, "request_budget", "tokens_spent"),
+            "ledger_records": at(health, "ledger", "records"),
+            "ledger_exact": at(health, "ledger", "reconciled_exact"),
             "clock": health.get("clock"),
         },
         default=str,
@@ -327,6 +323,7 @@ async def run(
     # every step of the shutdown runs even when one before it fails, in the reverse of this order
     async with contextlib.AsyncExitStack() as stack:
         stack.push_async_callback(live.account_client.aclose)
+        stack.push_async_callback(live.public_client.aclose)  # M1.R 24
         stack.callback(live.state.close)
         stack.callback(live.ledger.close)
         stack.callback(lambda: health.update(engine.health()))
@@ -348,6 +345,8 @@ async def run(
             await asyncio.sleep(TICK_S)
             if running[0].done():  # the engine ended by itself: say so, so serve exits and the
                 raise EngineStopped(_ended(running[0]))  # watchdog sees it and restarts it
+            if (lost := live.source.failed()) is not None:  # a dead pump is no engine (M1.R 6)
+                raise EngineStopped(f"the Kalshi source stopped: {lost}")
             now = time.monotonic()
             if now - last >= MINUTE_S:
                 last = now
@@ -376,6 +375,12 @@ def _ended(task: asyncio.Task[object]) -> str:
 
 
 async def _finish(tasks: list[asyncio.Task[object]]) -> None:
+    """Wait for the engine to drain, but never for ever: a shutdown always finishes (M1.R 4)."""
+    if not tasks:
+        return
+    _, pending = await asyncio.wait(tasks, timeout=FINISH_S)
+    for task in pending:
+        task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
 
 

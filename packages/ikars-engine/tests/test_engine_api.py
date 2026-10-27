@@ -187,6 +187,7 @@ async def test_markets_search_page_and_quote(ctx: ApiContext) -> None:
     second = await get(ctx, "/v1/markets?limit=1&offset=1", c.MarketPage)
     assert [m.ticker for m in second.items] == ["KXA"] and second.offset == 1
     ctx.index.markets["KXDONE"] = replace(info("KXDONE", 9_999), status="closed")
+    ctx.index.version += 1  # as put() does
     closed_last = await get(ctx, "/v1/markets?category=Demo", c.MarketPage)
     assert [m.ticker for m in closed_last.items] == ["KXB", "KXA", "KXDONE"]  # open ones first
     one = await get(ctx, "/v1/markets/KXA", c.MarketView)
@@ -302,6 +303,26 @@ async def test_subscriptions_are_set_over_http(ctx: ApiContext) -> None:
 # --- the server ---------------------------------------------------------------------------------
 
 
+async def test_the_server_starts_where_no_acl_can_be_read(
+    ctx: ApiContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R 26: off Windows the ACL check raised and the API never started."""
+
+    def not_windows(path: Path) -> list[str]:
+        raise NotImplementedError("other_readers reads a Windows ACL")
+
+    monkeypatch.setattr("ikars_engine.api.other_readers", not_windows)
+
+    def context_for(token: str) -> ApiContext:
+        ctx.token = token
+        return ctx
+
+    server = ApiServer(context_for, tmp_path)
+    await server.start()
+    assert read_api_file(tmp_path) is not None
+    await server.stop()
+
+
 async def test_the_server_listens_on_loopback_and_cleans_up(
     ctx: ApiContext, tmp_path: Path
 ) -> None:
@@ -399,6 +420,54 @@ async def test_stopping_the_server_ends_an_open_stream(ctx: ApiContext, tmp_path
     await asyncio.wait_for(server.stop(), 10)
     assert clock.monotonic() - began < 5 and ctx.streams == {}
     await asyncio.wait_for(asyncio.gather(reader, return_exceptions=True), 5)
+
+
+def test_the_markets_list_is_sorted_once_per_index_change(ctx: ApiContext) -> None:
+    """M1.R 16: every markets request sorted the whole index."""
+    from ikars_engine.api import sorted_markets
+
+    first = sorted_markets(ctx)
+    assert sorted_markets(ctx) is first  # unchanged index: the same list, not sorted again
+    ctx.index.version += 1
+    assert sorted_markets(ctx) is not first
+
+
+def test_a_dropped_book_is_announced_once_as_not_ready(ctx: ApiContext) -> None:
+    """M1.R 10: a book the engine dropped (a reconnect, a market leaving the watched set) was never
+    announced, so a screen kept showing it as ready."""
+    state = Stream(id="s", books={"KXA"})
+    first = changes(ctx, state)
+    assert b'"ready":true' in first[0]
+    ctx.books.pop("KXA")  # type: ignore[attr-defined]
+    dropped = changes(ctx, state)
+    assert len(dropped) == 1 and b'"ready":false' in dropped[0] and b'"yes":[]' in dropped[0]
+    assert changes(ctx, state) == []  # said once
+    ctx.books["KXA"] = snapshot_book("KXA")  # type: ignore[index]
+    ctx.book_version["KXA"] = 2  # type: ignore[index]
+    assert b'"ready":true' in changes(ctx, state)[0]  # rebuilt: sent again
+
+
+async def test_a_websocket_is_refused_before_anything_runs() -> None:
+    """M1.R 14: the guard let every non-HTTP scope through unchecked."""
+    from ikars_engine.api import Guard
+
+    reached: list[str] = []
+    sent: list[dict[str, Any]] = []
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        reached.append(scope["type"])
+
+    async def send(message: Any) -> None:
+        sent.append(message)
+
+    async def receive() -> Any:
+        return {}
+
+    guard = Guard(app, TOKEN)
+    await guard({"type": "websocket", "headers": []}, receive, send)
+    assert reached == [] and sent == [{"type": "websocket.close", "code": 1008}]
+    await guard({"type": "lifespan"}, receive, send)
+    assert reached == ["lifespan"]
 
 
 async def test_malformed_subscriptions_and_re_subscribing(ctx: ApiContext) -> None:

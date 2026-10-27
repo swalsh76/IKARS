@@ -4,6 +4,7 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,18 +12,20 @@ import httpx
 import pytest
 from ikars_core.config import Environment, KalshiConfig
 from ikars_core.endpoints import MarketData
+from ikars_core.markets import series_ticker_of
 from ikars_core.ratelimit import TokenBucket
 from ikars_core.rest import KalshiPublicClient
 from ikars_core.ws import Data, FeedError, Reconnected, ResubscribeFailed, SequenceGap
 from ikars_core.ws_models import parse_frame
 from ikars_engine.clocks import VirtualClock
-from ikars_engine.kalshi.discovery import BOOKMARK, Discovery, MarketIndex, series_of
+from ikars_engine.kalshi.discovery import BOOKMARK, Discovery, MarketIndex
 from ikars_engine.kalshi.exchange import ExchangeWatch
-from ikars_engine.kalshi.runner import _at, clock_observer, requests_used, summary
+from ikars_engine.kalshi.runner import clock_observer, requests_used, summary
 from ikars_engine.kalshi.source import Intervals, KalshiSource
 from ikars_engine.kalshi.watched import WatchedSet
 from ikars_engine.metrics import Metrics
 from ikars_engine.recorder import Recorder, hours, read_rows
+from ikars_engine.runmode import at
 from ikars_engine.skew import SkewMonitor
 from ikars_engine.store import StateStore
 
@@ -47,6 +50,10 @@ def market(
     }
 
 
+def _seconds(iso: str) -> int:
+    return int(datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp())
+
+
 class FakeKalshi:
     """The REST endpoints the source uses, with state the tests can change."""
 
@@ -58,6 +65,11 @@ class FakeKalshi:
         self.requests: list[httpx.Request] = []
         self.fail = False  # every request answers 404
         self.on_markets: Any = None  # called on each market listing (to let time pass)
+        self.trade_asks: list[str] = []  # each trades request's min_ts
+        self.fail_trade_ask: int | None = None  # this trades request (1 is the first) fails
+        self.trades_by_time = (
+            False  # answer only the trades in the request's window, as Kalshi does
+        )
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -92,7 +104,14 @@ class FakeKalshi:
         elif path == "/historical/cutoff":
             body = fixture("cutoff.json")
         elif path in ("/markets/trades", "/historical/trades"):
-            body = {"trades": self.trades, "cursor": ""}
+            self.trade_asks.append(params["min_ts"])
+            if len(self.trade_asks) == self.fail_trade_ask:
+                return httpx.Response(400)
+            trades = self.trades
+            if self.trades_by_time:
+                low, high = int(params["min_ts"]), int(params["max_ts"])
+                trades = [t for t in trades if low <= _seconds(t["created_time"]) < high]
+            body = {"trades": trades, "cursor": ""}
         else:
             return httpx.Response(404)
         return httpx.Response(200, content=json.dumps(body).encode())
@@ -292,7 +311,7 @@ async def test_incremental_discovery_uses_the_bookmark_and_runs_full_without_one
     query = rig.kalshi.requests[-1].url.params
     assert query["min_updated_ts"] == str(T0 // 10**9 - 120) and "status" not in query
     assert rig.discovery.index.markets["A"].status == "closed"
-    assert series_of("KXHIGHNY-26OCT28") == "KXHIGHNY"
+    assert series_ticker_of("KXHIGHNY-26OCT28") == "KXHIGHNY"
 
 
 async def test_the_exchange_status_is_stored_only_when_it_changes(tmp_path: Path) -> None:
@@ -523,7 +542,7 @@ def test_the_summary_line_reads_nested_health() -> None:
     line = json.loads(summary(health))
     assert line["frames"] == {"trade": 3} and line["feed_to_route_p99_ms"] == 50.0
     assert line["feed_to_route_p50_ms"] == 2.5 and line["rest_tokens_spent"] == 120
-    assert _at(health, "kalshi", "missing", "x") is None
+    assert at(health, "kalshi", "missing", "x") is None
 
 
 CUTOFF_S = 1_787_356_800  # the fixture's trades cutoff, 2026-08-22 00:00 UTC
@@ -681,17 +700,29 @@ async def test_a_market_is_asked_for_one_snapshot_until_it_comes(tmp_path: Path)
     await rig.source.stop()
 
 
-async def test_a_repeated_backfill_never_stores_a_trade_twice(tmp_path: Path) -> None:
-    """Review 5: an earlier attempt's rows carry the time they were fetched, in a later hour."""
+async def test_a_repeated_backfill_never_stores_a_trade_twice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review 5: an earlier attempt's rows carry the time they were fetched, in a later hour. With
+    M1.R 17 the attempt that failed after storing them is resumed, and still stores none twice."""
     rig = Rig(tmp_path, [market("M1")])
     rig.recorder = Recorder(tmp_path / "rec", flush_seconds=0)
     rig.source.recorder = rig.recorder
     await rig.source.start()
     rig.kalshi.trades = [fixture("trade.json")]
     rig.clock.advance_to(LATE + 2 * HOUR_NS)
-    assert await rig.source._backfill(LATE - 10 * 10**9, LATE) == 1
+    real = rig.recorder.write
+
+    def store_then_fail(channel: str, row: dict[str, Any]) -> None:
+        real(channel, row)
+        raise OSError("the attempt fails right after storing the trade")
+
+    monkeypatch.setattr(rig.recorder, "write", store_then_fail)
+    with pytest.raises(OSError):
+        await rig.source._backfill(LATE - 10 * 10**9, LATE, gap_id=7)
+    monkeypatch.undo()
     rig.clock.advance_to(LATE + 3 * HOUR_NS)  # the attempt is repeated an hour later
-    assert await rig.source._backfill(LATE - 10 * 10**9, LATE) == 0
+    assert await rig.source._backfill(LATE - 10 * 10**9, LATE, gap_id=7) == 0
     await rig.source.stop()
     assert read_rows(hours(tmp_path / "rec", "trade"), "trade").num_rows == 1
 
@@ -726,6 +757,218 @@ async def test_a_refused_subscription_is_sent_again_until_it_holds(tmp_path: Pat
     assert rig.metrics.counters["kalshi.resubscribe.errors"] == 1
     assert [g.channel for g in rig.state.gaps() if g.reason == "resubscribed"] == ["trade"]
     await rig.source.stop()
+
+
+async def test_a_gap_from_a_lost_link_is_not_read_through_the_new_one(tmp_path: Path) -> None:
+    """M1.R 12: a gap queued before a reconnect was named through the new link's sids."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    await rig.feed.queue.put(Reconnected(2, "connection_lost", 1.0))
+    await rig.feed.queue.put(SequenceGap(rig.feed.book_sid(), 5, 9, 1))  # from link 1
+    await rig.feed.queue.put(frame("ticker", TICKER_MSG, T0 + 3, sid=1))
+    await rig.items(1)
+    assert not [g for g in rig.state.gaps() if g.reason == "sequence"]
+    assert rig.metrics.counters["kalshi.gaps.stale"] == 1 and rig.feed.snapshots == []
+    await rig.feed.queue.put(SequenceGap(rig.feed.book_sid(), 5, 9, 2))  # from the live link
+    await rig.feed.queue.put(frame("ticker", TICKER_MSG, T0 + 4, sid=1))
+    await rig.items(1)
+    assert [g.channel for g in rig.state.gaps() if g.reason == "sequence"] == ["book"]
+    await rig.source.stop()
+
+
+async def test_a_refused_book_subscription_is_not_opened_twice_by_the_rebalance(
+    tmp_path: Path,
+) -> None:
+    """M1.R 1: while a refused subscription is being sent again, its sid is unknown; the rebalance
+    must not open a second one beside it."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    book = rig.feed.book_sid()
+    rig.feed.subscriptions.pop(book)  # refused after a reconnect: no sid on the new link
+    rig.source._retrying.add("orderbook_delta")
+    await rig.source._rebalance()
+    assert rig.feed.sid_of("orderbook_delta") is None  # nothing opened beside the retry
+    rig.source._retrying.discard("orderbook_delta")
+    await rig.source._rebalance()
+    assert rig.feed.sid_of("orderbook_delta") is not None  # no retry running: it is opened
+    await rig.source.stop()
+
+
+async def test_a_delta_without_a_book_asks_for_a_snapshot_and_only_changes_are_news(
+    tmp_path: Path,
+) -> None:
+    """M1.R 11, 13 and 16: a delta before any snapshot made an empty book and never asked for one;
+    every delta, even one that changed nothing, bumped the book's version."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    sid = rig.feed.book_sid()
+    await rig.feed.queue.put(frame("orderbook_delta", DELTA_MSG, T0 + 1, seq=1, sid=sid))
+    await rig.feed.queue.put(
+        frame("orderbook_delta", {**DELTA_MSG, "market_ticker": "GONE"}, T0 + 2, seq=2, sid=sid)
+    )
+    await rig.items(2)
+    await asyncio.sleep(0)
+    assert "M1" not in rig.source.books and "GONE" not in rig.source.books
+    assert rig.feed.snapshots == [["M1"]]  # asked for the watched market only
+    assert rig.source.book_version == {}
+    await rig.feed.queue.put(frame("orderbook_snapshot", SNAPSHOT_MSG, T0 + 3, seq=3, sid=sid))
+    await rig.feed.queue.put(
+        frame("orderbook_delta", {**DELTA_MSG, "ts_ms": 0}, T0 + 4, seq=4, sid=sid)
+    )
+    await rig.items(2)
+    version = rig.source.book_version["M1"]
+    for n, delta in enumerate(("-99.00", "-1.00")):  # breaks the book, then a delta while broken
+        await rig.feed.queue.put(
+            frame(
+                "orderbook_delta", {**DELTA_MSG, "delta_fp": delta}, T0 + 5 + n, seq=5 + n, sid=sid
+            )
+        )
+    await rig.items(2)
+    assert rig.source.book_version["M1"] == version + 1  # the change to broken only
+    await rig.source.stop()
+
+
+async def test_a_failing_stop_still_ends_the_engines_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R 4: a recorder that failed at stop (a full disk) left the engine waiting for ever."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+
+    def full(*_: Any) -> None:
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(rig.recorder, "close", full)
+    with pytest.raises(OSError, match="no space"):
+        await rig.source.stop()
+    remaining = [item async for item in rig.source.items()]  # ends instead of waiting for ever
+    assert remaining == [] and not rig.state.shut_down_cleanly()
+
+
+async def test_a_start_that_fails_is_not_a_clean_shutdown(tmp_path: Path) -> None:
+    """M1.R 21: a start that failed part-way was then recorded as a clean shutdown."""
+    rig = Rig(tmp_path, [market("M1")])
+
+    async def down() -> int:
+        raise httpx.ConnectError("Kalshi unreachable")
+
+    rig.discovery.full = down  # type: ignore[method-assign]
+    with pytest.raises(httpx.ConnectError):
+        await rig.source.start()
+    await rig.source.stop()
+    assert not rig.state.shut_down_cleanly()
+
+
+async def test_a_dead_pump_is_reported(tmp_path: Path) -> None:
+    """M1.R 6: the pump could end (an error escaping the feed) and nothing noticed."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    assert rig.source.failed() is None
+
+    async def broken() -> AsyncIterator[Any]:
+        raise FeedError("lost for good")
+        yield
+
+    rig.source._tasks[0].cancel()
+    rig.feed.events = broken  # type: ignore[method-assign]
+    rig.source._tasks[0] = asyncio.create_task(rig.source._pump(), name="kalshi.pump")
+    await asyncio.sleep(0.01)
+    assert rig.source.failed() == "kalshi.pump ended: FeedError"
+    await rig.source.stop()
+
+
+def test_the_engines_input_is_bounded_and_ends_even_when_full() -> None:
+    """M1.R 7: an unbounded queue meant the feed's overflow handling never ran."""
+    from ikars_engine.kalshi.source import OUT_QUEUE_ITEMS
+    from ikars_engine.sources import LiveSource
+
+    live = LiveSource(maxsize=2)
+    live._queue.put_nowait(object())
+    live._queue.put_nowait(object())
+    live.end_now()  # full: an unread item makes room
+    assert live._queue.qsize() == 2 and OUT_QUEUE_ITEMS > 0
+
+
+async def test_the_shutdown_waits_for_the_engine_only_so_long() -> None:
+    """M1.R 4: the shutdown waited on the engine with no limit."""
+    from ikars_engine.kalshi import runner
+
+    stuck = asyncio.create_task(asyncio.Event().wait())
+    original = runner.FINISH_S
+    runner.FINISH_S = 0.01
+    try:
+        await runner._finish([stuck])
+    finally:
+        runner.FINISH_S = original
+    assert stuck.cancelled()
+    await runner._finish([])
+
+
+async def test_a_failed_backfill_resumes_at_the_slice_it_failed(tmp_path: Path) -> None:
+    """M1.R 17: a failure restarted the whole window, and every trade id of it was held at once."""
+    rig = Rig(tmp_path, [market("M1")])
+    rig.recorder = Recorder(tmp_path / "rec", flush_seconds=0)
+    rig.source.recorder = rig.recorder
+    await rig.source.start()
+
+    def trade_at(ns: int, trade_id: str) -> dict[str, Any]:
+        moment = datetime.fromtimestamp(ns / 10**9, UTC).isoformat().replace("+00:00", "Z")
+        return {**fixture("trade.json"), "trade_id": trade_id, "created_time": moment}
+
+    start = LATE - 3 * HOUR_NS
+    rig.kalshi.trades = [
+        trade_at(start + 600 * 10**9, "a"),  # in the first slice
+        trade_at(start + 2 * HOUR_NS + 60 * 10**9, "b"),  # in the third
+    ]
+    rig.kalshi.trades_by_time = True
+    rig.kalshi.fail_trade_ask = 2  # the second slice fails, once
+    asked = rig.kalshi.trade_asks
+    gap = rig.state.add_gap("trade", "reconnect", LATE - 3 * HOUR_NS, LATE, "backfill", LATE)
+    rig.clock.advance_to(LATE + HOUR_NS)
+    await rig.source._backfill_open_gaps()
+    assert rig.state.gaps("open")[0].id == gap  # failed: tried again later
+    first_attempt = list(asked)
+    await rig.source._backfill_open_gaps()
+    resumed = asked[len(first_attempt) :]
+    assert resumed[0] == first_attempt[1]  # the finished first slice is not fetched again
+    assert rig.state.gaps("done")[0].detail == "1 trades fetched"  # only what was left
+    assert rig.state.bookmark(f"backfill.{gap}.done_s") is None  # closed: nothing kept
+    await rig.source.stop()
+    rows = read_rows(hours(tmp_path / "rec", "trade"), "trade")
+    assert sorted(rows.column("trade_id").to_pylist()) == ["a", "b"]  # each once
+
+
+async def test_long_closed_markets_are_forgotten_and_unknown_tickers_kept_nowhere(
+    tmp_path: Path,
+) -> None:
+    """M1.R 16: every market Kalshi ever listed (and every combo's quote) stayed in memory."""
+    closed = {**market("OLD", status="finalized"), "close_time": "2025-12-01T00:00:00Z"}
+    rig = Rig(tmp_path, [market("M1"), closed])
+    await rig.source.start()
+    rig.source.quotes["OLD"] = (1, 2)
+    rig.source.last_price_e6["OLD"] = 1
+    await rig.feed.queue.put(frame("ticker", {**TICKER_MSG, "market_ticker": "KXMVE-X"}, T0 + 1))
+    await rig.feed.queue.put(frame("ticker", TICKER_MSG, T0 + 2, sid=1))
+    await rig.items(2)
+    assert "KXMVE-X" not in rig.source.quotes and "M1" in rig.source.quotes
+    assert "OLD" not in rig.discovery.index.markets  # long settled: never kept
+    await rig.source._discover()
+    assert "OLD" not in rig.source.quotes and "OLD" not in rig.source.last_price_e6
+    assert "M1" in rig.discovery.index.markets and "M1" in rig.source.quotes
+    await rig.source.stop()
+
+
+def test_only_long_settled_markets_leave_the_index() -> None:
+    """M1.R merge review 5: a closed market waiting for its result may still be held."""
+    from ikars_core.models import Market
+
+    index = MarketIndex(now_ns=lambda: T0)
+    for ticker, status in (("WAITING", "closed"), ("PAID", "finalized")):
+        index.put(Market.model_validate(
+            {**market(ticker, status=status), "close_time": "2025-11-01T00:00:00Z"}
+        ))  # fmt: skip
+    assert "WAITING" in index.markets and "PAID" not in index.markets  # never re-added either
+    assert index.prune(T0) == []
 
 
 async def test_the_rebalance_removes_before_it_adds_and_trusts_the_exchange(

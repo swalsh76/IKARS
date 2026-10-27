@@ -188,6 +188,18 @@ def test_the_governor_warning_level(tmp_path: Path) -> None:
     assert os.path.exists(tmp_path / "trade/2026-01-01/00.parquet")
 
 
+def test_the_governor_skips_a_file_that_goes_while_it_looks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R 20: a file renamed by a compaction between the listing and the stat failed the check."""
+    kept = make_file(tmp_path / "trade/2026-01-01/00.parquet", 900)
+    gone = tmp_path / "trade/2026-01-01/01.arrow"  # listed, then renamed by a worker
+    governor = StorageGovernor(tmp_path, budget_bytes=1_000)
+    monkeypatch.setattr(governor, "_files", lambda: [kept, gone])
+    report = governor.check()
+    assert report.state is Storage.WARN and report.used_bytes == 900
+
+
 def test_the_first_row_of_a_new_hour_is_never_lost(tmp_path: Path) -> None:
     """Found by the first run of these tests: the hour's flush took the pending list away, and the
     new hour's first row was appended to the orphaned list and lost."""
@@ -238,6 +250,91 @@ def test_a_compaction_that_fails_leaves_the_hour_for_the_next_start(
     monkeypatch.undo()
     assert Recorder(tmp_path).recover() == 1
     assert read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist() == ["a"]
+
+
+def test_a_damaged_hour_never_stops_a_start_and_is_kept_aside(tmp_path: Path) -> None:
+    """M1.R 3: a truncated Parquet hour (a power cut) made every start fail."""
+    first = Recorder(tmp_path)
+    first.write("trade", trade(T0 + 1, "a"))
+    first.close()
+    target = next(tmp_path.glob("trade/*/*.parquet"))
+    target.write_bytes(b"PAR1 not really")  # damaged
+    crashed = Recorder(tmp_path, flush_seconds=0)
+    crashed.write("trade", trade(T0 + 2, "b"))
+    next(iter(crashed._open.values()))[1].close()  # a crash leaves the hour open
+    assert Recorder(tmp_path).recover() == 1  # no exception: the start goes on
+    assert read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist() == ["b"]
+    assert [p.name for p in target.parent.glob("*.damaged")] == ["00.parquet.damaged"]
+
+
+def test_an_hour_that_cannot_be_folded_in_is_never_overwritten(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R 5: after a failed fold-in, the hour's earlier file was reopened and emptied."""
+    first = Recorder(tmp_path, flush_seconds=0)
+    first.write("trade", trade(T0 + 1, "a"))
+    next(iter(first._open.values()))[1].close()  # left open by a crash
+
+    def held(path: Path, channel: str) -> Path:
+        raise PermissionError("in use")
+
+    monkeypatch.setattr("ikars_engine.recorder.compact", held)
+    second = Recorder(tmp_path, flush_seconds=0)
+    second.write("trade", trade(T0 + 2, "b"))
+    folder = next(tmp_path.glob("trade/*"))
+    assert sorted(p.name for p in folder.glob("*.arrow")) == ["00.1.arrow", "00.arrow"]
+    assert second.known_trade_ids(T0, T0 + 10) == {"a", "b"}  # both parts are read
+    for _, sink, _ in second._open.values():
+        sink.close()
+    second._open.clear()
+    monkeypatch.undo()
+    assert Recorder(tmp_path).recover() == 2
+    ids = read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist()
+    assert sorted(ids) == ["a", "b"]
+
+
+def test_a_fold_in_stopped_between_its_steps_is_finished_before_the_next(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R merge review 1: when step 2 failed (the Parquet held), the next fold-in of the hour
+    overwrote the files still holding the first one's rows."""
+    first = Recorder(tmp_path)
+    first.write("trade", trade(T0 + 1, "a"))
+
+    def held(merged: Path) -> Path:
+        raise PermissionError("the hour's Parquet is open in a reader")
+
+    monkeypatch.setattr("ikars_engine.recorder.finish_compaction", held)
+    first.close()  # step 1 done, step 2 failed: 00.arrow.merged and 00.parquet.tmp remain
+    monkeypatch.undo()
+    second = Recorder(tmp_path)
+    second.write("trade", trade(T0 + 2, "b"))
+    second.close()
+    assert read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist() == ["a", "b"]
+    assert not list(tmp_path.glob("trade/*/*.merged")) and not list(tmp_path.glob("trade/*/*.tmp"))
+
+
+def test_a_sound_file_of_another_schema_is_never_set_aside(tmp_path: Path) -> None:
+    """M1.R merge review 7: a schema change would have moved every good hour aside as damaged."""
+    import pyarrow as pa
+
+    folder = tmp_path / "trade" / "2026-01-01"
+    folder.mkdir(parents=True)
+    pq.write_table(pa.table({"received_ns": ["not a number"]}), folder / "00.parquet")
+    crashed = Recorder(tmp_path, flush_seconds=0)
+    crashed.write("trade", trade(T0 + 1, "a"))
+    next(iter(crashed._open.values()))[1].close()
+    restarted = Recorder(tmp_path)
+    assert restarted.recover() == 0 and restarted.compaction_failures == 1  # left, not set aside
+    assert (folder / "00.parquet").exists() and not list(folder.glob("*.damaged"))
+
+
+def test_damaged_hours_count_against_the_budget_and_go_first(tmp_path: Path) -> None:
+    """M1.R merge review 7: set-aside files were invisible to the storage governor."""
+    damaged = make_file(tmp_path / "trade/2026-01-01/00.parquet.damaged", 700)
+    kept = make_file(tmp_path / "trade/2026-01-02/00.parquet", 300)
+    report = StorageGovernor(tmp_path, budget_bytes=1_000).check()
+    assert report.state is Storage.PRUNED and not damaged.exists() and kept.exists()
 
 
 def test_an_hour_closes_only_after_its_grace_period(tmp_path: Path) -> None:

@@ -24,6 +24,7 @@ The host contains every plugin so that one failing plugin never stalls the other
 import asyncio
 import contextvars
 import logging
+from collections import deque
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -66,6 +67,9 @@ class PluginState(StrEnum):
     BACKING_OFF = "backing_off"
     PAUSED = "paused"  # crashed too often, or paused by the cost tracker
     STOPPED = "stopped"
+
+
+GAPS_KEPT = 100  # a slow plugin can drop thousands of items a second (M1.R 19)
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,7 +200,8 @@ class PluginHost:
         self._started = False
         self._settings = o.settings
         self._slots: dict[str, _Slot] = {}
-        self.gaps: list[Gap] = []
+        self.gaps: deque[Gap] = deque(maxlen=GAPS_KEPT)  # the latest; every one is in the metrics
+        self.gap_total = 0
 
     # --- registration ----------------------------------------------------------------------
 
@@ -272,6 +277,7 @@ class PluginHost:
 
     def _gap(self, plugin: str, reason: str, count: int) -> None:
         self.gaps.append(Gap(plugin, reason, count, self._clock.now_ns()))
+        self.gap_total += 1
         self._metrics.count(f"plugin.{plugin}.gaps", count)
 
     # --- live tasks ------------------------------------------------------------------------

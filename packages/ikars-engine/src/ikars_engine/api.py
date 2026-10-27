@@ -57,6 +57,7 @@ MAX_SUBSCRIPTIONS = 200
 HEALTH_EVERY_S = 5.0  # also keeps an idle stream alive
 PORTFOLIO_EVERY_S = 1.0
 MAX_STREAMS = 8  # a terminal needs one or two
+DROPPED = -1  # a stream's sent book version for a book the engine no longer keeps
 MAX_CANDLE_HOURS = 24 * 7
 CANDLE_CACHE_S = 60.0  # a chart reopened within a minute costs no request
 MAX_CANDLE_CACHE = 256
@@ -100,6 +101,8 @@ class ApiContext:
     streams: dict[str, "Stream"] = field(default_factory=dict)
     # (loop time, body, status): successes and failures alike, for CANDLE_CACHE_S
     candle_cache: dict[tuple[str, int, int], tuple[float, bytes, int]] = field(default_factory=dict)
+    # the index in the markets list's order, and the index version it was sorted at (M1.R 16)
+    sorted_index: tuple[int, list[MarketInfo]] = (-1, [])
     closing: bool = False  # set at stop: every stream ends
     alert_index: "AlertIndex | None" = None
 
@@ -128,7 +131,10 @@ class Guard:
         self._expected = f"Bearer {token}".encode()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        if scope["type"] == "websocket":  # no route speaks it: refused, never let through (M1.R 14)
+            await send({"type": "websocket.close", "code": 1008})
+            return
+        if scope["type"] != "http":  # the server's own lifespan events
             await self._app(scope, receive, send)
             return
         headers = dict(scope["headers"])
@@ -221,6 +227,19 @@ def gap_view(gap: Gap) -> c.GapView:
         id=gap.id, channel=gap.channel, reason=gap.reason, start_utc=utc_text(gap.start_ns),
         end_utc=utc_text(gap.end_ns), recovery=gap.recovery, status=gap.status, detail=gap.detail,
     )  # fmt: skip
+
+
+def sorted_markets(ctx: "ApiContext") -> list[MarketInfo]:
+    """The index, open markets first (closed ones keep their day's volume for a while), then by
+    volume; sorted again only when the index changed, not on every request."""
+    version, ordered = ctx.sorted_index
+    if version != ctx.index.version:
+        ordered = sorted(
+            ctx.index.markets.values(),
+            key=lambda m: (m.status not in OPEN_STATUSES, -m.volume_24h_e2, m.ticker),
+        )
+        ctx.sorted_index = (ctx.index.version, ordered)
+    return ordered
 
 
 def book_view(ticker: str, book: OrderBook) -> c.BookView:
@@ -377,12 +396,10 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         offset = _int(request, "offset", 0, 0, 10**7) or 0
         limit = _int(request, "limit", 100, 1, MAX_PAGE) or 100
         found = [
-            m for m in ctx.index.markets.values()
+            m for m in sorted_markets(ctx)
             if (not query or query in m.ticker.lower() or query in m.title.lower())
             and (category is None or m.category == category)
         ]  # fmt: skip
-        # open markets first (closed ones keep their day's volume for a while), then by volume
-        found.sort(key=lambda m: (m.status not in OPEN_STATUSES, -m.volume_24h_e2, m.ticker))
         page = [market_view(ctx, m) for m in found[offset : offset + limit]]
         return _json(c.MarketPage(items=page, total=len(found), offset=offset))
 
@@ -557,7 +574,16 @@ def changes(ctx: ApiContext, state: Stream) -> list[bytes]:
     for ticker in sorted(state.books):
         seen = ctx.book_version.get(ticker)
         kept = ctx.books.get(ticker)
-        if seen is not None and kept is not None and state.sent_book.get(ticker) != seen:
+        if kept is None:
+            # dropped (a reconnect rebuilds every book; a market left the watched set): say so once,
+            # so a screen never keeps showing the old book as ready (M1.R 10)
+            if state.sent_book.get(ticker, DROPPED) != DROPPED:
+                state.sent_book[ticker] = DROPPED
+                out.append(
+                    _event(state, "book", c.BookView(ticker=ticker, ready=False, yes=[], no=[]))
+                )
+            continue
+        if seen is not None and state.sent_book.get(ticker) != seen:
             received = ctx.book_changed_ns.get(ticker)
             if ticker in state.sent_book and received is not None:
                 ctx.metrics.observe("api.feed_to_stream_ns", max(0, now - received))
@@ -644,7 +670,7 @@ class ApiServer:
         write_text_atomic(self._file, json.dumps(record))
         try:
             readers = other_readers(self._file)
-        except OSError:
+        except (OSError, NotImplementedError):  # off Windows there is no ACL to read (M1.R 26)
             readers = []
         if readers:  # the token would be readable by someone else: say so (never the token)
             log.warning("api.json is readable by other accounts", extra={"readers": len(readers)})

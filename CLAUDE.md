@@ -107,9 +107,12 @@ slice still needs its own approved plan before code.
   p99 <= 33 ms**. **Direction change (owner, 2026-10-27):** the terminal becomes a **TypeScript web app** (D1, D3,
   D11, D12 amended; BUILD-LOG 1.8w; all recommended answers approved: engine-served Edge app window, one-time code to
   an HttpOnly cookie, React with Vite and pnpm). PR #12 merged (`d73921b`); tag `wpf-terminal-final` pushed. **WPF
-  pruned** on branch `m1/8-prune-wpf` (`2ce5d1e` decision record, `371d646` prune, merge-review fixes): PR open. **Blocked until the owner removes `dotnet` from the `main protection` ruleset's
-  required checks** (GitHub settings; Claude was not permitted to change it). Then the owner's merge. Next: the
-  **M1.8a-web** plan for approval (it adds the `web` CI job and makes `web` a required check), then M1.8b. The owner's M1.6 auto-start sign-out check is still pending. The owner allows
+  pruned:** PR #13 merged as `1b92d49`. The owner edited the `main protection` ruleset, which now requires **no**
+  status checks (to restore: `python`, `hygiene`, and `web` once it exists; Claude is not permitted to change it).
+  **M1.R Base hardening** (owner 2026-10-27: a whole-code-base review before the web terminal; items 1 to 26
+  approved): built on branch `m1/r-hardening` (BUILD-LOG 1.R; merge review itemized); PR open, waiting for the
+  owner's merge. Pending from the owner: a resting order to confirm the reconciliation rule live (GET only). Next:
+  the **M1.8a-web** plan for approval; then M1.8b. The owner's M1.6 auto-start sign-out check is still pending. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

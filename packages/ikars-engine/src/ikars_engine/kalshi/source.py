@@ -36,6 +36,7 @@ from typing import Any, Protocol
 from ikars_core.auth import DataSigner
 from ikars_core.book import Applied, OrderBook
 from ikars_core.endpoints import MarketData
+from ikars_core.markets import is_combo
 from ikars_core.models import Trade
 from ikars_core.ws import Data, Reconnected, ResubscribeFailed, SequenceGap
 from ikars_core.ws_models import (
@@ -85,6 +86,9 @@ SUBSCRIPTION_CHANNELS = {
     "market_lifecycle_v2": "lifecycle",
     ORDERBOOK_CHANNEL: "book",
 }
+
+
+OUT_QUEUE_ITEMS = 50_000  # items waiting for the engine; about 15 s of a busy feed
 
 
 class Feed(Protocol):
@@ -152,7 +156,9 @@ class KalshiSource:
         self._governor = governor
         self._signer = signer
         self._every = intervals
-        self._out = LiveSource()
+        # bounded: when the engine falls behind, the pump waits, the feed's own queue fills, and its
+        # designed overflow (drop the link, reconnect, log the gap) takes over (M1.R 7)
+        self._out = LiveSource(maxsize=OUT_QUEUE_ITEMS)
         self._tasks: list[asyncio.Task[None]] = []
         self.books: dict[str, OrderBook] = {}
         self.last_received: dict[str, int] = {}
@@ -170,6 +176,8 @@ class KalshiSource:
         self._retrying: set[str] = set()  # subscriptions being sent again
         self._error_gap_at: dict[str, int] = {}
         self._side_tasks: set[asyncio.Task[None]] = set()
+        self._link = 1  # the feed link events belong to; a reconnect moves it on
+        self._started = False
         self._attempts: Counter[int] = Counter()
         self.counts: Counter[str] = Counter()
         self.storage: dict[str, object] = {}
@@ -213,17 +221,33 @@ class KalshiSource:
             asyncio.create_task(self._every_so_often(name, step, seconds), name=f"kalshi.{name}")
             for name, step, seconds in loops
         ]
+        self._started = True
 
     async def stop(self) -> None:
         tasks = [*self._tasks, *self._side_tasks]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        await self._feed.close()
-        self._heartbeat_now()
-        self.recorder.close()
-        self._state.mark_clean_shutdown(self._clock.now_ns())
-        await self._out.close()
+        try:
+            await self._feed.close()
+            self._heartbeat_now()
+            self.recorder.close()
+            if self._started:  # a start that failed part-way is not a clean shutdown (M1.R 21)
+                self._state.mark_clean_shutdown(self._clock.now_ns())
+        finally:
+            # whatever failed above (a full disk), the engine's input ends, so the engine ends and
+            # the shutdown finishes (M1.R 4)
+            self._out.end_now()
+
+    def failed(self) -> str | None:
+        """Why the source can no longer deliver (its pump or a background loop ended), or None.
+        The runner stops the engine on it, so the watchdog restarts it (M1.R 6)."""
+        for task in self._tasks:
+            if task.done():
+                error = None if task.cancelled() else task.exception()
+                detail = "" if error is None else f": {type(error).__name__}"
+                return f"{task.get_name()} ended{detail}"
+        return None
 
     def items(self) -> AsyncIterator[Item]:
         return self._out.items()
@@ -284,10 +308,13 @@ class KalshiSource:
         published: int | None = None
         if isinstance(message, TickerMsg):
             ticker = message.market_ticker
+            # the ticker channel carries every market, combos included: combos are never kept, and
+            # a market the index still lacks after a discovery cycle is forgotten then (M1.R 16)
+            known = not is_combo(ticker) or ticker in self.watched.current
             before = (self.quotes.get(ticker), self.last_price_e6.get(ticker))
-            if message.price_e6 is not None:
+            if known and message.price_e6 is not None:
                 self.last_price_e6[ticker] = message.price_e6
-            if message.yes_bid_e6 is not None or message.yes_ask_e6 is not None:
+            if known and (message.yes_bid_e6 is not None or message.yes_ask_e6 is not None):
                 bid, ask = self.quotes.get(ticker, (None, None))
                 self.quotes[ticker] = (
                     bid if message.yes_bid_e6 is None else message.yes_bid_e6,
@@ -328,12 +355,20 @@ class KalshiSource:
             ticker = message.market_ticker
             published = message.ts_ms
             self.watched.note_delta(ticker)
-            book = self.books.setdefault(ticker, OrderBook(ticker))
-            applied = book.apply_delta(message)
-            self._book_changed(ticker, at)
+            kept = self.books.get(ticker)  # only a snapshot makes a book (M1.R 11, 16)
+            if kept is None:
+                applied = Applied.NO_SNAPSHOT
+            else:
+                was_broken = kept.broken
+                applied = kept.apply_delta(message)
+                if applied is Applied.APPLIED or (applied is Applied.BROKEN and not was_broken):
+                    self._book_changed(ticker, at)  # only a real change is news (M1.R 13)
             if applied is Applied.BROKEN:
                 self._metrics.count("kalshi.book.broken")
                 self._request_snapshots([ticker])
+            elif applied is Applied.NO_SNAPSHOT and ticker in self.watched.current:
+                self._metrics.count("kalshi.book.no_snapshot")
+                self._request_snapshots([ticker])  # a lost snapshot is asked for again
             self.recorder.write(
                 "book_delta",
                 {"received_ns": at, "ts_ms": message.ts_ms, "ticker": ticker, "seq": frame.seq,
@@ -406,6 +441,7 @@ class KalshiSource:
         return self.last_received.get(channel, self._live_since)
 
     def _lost_link(self, event: Reconnected) -> None:
+        self._link = event.generation
         down_from = self._clock.now_ns() - int(event.downtime * NS)
         for channel in ("trade", "ticker", "lifecycle", "book"):
             self._gap(
@@ -418,6 +454,11 @@ class KalshiSource:
         self._snapshot_wanted.clear()
 
     def _sequence_gap(self, event: SequenceGap) -> None:
+        if event.generation < self._link:
+            # from a link already lost: the reconnect logged every channel's loss and rebuilds the
+            # books, and its sid means nothing (or another channel) on the new link
+            self._metrics.count("kalshi.gaps.stale")
+            return
         name = self._feed.channel_of(event.sid) or ""
         channel = SUBSCRIPTION_CHANNELS.get(name, name)
         self._gap(
@@ -468,9 +509,23 @@ class KalshiSource:
             self._state.set_bookmark(FULL_BOOKMARK, self._clock.now_ns())
         else:
             await self.discovery.incremental()
+        index = self.discovery.index
+        unlisted = [
+            t for t in self.quotes if t not in index.markets and self.changed_ns.get(t, 0) < began
+        ]
+        self._forget([*index.prune(began), *unlisted])
         for gap in self._state.gaps("open"):
             if gap.recovery == "discovery" and gap.end_ns <= began:  # this cycle covered it
                 self._state.finish_gap(gap.id, "done", "a discovery cycle ran after it")
+
+    def _forget(self, tickers: list[str]) -> None:
+        """Drop what is kept per market for markets the index no longer has (M1.R 16)."""
+        for ticker in tickers:
+            if ticker in self.watched.current:
+                continue
+            for kept in (self.quotes, self.last_price_e6, self.changed_ns, self.books,
+                         self.book_version, self.book_changed_ns):  # fmt: skip
+                kept.pop(ticker, None)
 
     async def _poll_exchange(self) -> None:
         await self.exchange.poll()
@@ -491,30 +546,43 @@ class KalshiSource:
             if gap.recovery != "backfill":
                 continue
             try:
-                count = await self._backfill(gap.start_ns, gap.end_ns)
+                count = await self._backfill(gap.start_ns, gap.end_ns, gap.id)
             except Exception as exc:
                 self._attempts[gap.id] += 1
                 if self._attempts[gap.id] >= self._every.backfill_attempts:
+                    self._state.delete_bookmarks(
+                        f"backfill.{gap.id}.done_s", f"backfill.{gap.id}.slice_ns"
+                    )
                     self._state.finish_gap(
                         gap.id, "failed", f"{self._attempts[gap.id]} attempts: {exc!r}"[:300]
                     )
                 continue
             self._state.finish_gap(gap.id, "done", f"{count} trades fetched")
 
-    async def _backfill(self, start_ns: int, end_ns: int) -> int:
+    async def _backfill(self, start_ns: int, end_ns: int, gap_id: int | None = None) -> int:
         """Every trade in the window (padded), in slices; safe to repeat: the recorder keeps one row
-        per ``trade_id``. ``min_ts`` is inclusive and ``max_ts`` exclusive, in whole seconds."""
+        per ``trade_id``. ``min_ts`` is inclusive and ``max_ts`` exclusive, in whole seconds.
+
+        With a gap id the work resumes: each finished slice is remembered, so a failure costs only
+        the slice it hit, and only one slice's trade ids are held at a time (M1.R 17)."""
         first = start_ns // NS - self._every.backfill_pad_s
         last = -(-end_ns // NS) + self._every.backfill_pad_s
+        done_key, slice_key = f"backfill.{gap_id}.done_s", f"backfill.{gap_id}.slice_ns"
+        if gap_id is not None:
+            first = max(first, self._state.bookmark(done_key) or first)
         cutoff = int((await self._data.historical_cutoff()).trades_created_ts.timestamp())
-        # what the feed recorded in the window, and what an earlier attempt stored (with the time
-        # it was fetched, so in a later hour)
-        known = self.recorder.known_trade_ids(
-            start_ns - MINUTE_NS, max(end_ns + MINUTE_NS, self._clock.now_ns())
-        )
         count = 0
         for low in range(first, last, self._every.backfill_slice_s):
             high = min(low + self._every.backfill_slice_s, last)
+            now = self._clock.now_ns()
+            began = (self._state.bookmark(slice_key) if gap_id is not None else None) or now
+            if gap_id is not None:
+                self._state.set_bookmark(slice_key, began)
+            # what the feed recorded in this slice, and what an earlier attempt at it stored (with
+            # the time it was fetched, so in the hours since that attempt began)
+            known = self.recorder.known_trade_ids(low * NS - MINUTE_NS, high * NS + MINUTE_NS)
+            if began < now:  # resuming this slice: what the attempt that failed stored since
+                known |= self.recorder.known_trade_ids(began - MINUTE_NS, now + MINUTE_NS)
             # a slice that crosses the cutoff is read from both stores, split at the cutoff
             for historical, a, b in (
                 (True, low, min(high, cutoff)),
@@ -530,6 +598,13 @@ class KalshiSource:
                         known.add(trade.trade_id)
                         self.recorder.write("trade", _rest_trade_row(trade, self._clock.now_ns()))
                         count += 1
+            if gap_id is not None:  # this slice is done: a later attempt starts after it
+                self._state.set_bookmark(done_key, high)
+                self._state.set_bookmark(slice_key, 0)
+        if gap_id is not None:
+            self._state.delete_bookmarks(
+                done_key, slice_key
+            )  # the gap is closed: nothing to resume
         self._metrics.count("kalshi.backfill.trades", count)
         return count
 
@@ -543,6 +618,8 @@ class KalshiSource:
         )
         sid = self._feed.sid_of(ORDERBOOK_CHANNEL)
         if sid is None:
+            if ORDERBOOK_CHANNEL in self._retrying:
+                return  # refused after a reconnect and being sent again: not a second subscription
             if wanted:
                 await self._feed.subscribe(ORDERBOOK_CHANNEL, sorted(wanted))
                 self.watched.current = wanted

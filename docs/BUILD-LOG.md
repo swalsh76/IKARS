@@ -1696,3 +1696,102 @@ watchdog and auto-start are untouched; the local build folders went with the pro
   | 8 | The resume point still said the prune was to do and kept stale M1.8a text | Rewritten to the current state |
   | 9 | No terminal gate exists between the prune and M1.8a-web | No change: there is no terminal code in that gap; M1.8a-web adds the `web` job and makes it a required check (recorded in D11) |
 
+### 1.R Base hardening (plan APPROVED 2026-10-27: items 1 to 26; branch `m1/r-hardening`)
+
+Before the web terminal, the owner asked for a review of the whole code base "to have a solid base". `/code-review`
+at high effort over all 10,900 source lines gave 31 candidate findings; each was checked against the code (one
+disproved by a test: `append_all` does skip a duplicate within one batch). The owner approved fixing items 1 to 26,
+each with a test:
+
+- **A. Data loss, a stuck engine, a silent wrong state:** (1) a refused resubscribe keeps a stale sid; (2) a gap on a
+  command reply is dropped; (3) one damaged hour file stops every start; (4) shutdown can hang; (5) a failed fold-in
+  truncates the hour; (6) a dead pump goes unnoticed; (7) the engine's queue is unbounded; (8) reconciliation
+  ignores money held by resting orders; (9) a fill listed late is costed against today's position.
+- **B. What the screens show:** (10) a dropped book is never announced; (11) a book with no snapshot never asks for
+  one; (12) a gap from before a reconnect is resolved through the new link; (13) unchanged books are re-sent;
+  (14) the guard lets WebSocket scopes through.
+- **C. Long runs:** (15) the import replays the whole ledger every minute; (16) per-market state and the index are
+  never pruned, and every markets request sorts the index; (17) long backfills hold every trade id and restart from
+  zero; (18) an unconfirmed archived market is re-read every minute; (19) the plugin gap list grows without bound;
+  (20) the governor fails on a file renamed under it.
+- **D. Smaller:** (21) a failed start is recorded as a clean shutdown; (22) the restore drill crashes on a damaged
+  copy; (23) `ledger annotate` prints tracebacks; (24) the public REST client is never closed; (25) duplicated
+  helpers (`series_of`, the nested lookup, the atomic write, backup naming); (26) the ACL check raises off Windows.
+
+Not changed (owner): (27) production as the default environment (D21; a comment added); (28) the data guard's
+strict suffix rule; (29) the disproved `append_all` claim.
+
+#### 1.R built (2026-10-27)
+
+**Built** (commits `dd9f8d0`, `4735650`, `edae257`, `595a9b0`, `66fcec0` and the merge-review fixes). No new
+packages. One security-relevant change: **`GET /portfolio/orders` joins the account key's allowed reads** (item 8,
+approved as "read with GET only"); the key still signs GETs only, and other order paths (`/portfolio/orders/<id>`,
+`/historical/orders`, order groups) stay refused, with tests.
+
+| # | Fixed | How |
+|---|---|---|
+| 1 | A refused resubscribe kept a stale sid | The sid is cleared; the rebalance waits for the retry; a resubscribe of a restored channel sends nothing |
+| 2 | A gap on a command reply was dropped | Reported like any other |
+| 3 | One damaged hour stopped every start | Any compaction failure is logged and left; an unreadable Parquet hour is set aside as `.damaged` (never deleted); Parquet is fsynced before it replaces anything |
+| 4 | Shutdown could hang | The source's output always ends; the engine is waited for 10 s, then cancelled |
+| 5 | A failed fold-in truncated the hour | New rows go to a part file (`HH.1.arrow`); readers take every part |
+| 6 | A dead pump went unnoticed | The run loop stops the engine on it, so the watchdog restarts it |
+| 7 | The engine's input was unbounded | 50,000 items; then the feed's own overflow handling runs |
+| 8 | Resting orders were a difference | When the balance falls short, resting buys' cost is read; either reading is exact; both numbers are recorded |
+| 9 | A late-listed fill was costed silently | Flagged `out_of_order` with a note for the owner to label |
+| 10 | A dropped book was never announced | Sent once as not ready |
+| 11 | A book with no snapshot never asked for one | A delta without a book asks (watched markets) and makes no empty book |
+| 12 | A gap from a lost link was read through the new one | Gaps from an older link are counted and dropped |
+| 13 | Unchanged books were re-sent | The version moves only on a real change |
+| 14 | The guard let WebSocket scopes through | Refused (code 1008) |
+| 15 | The import replayed the ledger every minute | The importer keeps its book and applies only new records (others' included) |
+| 16 | Per-market state and the index grew for ever; every markets request sorted the index | Markets settled more than three days ago leave the index and their state; combo quotes are kept nowhere; markets still unlisted after a cycle are forgotten; the list is sorted once per index change |
+| 17 | Long backfills held every trade id and restarted from zero | Each finished slice is remembered; a failure resumes at its slice; one slice's ids at a time; the bookmarks go when the gap closes |
+| 18 | An unconfirmed archived market was re-read every minute | Hourly |
+| 19 | The plugin gap list grew for ever | The latest 100 and a total |
+| 20 | The governor failed on a renamed file | Skipped; a held file is pruned next time |
+| 21 | A failed start counted as a clean shutdown | Only a finished start can end cleanly |
+| 22 | The restore drill crashed on a damaged copy | A failed drill naming the problem |
+| 23 | `ledger annotate` printed tracebacks | A JSON refusal |
+| 24 | The public REST client was never closed | Closed at shutdown |
+| 25 | Duplicated helpers | One copy each: series and combo rules (`ikars_core.markets`), the nested lookup (`runmode.at`), the atomic write, backup and free names (`files`) |
+| 26 | The ACL check raised off Windows | A warning, never a failed start |
+| 27 | (no change) Production as the default | A comment says why (D21) |
+
+**Verified.**
+- 1,303 Python tests pass (94% coverage; money and fee code 100%); ruff, mypy, pip-audit, the data guard and
+  gitleaks are clean.
+- **Live**, against the background engine:
+
+  | Check | Result |
+  |---|---|
+  | Restart on the new code | started, feed connected, no open gaps |
+  | Ledger | chain verified, **reconciles exactly**, no import errors |
+  | Stop | **3.5 s**; recorded as a clean stop (the next start's gaps say "stopped") |
+  | A torn real recording hour (a scratch copy, deleted after) | the start went on; the hour set aside as `07.parquet.damaged`; the open file's rows kept |
+  | Resting orders (item 8) | **pending:** needs a resting order of the owner's; IKARS reads it with GET only |
+
+**Live finding, fixed (`66fcec0`).** The minute import re-reads a day of fills; each already-recorded fill older
+than a later one was flagged and warned about before being skipped as already recorded (4 warnings). The real
+ledger holds no flagged fill; the warning now comes only for a fill actually added, with a test.
+
+**Review.**
+- **Per commit:** `dd9f8d0` none; `4735650` none; `edae257` none (a question on `seq` in record bodies checked: it
+  is there); `595a9b0` 1 fixed (a comment moved to the wrong constant); `66fcec0` none.
+- **Merge review (medium), 10 findings:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | A fold-in stopped between its steps (its Parquet held) was overwritten by the next fold-in of the hour: rows lost | Compaction finishes a pending fold-in first; tested |
+  | 2 | The kept book skipped a record another process appended during an import | The importer remembers the records it appended and applies every other; tested |
+  | 3 | A failed resting-orders read aborted the whole import | Treated as unknown (not exact); an order without `outcome_side` takes it from `side` and `action`; tested |
+  | 4 | A new market's quotes were dropped until the next discovery | Only combos are dropped at once; a market still unlisted after a cycle is forgotten then |
+  | 5 | Pruning removed closed markets that may still be held, and they churned back | Only markets settled more than three days ago; `put` never re-adds them; tested |
+  | 6 | A resubscribe retry could open a second order-book subscription after a reconnect restored it | A resubscribe of a restored channel sends nothing; tested |
+  | 7 | A schema change would have set good hours aside; damaged files escaped the budget | Only an unreadable file is set aside; the governor counts and prunes `.damaged` files; tested |
+  | 8 | Backfill bookmarks were never deleted; the live hour was re-read every slice | Deleted when the gap closes; the recent hours are read only when resuming a slice; tested |
+  | 9 | `_free_name` repeated the name loop item 25 consolidated | One `files.first_free`, used by both |
+  | 10 | The resume point did not mention M1.R | Updated |
+
+**M1.R built**, subject to the owner's merge (and the resting-order check when convenient).
+

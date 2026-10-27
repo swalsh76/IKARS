@@ -15,11 +15,13 @@ from ikars_core.account import (
     Fill,
     InstanceTransfer,
     MarketPosition,
+    Order,
     Positions,
     Settlement,
     Transfer,
 )
 from ikars_core.endpoints import TypedPage
+from ikars_core.rest import KalshiAPIError
 from ikars_engine import taxzone
 from ikars_engine.clocks import VirtualClock
 from ikars_engine.ledger import GENESIS, Entry, Ledger, LedgerError, Verified, canonical, digest
@@ -199,6 +201,9 @@ class FakeAccount:
         self.balance_cents = 0
         self.held: list[dict[str, Any]] = []
         self.archived: list[dict[str, Any]] = []
+        self.resting: list[dict[str, Any]] = []
+        self.orders_fail = False
+        self.while_reading: Any = None  # runs during the positions read (another writer)
         self.calls: list[tuple[str, Any]] = []
 
     def fills_(self, rows: list[dict[str, Any]]) -> AsyncIterator[TypedPage[Fill]]:
@@ -228,7 +233,16 @@ class FakeAccount:
         return Balance.model_validate({"balance": cents, "balance_dollars": f"{cents / 100:.2f}",
                                        "portfolio_value": 0, "updated_ts": 1})  # fmt: skip
 
+    def orders(self, *, status: str = "resting") -> AsyncIterator[TypedPage[Order]]:
+        self.calls.append(("orders", status))
+        if self.orders_fail:
+            raise KalshiAPIError(403, "forbidden")
+        return page([Order.model_validate(r) for r in self.resting], self.resting)
+
     async def positions(self, *, historical: bool = False) -> Positions:
+        self.calls.append(("archived" if historical else "positions", None))
+        if self.while_reading is not None and not historical:
+            self.while_reading()
         rows = self.archived if historical else self.held
         return Positions(
             market_positions=[MarketPosition.model_validate(p) for p in rows], event_positions=[]
@@ -289,7 +303,8 @@ async def test_the_first_import_takes_the_whole_history_once_and_reconciles(tmp_
     again = await importer.run_once()
     assert again.added == {} and ledger.count(kind="reconciliation") == 1
     since = 1_767_175_200 - 86_400  # a day before 2025-12-31 10:00 UTC
-    assert account.calls[-3:] == [("fills", since), ("historical", since), ("settlements", None)]
+    reads = [c for c in account.calls if c[0] != "positions"]
+    assert reads[-3:] == [("fills", since), ("historical", since), ("settlements", None)]
     assert ledger.verify().ok
     ledger.close()
 
@@ -478,6 +493,21 @@ def test_the_ledger_commands(tmp_path: Path, capsys: pytest.CaptureFixture[str])
     assert "broken" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    ("amount", "time"), [("0.4200001", "2026-01-01"), ("1e3", "2026-01-01"), ("0.42", "soon")]
+)
+def test_bad_annotate_input_is_refused_not_a_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], amount: str, time: str
+) -> None:
+    """M1.R 23: a bad amount or time printed a traceback."""
+    from ikars_engine.__main__ import main
+
+    root = ["python -m ikars_engine", "ledger", "--root", str(tmp_path)]
+    note = ["annotate", "--kind", "interest", "--amount", amount, "--time", time]
+    assert main([*root, *note, "--note", "made up"]) == 2
+    assert json.loads(capsys.readouterr().out)["refused"] == "the amount or the time cannot be read"
+
+
 def test_the_runner_describes_markets_and_digests_settings() -> None:
     from ikars_engine.kalshi.discovery import MarketIndex
     from ikars_engine.kalshi.runner import describer, settings_digest
@@ -549,6 +579,105 @@ async def test_an_unconfirmed_archived_settlement_stays_a_difference(
     assert "settlement" not in report.added
     assert report.reconciliation is not None and not report.reconciliation.exact
     assert report.reconciliation.positions == {"KXT-26JAN01-A": (600, 0)}
+    ledger.close()
+
+
+async def test_money_held_by_resting_buys_is_not_a_difference(tmp_path: Path) -> None:
+    """M1.R 8: Kalshi's balance is what is available; a resting buy holds its cost back."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    account.balance_cents -= 300  # a resting buy of 10 NO at 30c holds $3.00
+    account.resting = [{"order_id": "o", "ticker": "KXT-26JAN01-B", "status": "resting",
+                        "action": "buy", "outcome_side": "no", "yes_price_dollars": "0.7000",
+                        "no_price_dollars": "0.3000", "remaining_count_fp": "10.00"},
+                       {"order_id": "s", "ticker": "KXT-26JAN01-A", "status": "resting",
+                        "action": "sell", "outcome_side": "no", "yes_price_dollars": "0.9000",
+                        "no_price_dollars": "0.1000", "remaining_count_fp": "6.00"}]  # fmt: skip
+    report = await AccountImporter(ledger, account, VirtualClock(T0)).run_once()  # type: ignore[arg-type]
+    result = report.reconciliation
+    assert result is not None and result.exact and result.reserved_e6 == 3_000_000
+    assert ledger.last("reconciliation")["fields"]["reserved_e6"] == 3_000_000  # type: ignore[index]
+    account.balance_cents -= 1  # a cent more is still a difference
+    assert not (await AccountImporter(ledger, account, VirtualClock(T0)).reconcile()).exact  # type: ignore[arg-type]
+    ledger.close()
+
+
+async def test_a_fill_listed_after_a_later_one_is_flagged(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """M1.R 9: a late-listed fill was costed against today's position, silently."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    importer = AccountImporter(ledger, account, VirtualClock(T0))  # type: ignore[arg-type]
+    await importer.run_once()
+    account.live.append(raw_fill("late", "yes", "1.00", "0.5000", "2025-12-30T12:00:00Z"))
+    await importer.run_once()
+    assert [r for r in caplog.records if "arrived after" in r.getMessage()]  # said when added
+    caplog.clear()
+    await importer.run_once()  # the overlap reads every fill again: nothing new, nothing said
+    assert not [r for r in caplog.records if "arrived after" in r.getMessage()]
+    late = next(b for b in ledger.records(kind="fill") if b["source_id"] == "late")
+    assert late["fields"]["out_of_order"] is True and "label it" in late["note"]
+    first = next(b for b in ledger.records(kind="fill") if b["source_id"] == "h1")
+    assert "out_of_order" not in first["fields"]
+    ledger.close()
+
+
+async def test_the_importer_keeps_its_book_instead_of_replaying(tmp_path: Path) -> None:
+    """M1.R 15: every one-minute import replayed the whole ledger; the kept book must match one."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    importer = AccountImporter(ledger, account, VirtualClock(T0))  # type: ignore[arg-type]
+    await importer.run_once()
+    annotate(ledger, "interest", 420_000, T0, "made-up interest")  # another writer
+    account.balance_cents += 42
+    report = await importer.run_once()
+    assert report.reconciliation is not None and report.reconciliation.exact
+    kept, fresh = importer._current_book(), replay(ledger)
+    assert (kept.cash_e6, kept.positions, kept.traded_e6) == (
+        fresh.cash_e6, fresh.positions, fresh.traded_e6,
+    )  # fmt: skip
+    ledger.close()
+
+
+async def test_an_archived_market_that_does_not_check_out_is_rechecked_hourly(
+    tmp_path: Path,
+) -> None:
+    """M1.R 18: an unconfirmed archived market cost a full archive read every minute."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    account.held, account.archived = [], [archived("4.19")]  # does not check out
+    clock = VirtualClock(T0)
+    importer = AccountImporter(ledger, account, clock, markets=FakeMarkets("yes"))  # type: ignore[arg-type]
+    await importer.run_once()
+    await importer.run_once()
+    assert account.calls.count(("archived", None)) == 1  # not again within the hour
+    clock.advance_to(T0 + 3_601 * 10**9)
+    await importer.run_once()
+    assert account.calls.count(("archived", None)) == 2
+    ledger.close()
+
+
+async def test_an_annotation_made_during_an_import_is_counted(tmp_path: Path) -> None:
+    """M1.R merge review 2: the kept book skipped a record another process appended mid-import."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    importer = AccountImporter(ledger, account, VirtualClock(T0))  # type: ignore[arg-type]
+    await importer.run_once()
+    account.balance_cents += 42
+    account.while_reading = lambda: annotate(ledger, "interest", 420_000, T0, "made-up interest")
+    await importer.run_once()  # the annotation lands while the import waits on Kalshi
+    account.while_reading = None
+    report = await importer.run_once()
+    assert report.reconciliation is not None and report.reconciliation.exact
+    ledger.close()
+
+
+async def test_resting_orders_that_cannot_be_read_leave_the_import_running(
+    tmp_path: Path,
+) -> None:
+    """M1.R merge review 3: a failed orders read aborted the whole import."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    account.balance_cents -= 300
+    account.orders_fail = True
+    report = await AccountImporter(ledger, account, VirtualClock(T0)).run_once()  # type: ignore[arg-type]
+    assert report.added == {"deposit": 1, "fill": 2}
+    assert report.reconciliation is not None and not report.reconciliation.exact
     ledger.close()
 
 

@@ -15,8 +15,9 @@ channel, so a crash becomes a gap and not silence) and the exchange's status his
 import sqlite3
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
+
+from ikars_engine.files import backup_name
 
 
 class StoreError(RuntimeError):
@@ -24,12 +25,7 @@ class StoreError(RuntimeError):
 
 
 def backup_store(connection: sqlite3.Connection, path: Path) -> Path:
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-    target = path.with_name(f"{path.stem}.{stamp}.bak{path.suffix}")
-    n = 1
-    while target.exists():
-        target = path.with_name(f"{path.stem}.{stamp}-{n}.bak{path.suffix}")
-        n += 1
+    target = backup_name(path)
     copy = sqlite3.connect(target)
     try:
         connection.backup(copy)
@@ -195,6 +191,9 @@ class StateStore:
             " ON CONFLICT (name) DO UPDATE SET value = excluded.value",
             (name, value),
         )
+
+    def delete_bookmarks(self, *names: str) -> None:
+        self._db.executemany("DELETE FROM bookmark WHERE name = ?", [(n,) for n in names])
 
     def beat(self, beats: dict[str, int]) -> None:
         self._db.execute("BEGIN")

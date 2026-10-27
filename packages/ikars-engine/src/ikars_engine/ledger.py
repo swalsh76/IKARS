@@ -23,7 +23,6 @@ Nothing here logs a record's contents: they are account values (only counts and 
 
 import hashlib
 import json
-import os
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -31,6 +30,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from ikars_engine.files import write_text_atomic
 from ikars_engine.store import open_store
 
 GENESIS = "0" * 64
@@ -256,11 +256,13 @@ class Ledger:
             query, args = query + " AND kind = ?", [stream, kind]
         return int(self._db.execute(query, args).fetchone()[0])
 
-    def records(self, stream: str = "real", kind: str | None = None) -> Iterator[dict[str, Any]]:
-        """Each record's body, in sequence order."""
-        query, args = "SELECT body FROM record WHERE stream = ?", [stream]
+    def records(
+        self, stream: str = "real", kind: str | None = None, after: int = 0
+    ) -> Iterator[dict[str, Any]]:
+        """Each record's body with a sequence number above ``after``, in sequence order."""
+        query, args = "SELECT body FROM record WHERE stream = ? AND seq > ?", [stream, after]
         if kind is not None:
-            query, args = query + " AND kind = ?", [stream, kind]
+            query, args = query + " AND kind = ?", [*args, kind]
         for (body,) in self._db.execute(query + " ORDER BY seq", args):
             yield json.loads(body)
 
@@ -364,12 +366,7 @@ class Ledger:
             {"date_utc": day, "stream": stream, "seq": head.seq, "hash": head.hash,
              "written_utc": iso_utc(now_ns)}
         )  # fmt: skip
-        temporary = target.with_suffix(".json.tmp")
-        with open(temporary, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        temporary.replace(target)
+        write_text_atomic(target, text + "\n")
         return target
 
     # --- bookmarks (outside the chain) -------------------------------------------------------

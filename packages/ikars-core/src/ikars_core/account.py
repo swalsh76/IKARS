@@ -65,6 +65,9 @@ CentsAsE6 = Annotated[int, BeforeValidator(_cents)]
 OptCentsAsE6 = Annotated[int | None, BeforeValidator(_cents)]
 
 
+ORDER_STATUSES = frozenset({"resting", "canceled", "executed"})
+
+
 class Balance(Model):
     balance_e6: CentsAsE6 = Field(validation_alias="balance")  # available balance
     balance_dollars_e6: Dollars = Field(validation_alias="balance_dollars")
@@ -98,6 +101,32 @@ class EventPosition(Model):
     event_exposure_e6: Dollars = Field(validation_alias="event_exposure_dollars")
     realized_pnl_e6: Dollars = Field(validation_alias="realized_pnl_dollars")
     fees_paid_e6: Dollars = Field(validation_alias="fees_paid_dollars")
+
+
+class Order(Model):
+    """One of the owner's orders (read only: IKARS places none before M7). ``outcome_side`` is the
+    exposure the order adds, as on a fill; a resting buy holds its cost back from the available
+    balance."""
+
+    order_id: str
+    ticker: str
+    status: str
+    action: Literal["buy", "sell"]
+    outcome_side: Literal["yes", "no"]
+    yes_price_e6: Dollars = Field(validation_alias="yes_price_dollars")
+    no_price_e6: Dollars = Field(validation_alias="no_price_dollars")
+    remaining_e2: RequiredCountE2 = Field(validation_alias="remaining_count_fp")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_side(cls, data: Any) -> Any:
+        # the deprecated ``side`` gives the exposure when ``outcome_side`` is missing (as on a fill)
+        if isinstance(data, dict) and not data.get("outcome_side"):
+            side, action = data.get("side"), data.get("action")
+            if side in ("yes", "no") and action in BUY_SELL:
+                other = "no" if side == "yes" else "yes"
+                data = {**data, "outcome_side": side if action == "buy" else other}
+        return data
 
 
 class Positions(Model):
@@ -252,6 +281,17 @@ class Account(Reader):
             markets += _rows(MarketPosition, payload, "market_positions", f"GET {path}")
             events += _rows(EventPosition, payload, "event_positions", f"GET {path}")
         return Positions(market_positions=markets, event_positions=events)
+
+    def orders(
+        self,
+        *,
+        status: str = "resting",
+        limit: int = MAX_PAGE_SIZE,
+        cursor: str | None = None,
+    ) -> AsyncIterator[TypedPage[Order]]:
+        """The owner's orders with ``status`` (resting ones by default); GET only."""
+        params = {"status": _choice("status", status, ORDER_STATUSES), "limit": _limit(limit)}
+        return self._typed_pages("/portfolio/orders", "orders", Order, params, cursor)
 
     def fills(
         self,
