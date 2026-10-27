@@ -1,0 +1,27 @@
+{
+  "autostart_installed": true,
+  "backup_share": "",
+  "digest_minutes": 60,
+  "first_run": false,
+  "key": {
+    "environment": "production",
+    "file_found": true,
+    "id_set": true,
+    "owner_only": true,
+    "path_set": true
+  },
+  "port": 47821,
+  "quiet_end": "07:00",
+  "quiet_start": "22:00",
+  "read_share_percent": 25,
+  "restart_needed": [
+    "port"
+  ],
+  "session_days": 30,
+  "skin": "system",
+  "storage_budget_gb": 200,
+  "tax_time_zone": "",
+  "tax_zone_effective": "America/Denver",
+  "throttle_minutes": 10,
+  "watched_max_markets": 100
+}

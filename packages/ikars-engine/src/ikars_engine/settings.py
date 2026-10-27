@@ -69,6 +69,7 @@ class TerminalSettings(msgspec.Struct, frozen=True, kw_only=True):
     # reconnects after a restart (review 1.R2 item 1); when it is taken, a free one and an alert
     port: int = 47821
     session_days: int = 30  # a terminal signs in again after this many days unused (owner)
+    skin: str = "system"  # the terminal's colours: system (follow Windows) or a built-in skin (G16)
 
 
 class PluginDefaults(msgspec.Struct, frozen=True, kw_only=True):

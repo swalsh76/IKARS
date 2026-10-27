@@ -32,7 +32,8 @@ from ikars_engine.api import read_api_file
 from ikars_engine.logs import Redactor, configure
 from ikars_engine.paths import Paths
 from ikars_engine.settings import Settings
-from ikars_engine.watchdog import check, engine_command
+from ikars_engine.settings_api import restart_wanted
+from ikars_engine.watchdog import check, engine_command, start_engine
 
 log = logging.getLogger("ikars_engine.serve")
 COMMANDS = (
@@ -84,7 +85,7 @@ def desk_for(paths: Paths, settings: Settings) -> AlertDesk:
 def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
     root = Path(args.root).resolve() if args.root else None  # later runs start elsewhere
     if args.command == "serve":
-        return serve(paths, settings)
+        return serve(paths, settings, root)
     if args.command == "stop":
         return stop(paths)
     if args.command == "status":
@@ -124,7 +125,7 @@ def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
     return 0
 
 
-def serve(paths: Paths, settings: Settings) -> int:
+def serve(paths: Paths, settings: Settings, root: Path | None = None) -> int:
     from ikars_engine.kalshi.runner import run as run_engine
 
     paths.create()
@@ -153,6 +154,7 @@ def serve(paths: Paths, settings: Settings) -> int:
                     out=lambda line: None,
                     should_stop=lambda: runmode.stop_requested(paths.data),
                     on_minute=snapshot,
+                    root=root,
                 )
             )
     except Exception as exc:  # in the background nobody sees a traceback: it goes to the log
@@ -162,6 +164,8 @@ def serve(paths: Paths, settings: Settings) -> int:
     finally:
         (paths.data / runmode.STOP).unlink(missing_ok=True)
         lock.release()
+        if restart_wanted(paths.data):  # Settings' "Restart the engine": a fresh one, now unlocked
+            start_engine(engine_command(root))
     return 0
 
 

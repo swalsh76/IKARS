@@ -269,6 +269,75 @@ class SessionCodeIssued(msgspec.Struct, kw_only=True):
     url: str
 
 
+class KeyStatus(msgspec.Struct, kw_only=True):
+    """IKARS's Kalshi key, as yes or no only: never a key, its id or its path (PLAN D8)."""
+
+    id_set: bool  # the key id's environment variable is set
+    path_set: bool  # the key path's environment variable is set
+    file_found: bool  # the key file is there
+    owner_only: bool | None  # only this account can read it (None: could not be told)
+    environment: str  # production or demo
+
+
+class SettingsView(msgspec.Struct, kw_only=True):
+    """``GET /v1/settings`` (M1.8b-1): what the Settings screen and the first-run wizard show."""
+
+    first_run: bool  # no settings file yet: the wizard opens
+    skin: str  # system, dark, light, contrast, midnight or paper
+    quiet_start: str  # HH:MM, workstation time
+    quiet_end: str
+    throttle_minutes: int
+    digest_minutes: int
+    tax_time_zone: str  # an IANA name; empty: the workstation's zone
+    tax_zone_effective: str  # the zone in use
+    backup_share: str  # empty: no backups
+    watched_max_markets: int
+    read_share_percent: int
+    storage_budget_gb: int
+    port: int
+    session_days: int
+    restart_needed: list[str]  # saved settings the running engine does not use yet
+    key: KeyStatus
+    autostart_installed: bool  # the engine starts at sign-in, with its watchdog
+
+
+class SettingsChange(msgspec.Struct, kw_only=True, forbid_unknown_fields=True, omit_defaults=True):
+    """``PUT /v1/settings``: the settings to change (any left out stay as they are)."""
+
+    skin: str | None = None
+    quiet_start: str | None = None
+    quiet_end: str | None = None
+    throttle_minutes: int | None = None
+    digest_minutes: int | None = None
+    tax_time_zone: str | None = None
+    backup_share: str | None = None
+    watched_max_markets: int | None = None
+    read_share_percent: int | None = None
+    storage_budget_gb: int | None = None
+    port: int | None = None
+    session_days: int | None = None
+
+
+class ShareCheck(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
+    """``POST /v1/settings/share-check`` and ``/share-init``: the share to check or set up."""
+
+    share: str
+
+
+class ShareCheckView(msgspec.Struct, kw_only=True):
+    reachable: bool
+    marker: bool  # IKARS's own folder and marker are there
+    writable: bool | None  # a test file in IKARS's folder could be written (None: no folder yet)
+    problem: str | None
+
+
+class Done(msgspec.Struct, kw_only=True):
+    """An action's answer (restart the engine, start at sign-in)."""
+
+    done: bool
+    detail: str
+
+
 class ApiError(msgspec.Struct, kw_only=True):
     error: str  # a short code: unauthorised, not_found, bad_request, unavailable
     detail: str
@@ -279,7 +348,8 @@ class ApiError(msgspec.Struct, kw_only=True):
 SMALL_INTEGERS = frozenset({
     "api_streams", "before", "books_ready", "coalesce_ms", "errors", "head_seq", "hours_since",
     "id", "interval_minutes", "line", "offset", "open_gaps", "records", "seq", "total",
-    "watched_markets",
+    "watched_markets", "throttle_minutes", "digest_minutes", "watched_max_markets",
+    "read_share_percent", "storage_budget_gb", "port", "session_days",
 })  # fmt: skip
 
 CONTRACTS: tuple[type[msgspec.Struct], ...] = (
@@ -289,7 +359,7 @@ CONTRACTS: tuple[type[msgspec.Struct], ...] = (
     GapView, GapPage,
     RecommendationView,
     RecommendationPage, Subscriptions, StreamOpened, QuoteUpdate, SessionCode, SessionCodeIssued,
-    ApiError,
+    KeyStatus, SettingsView, SettingsChange, ShareCheck, ShareCheckView, Done, ApiError,
 )  # fmt: skip
 
 # The stream's event names and the payload each carries.
@@ -376,6 +446,9 @@ def examples() -> dict[str, Any]:
         end_utc="2026-01-01T12:01:00Z", open_e6=410_000, high_e6=430_000, low_e6=400_000,
         close_e6=420_000, bid_close_e6=410_000, ask_close_e6=430_000, volume_e2=2_500,
     )  # fmt: skip
+    key = KeyStatus(
+        id_set=True, path_set=True, file_found=True, owner_only=True, environment="production"
+    )
     feed = FeedHealth(
         connected=True, seconds_since_last_frame=0.2, open_gaps=0, books_ready=100,
         watched_markets=100, trading_active=True,
@@ -455,6 +528,30 @@ def examples() -> dict[str, Any]:
         "SessionCodeIssued": SessionCodeIssued(
             code="made-up-code", url="http://127.0.0.1:47821/#code=made-up-code"
         ),
+        "KeyStatus": key,
+        "SettingsView": SettingsView(
+            first_run=False,
+            skin="system",
+            quiet_start="22:00",
+            quiet_end="07:00",
+            throttle_minutes=10,
+            digest_minutes=60,
+            tax_time_zone="",
+            tax_zone_effective="America/Denver",
+            backup_share="",
+            watched_max_markets=100,
+            read_share_percent=25,
+            storage_budget_gb=200,
+            port=47821,
+            session_days=30,
+            restart_needed=["port"],
+            key=key,
+            autostart_installed=True,
+        ),  # fmt: skip
+        "SettingsChange": SettingsChange(skin="midnight", quiet_start="23:00"),
+        "ShareCheck": ShareCheck(share="made-up-share"),
+        "ShareCheckView": ShareCheckView(reachable=True, marker=True, writable=True, problem=None),
+        "Done": Done(done=True, detail="the engine restarts"),
         "ApiError": ApiError(error="not_found", detail="no such market"),
     }
     return found
