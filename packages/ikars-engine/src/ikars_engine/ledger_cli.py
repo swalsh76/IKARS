@@ -12,6 +12,8 @@ Output is counts and pass or fail; amounts stay in the ledger.
 import argparse
 import asyncio
 import json
+import time
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -52,8 +54,12 @@ def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
     zone = taxzone.resolve(settings.tax_time_zone)
     ledger = Ledger(paths.ledger / "ledger.sqlite", zone.zone)
     try:
+        checkpoints = paths.ledger / "checkpoints"
         if args.action == "verify":
             results = {s: ledger.verify(s) for s in ("real", "paper")}
+            problem = ledger.against_checkpoint(checkpoints) if results["real"].ok else None
+            if problem is not None:
+                results["real"] = replace(results["real"], ok=False, problem=problem)
             _print({s: {"ok": v.ok, "records": v.records, "head_seq": v.head.seq,
                         "problem": v.problem} for s, v in results.items()})  # fmt: skip
             return 0 if all(v.ok for v in results.values()) else 1
@@ -61,11 +67,14 @@ def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
             _print(status(ledger, zone))
             return 0
         checked = ledger.verify()
-        if not checked.ok:  # never build on a broken record (as the engine refuses too)
-            _print({"refused": "the ledger's chain is broken", "problem": checked.problem})
+        problem = checked.problem or ledger.against_checkpoint(checkpoints)
+        if problem is not None:  # never build on a broken record (as the engine refuses too)
+            _print({"refused": "the ledger's chain is broken", "problem": problem})
             return 1
         if args.action == "import":
-            return asyncio.run(_import(ledger, settings))
+            code = asyncio.run(_import(ledger, settings))
+            ledger.checkpoint(checkpoints, time.time_ns())
+            return code
         moment = datetime.fromisoformat(args.time)
         if moment.tzinfo is None:
             moment = moment.replace(tzinfo=zone.zone)

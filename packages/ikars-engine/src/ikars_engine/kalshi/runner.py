@@ -11,6 +11,7 @@ health line every minute. The background run mode (start at login, keep awake, w
 """
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -224,24 +225,31 @@ async def run(
     )
     live = await build(paths, settings)
     engine = live.engine
-    await live.source.start()
-    await live.ledger_service.start()  # after discovery, so records get market titles
-    running = asyncio.create_task(engine.run(), name="engine")
-    try:
+    health: dict[str, object] = {}
+    running: list[asyncio.Task[object]] = []
+    # every step of the shutdown runs even when one before it fails, in the reverse of this order
+    async with contextlib.AsyncExitStack() as stack:
+        stack.push_async_callback(live.account_client.aclose)
+        stack.callback(live.state.close)
+        stack.callback(live.ledger.close)
+        stack.callback(lambda: health.update(engine.health()))
+        stack.push_async_callback(_finish, running)
+        live.ledger_service.check()  # before the feed: a long walk never delays a frame
+        stack.push_async_callback(live.source.stop)
+        await live.source.start()
+        stack.push_async_callback(live.ledger_service.stop)
+        await live.ledger_service.start()  # after discovery, so records get market titles
+        running.append(asyncio.create_task(engine.run(), name="engine"))
         elapsed = 0.0
         while minutes is None or elapsed < minutes * 60:
             await asyncio.sleep(min(60.0, minutes * 60 - elapsed) if minutes else 60.0)
             elapsed += 60.0 if minutes is None else min(60.0, minutes * 60 - elapsed)
             out(summary(engine.health()))
-    finally:
-        await live.ledger_service.stop()
-        await live.source.stop()
-        await running
-        health = engine.health()
-        live.ledger.close()
-        await live.account_client.aclose()
-        live.state.close()
     return health
+
+
+async def _finish(tasks: list[asyncio.Task[object]]) -> None:
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def default_paths(root: Path | None = None) -> Paths:

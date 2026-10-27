@@ -283,18 +283,13 @@ async def test_the_first_import_takes_the_whole_history_once_and_reconciles(tmp_
     assert [b["fields"]["position_before_e2"] for b in bodies] == [0, 1000]
     assert bodies[0]["context"] == {"title": "Made up"}
     assert json.loads(bodies[0]["raw"])["fill_id"] == "h1"  # Kalshi's JSON, verbatim
-    # a second import adds nothing, reads fills from a day before the newest, and the unchanged
-    # reconciliation is not written again
+    # a second import adds nothing; it reads fills, live and archived, from a day before the
+    # newest fill, and settlements from a day before the newest settlement (none yet: all); the
+    # unchanged reconciliation is not written again
     again = await importer.run_once()
     assert again.added == {} and ledger.count(kind="reconciliation") == 1
-    newest_fill_s = 1_767_175_200  # 2025-12-31 10:00 UTC
-    assert account.calls[-2:] == [
-        ("fills", newest_fill_s - 86_400),
-        ("settlements", newest_fill_s - 86_400),
-    ]
-    assert [c for c in account.calls if c[0] == "historical"] == [
-        ("historical", None)
-    ]  # first only
+    since = 1_767_175_200 - 86_400  # a day before 2025-12-31 10:00 UTC
+    assert account.calls[-3:] == [("fills", since), ("historical", since), ("settlements", None)]
     assert ledger.verify().ok
     ledger.close()
 
@@ -351,7 +346,7 @@ async def test_settlements_transfers_and_reversals(tmp_path: Path) -> None:
     later = await AccountImporter(ledger, account, VirtualClock(T0)).run_once()  # type: ignore[arg-type]
     assert later.added == {"adjustment": 1, "deposit": 1}
     assert later.reconciliation is not None and later.reconciliation.exact
-    assert replay(ledger)[0] == {}
+    assert replay(ledger).held() == {}
     ledger.close()
 
 
@@ -510,6 +505,7 @@ class FakeMarkets:
         from types import SimpleNamespace
 
         return SimpleNamespace(ticker=ticker, status="finalized", result=self.result,
+                               title="Made up", event_ticker="KXT-26JAN01",
                                settlement_ts=datetime(2026, 1, 1, 12, tzinfo=UTC))  # fmt: skip
 
 
@@ -570,4 +566,75 @@ async def test_a_settlement_s_fee_is_not_charged_twice(tmp_path: Path) -> None:
     assert report.reconciliation is not None and report.reconciliation.exact
     body = ledger.last("settlement")
     assert body is not None and body["cash_e6"] == 6_000_000 and body["fields"]["fee_e6"] == 40_000
+    ledger.close()
+
+
+# --- the M1.5a merge review's findings ----------------------------------------------------------
+
+
+async def test_a_listed_settlement_after_an_archived_one_is_not_paid_twice(tmp_path: Path) -> None:
+    """Review: an archive-derived settlement and a late listed one describe the same payout."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    account.held, account.archived = [], [archived("4.20")]
+    account.balance_cents = 9_816 + 600
+    importer = AccountImporter(ledger, account, VirtualClock(T0), markets=FakeMarkets("yes"))  # type: ignore[arg-type]
+    await importer.run_once()
+    account.settled = [{
+        "ticker": "KXT-26JAN01-A", "event_ticker": "KXT-26JAN01", "exchange_index": 0,
+        "market_result": "yes", "yes_count_fp": "6.00", "yes_total_cost_dollars": "2.40",
+        "no_count_fp": "0.00", "no_total_cost_dollars": "0", "revenue": 600,
+        "fee_cost": "0.0400", "settled_time": "2026-01-01T12:00:00Z",
+    }]  # fmt: skip
+    later = await importer.run_once()
+    assert later.added == {} and ledger.count(kind="settlement") == 1
+    assert later.reconciliation is not None and later.reconciliation.exact
+    ledger.close()
+
+
+async def test_the_first_import_mark_survives_a_later_failure(tmp_path: Path) -> None:
+    """Review: a failure after the history was in kept every later run reading it all again."""
+
+    class FailsAfterHistory(FakeAccount):
+        async def positions(self, *, historical: bool = False) -> Positions:
+            raise RuntimeError("positions unavailable")
+
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    failing = FailsAfterHistory()
+    failing.__dict__.update(account.__dict__)
+    with pytest.raises(RuntimeError):
+        await AccountImporter(ledger, failing, VirtualClock(T0)).run_once()  # type: ignore[arg-type]
+    assert ledger.count(kind="fill") == 2 and ledger.bookmark("import.first_done") is not None
+    ledger.close()
+
+
+async def test_titles_come_from_market_data_when_the_index_lacks_them(tmp_path: Path) -> None:
+    """Review: records first imported without the live index never had a title."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    importer = AccountImporter(ledger, account, VirtualClock(T0), markets=FakeMarkets("yes"))  # type: ignore[arg-type]
+    await importer.run_once()
+    fills = list(ledger.records(kind="fill"))
+    assert fills[0]["context"] == {
+        "title": "Made up", "event_ticker": "KXT-26JAN01", "series_ticker": "KXT",
+    }  # fmt: skip
+    ledger.close()
+
+
+def test_a_ledger_cut_back_behind_its_checkpoint_is_caught(tmp_path: Path) -> None:
+    """Review: removing the newest records leaves a consistent chain that verify alone passes."""
+    ledger = ledger_at(tmp_path)
+    for n in range(3):
+        ledger.append(Entry("deposit", T0 + n, "deposit", f"d{n}", cash_e6=1))
+    ledger.checkpoint(tmp_path / "cp", T0)
+    assert ledger.against_checkpoint(tmp_path / "cp") is None
+    ledger.close()
+    tamper(tmp_path / "ledger.sqlite", "DELETE FROM record WHERE seq = 3")
+    ledger = ledger_at(tmp_path)
+    assert ledger.verify().ok  # still consistent on its own
+    assert ledger.against_checkpoint(tmp_path / "cp") == (
+        "record 3, named by the checkpoint of 2026-01-01, is missing"
+    )
+    clock = VirtualClock(T0)
+    service = LedgerService(ledger, AccountImporter(ledger, FakeAccount(), clock), tmp_path / "cp",  # type: ignore[arg-type]
+                            clock, taxzone.TaxZone(DENVER, "setting"))  # fmt: skip
+    assert not service.check().ok
     ledger.close()

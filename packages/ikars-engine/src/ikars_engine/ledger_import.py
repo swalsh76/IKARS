@@ -2,9 +2,11 @@
 
 **Import.** The first import reads the account's whole history (fills live and historical,
 settlements, deposits, withdrawals, transfers between the account's exchange instances); later ones
-read fills and settlements from a day before the newest already in, and every transfer (there are
-few). New records are appended in Kalshi's time order; one already in is skipped, so an import can
-run any number of times. Manual trades are fills like any other.
+read fills (live and archived: after a long outage new fills may already be past Kalshi's archive
+cutoff) from a day before the newest fill in, settlements from a day before the newest settlement
+in, and every transfer (there are few). New records are appended in Kalshi's time order; one
+already in is skipped, so an import can run any number of times. Manual trades are fills like any
+other. A market the live index does not describe is looked up once, so its records carry a title.
 
 **Cash.** Each record carries its effect on the account's cash (``cash_e6``), computed exactly in
 dollar millionths. Kalshi nets YES and NO in a market, so a fill that adds YES exposure while NO is
@@ -28,9 +30,11 @@ market the ledger still holds but Kalshi shows flat and archived, the settlement
 the market's result (contracts held, $1 each on the winning side) and appended only when the
 ledger's realised result for that market then equals Kalshi's archived realised P&L exactly; it is
 marked ``derived`` and keeps Kalshi's archived row and the market's result as its evidence. A market
-that does not check out is left as a difference.
+that does not check out is left as a difference. A listed settlement for a market already settled
+this way is skipped, so a payout is never counted twice.
 
-Logs carry counts only; amounts, tickers and ids stay in the ledger.
+Each import replays the ledger once (a :class:`Book`) and keeps it current in memory. Logs carry
+counts only; amounts, tickers and ids stay in the ledger.
 """
 
 import logging
@@ -54,6 +58,7 @@ from ikars_core.models import Market
 from ikars_core.rest import KalshiAPIError
 
 from ikars_engine.clocks import EventClock
+from ikars_engine.kalshi.discovery import series_of
 from ikars_engine.ledger import Entry, Ledger, LedgerError
 
 log = logging.getLogger("ikars_engine.ledger")
@@ -62,6 +67,7 @@ EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 MICROSECOND = timedelta(microseconds=1)
 OVERLAP_S = 86_400  # each later import re-reads a day of fills and settlements
 FIRST_DONE = "import.first_done"
+ARCHIVED = "settlement_archived"  # the source of a settlement derived from Kalshi's archive
 EVENT_CONTRACT = "event_contract"
 DEPOSITED = frozenset({"applied"})
 WITHDRAWN = frozenset({"pending", "applied"})  # the money has left the balance
@@ -127,20 +133,44 @@ class ImportReport:
     reconciliation: Reconciliation | None = None
 
 
-def replay(ledger: Ledger) -> tuple[dict[str, int], int]:
-    """Each market's net position (hundredths; negative: NO; flat markets left out) and the cash
-    the ledger explains, from its records in sequence order."""
-    held: dict[str, int] = {}
-    cash = 0
+@dataclass(slots=True)
+class Book:
+    """What the ledger says, from one replay: each market's net position (hundredths; negative:
+    NO), the cash it explains, each market's trading cash before fees, and the markets settled."""
+
+    positions: dict[str, int] = field(default_factory=dict)
+    cash_e6: int = 0
+    traded_e6: dict[str, int] = field(default_factory=dict)
+    settled: set[str] = field(default_factory=set)
+
+    def apply(
+        self, kind: str, ticker: str | None, fields: Mapping[str, Any], cash: int | None
+    ) -> None:
+        if cash is not None:
+            self.cash_e6 += cash
+        if not ticker:
+            return
+        if kind == "fill":
+            self.positions[ticker] = self.positions.get(ticker, 0) + int(fields["delta_e2"])
+            before_fees = int(cash or 0) + int(fields["fee_e6"])
+            self.traded_e6[ticker] = self.traded_e6.get(ticker, 0) + before_fees
+        elif kind == "settlement":
+            self.positions[ticker] = 0
+            self.settled.add(ticker)
+
+    def add(self, entry: Entry) -> None:
+        self.apply(entry.kind, entry.ticker, entry.fields, entry.cash_e6)
+
+    def held(self) -> dict[str, int]:
+        """The markets that are not flat."""
+        return {t: p for t, p in self.positions.items() if p}
+
+
+def replay(ledger: Ledger) -> Book:
+    book = Book()
     for body in ledger.records():
-        ticker = body.get("ticker")
-        if body["kind"] == "fill" and ticker:
-            held[ticker] = held.get(ticker, 0) + int(body["fields"]["delta_e2"])
-        elif body["kind"] == "settlement" and ticker:
-            held[ticker] = 0
-        if body.get("cash_e6") is not None:
-            cash += int(body["cash_e6"])
-    return {t: p for t, p in held.items() if p}, cash
+        book.apply(body["kind"], body.get("ticker"), body.get("fields", {}), body.get("cash_e6"))
+    return book
 
 
 class AccountImporter:
@@ -156,65 +186,96 @@ class AccountImporter:
         self._account = account
         self._clock = clock
         self._describe = describe
-        self._markets = markets  # market results, for archived settlements; None: not derived
+        self._markets = markets  # market results and titles; None: neither is looked up
+        self._looked_up: dict[str, dict[str, str]] = {}
 
     async def run_once(self) -> ImportReport:
         first = self._ledger.bookmark(FIRST_DONE) is None
         found = await self._read(first)
         found.sort(key=lambda item: (item[0], item[1]))
-        positions, _ = replay(self._ledger)
+        await self._look_up({m.ticker for _, _, m, _ in found if isinstance(m, (Fill, Settlement))})
+        book = replay(self._ledger)
         entries: list[Entry] = []
         seen: set[tuple[str, str]] = set()
         for at_ns, _, model, raw in found:
-            entry = self._entry(at_ns, model, raw, positions)
+            entry = self._entry(at_ns, model, raw, book)
             if entry is None or entry.source_id is None:
                 continue
             key = (entry.source, entry.source_id)
             if key in seen or self._ledger.has(*key):
                 continue
             seen.add(key)
-            self._move(entry, positions)
+            book.add(entry)
             entries.append(entry)
         self._ledger.append_all(entries)
-        held = await self._account.positions()
-        derived = await self._derive_archived(held)
-        self._ledger.append_all(derived)
-        if first:
+        if first:  # the history is in: never read it all again, whatever fails below
             self._ledger.set_bookmark(FIRST_DONE, str(self._clock.now_ns()))
-        reconciliation = await self.reconcile(held)
+        held = await self._account.positions()
+        derived = await self._derive_archived(held, book)
+        self._ledger.append_all(derived)
+        for entry in derived:
+            book.add(entry)
+        reconciliation = await self.reconcile(held, book)
         log.info(
             "ledger import",
-            extra={"added": len(entries) + len(derived), "derived": len(derived),
-                   "exact": reconciliation.exact},
-        )  # fmt: skip
+            extra={
+                "added": len(entries) + len(derived),
+                "derived": len(derived),
+                "exact": reconciliation.exact,
+            },
+        )
         return ImportReport(Counter(e.kind for e in [*entries, *derived]), reconciliation)
 
-    # --- archived settlements ----------------------------------------------------------------
+    async def _read(self, first: bool) -> list[Found]:
+        """Everything to consider, as (time, order within a time, model, raw JSON)."""
+        found: list[Found] = []
+        fills_since = None if first else self._since("fill")
+        for historical in (False, True):
+            pages = self._account.fills(min_ts=fills_since, historical=historical)
+            found += await _gather(pages, 0, lambda f: ns_of(f.created_time))
+        settled = self._account.settlements(min_ts=None if first else self._since("settlement"))
+        found += await _gather(settled, 1, lambda s: ns_of(s.settled_time))
+        for kind, transfers in (
+            ("deposit", self._account.deposits()),
+            ("withdrawal", self._account.withdrawals()),
+        ):
+            found += [
+                (at, order, (kind, t), raw)
+                for at, order, t, raw in await _gather(transfers, 2, lambda t: t.created_ts * NS)
+            ]
+        found += await _gather(self._account.instance_transfers(), 3, lambda t: t.created_ts * NS)
+        return found
 
-    async def _derive_archived(self, live: Positions) -> list[Entry]:
+    def _since(self, source: str) -> int | None:
+        """A day before the newest record from ``source`` (each its own), or None: everything."""
+        latest = self._ledger.latest_at_ns(source)
+        return None if latest is None else max(0, latest // NS - OVERLAP_S)
+
+    # --- market details ----------------------------------------------------------------------
+
+    async def _look_up(self, tickers: set[str]) -> None:
+        """Titles for markets the live index does not have (settled ones, or every market for the
+        command line, which has no index), once each: a record's context is never edited later."""
         if self._markets is None:
-            return []
-        ours, _ = replay(self._ledger)
-        held_live = {p.ticker for p in live.market_positions if p.position_e2}
-        candidates = {t for t in ours if t not in held_live}
-        if not candidates:
-            return []
-        archived = await self._account.positions(historical=True)
-        derived: list[Entry] = []
-        for position in archived.market_positions:
-            if position.ticker not in candidates:
+            return
+        for ticker in sorted(tickers):
+            if ticker in self._looked_up or (self._describe and self._describe(ticker)):
                 continue
-            market = await self._market(self._markets, position.ticker)
-            entry = (
-                None if market is None else self._settle(position, market, ours[position.ticker])
+            market = await self._market(self._markets, ticker)
+            event = (market.event_ticker or "") if market is not None else ""
+            self._looked_up[ticker] = (
+                {}
+                if market is None
+                else {
+                    "title": market.title or "",
+                    "event_ticker": event,
+                    "series_ticker": series_of(event),
+                }  # fmt: skip
             )
-            if entry is None:
-                log.warning(
-                    "ledger: an archived settlement does not check out; left as a difference"
-                )
-            else:
-                derived.append(entry)
-        return derived
+
+    def _context(self, ticker: str) -> dict[str, str]:
+        described = self._describe(ticker) if self._describe is not None else None
+        return dict(described or self._looked_up.get(ticker) or {})
 
     @staticmethod
     async def _market(markets: MarketData, ticker: str) -> Market | None:
@@ -226,30 +287,48 @@ class AccountImporter:
                     raise
         return None
 
-    def _settle(self, position: MarketPosition, market: Market, held_e2: int) -> Entry | None:
+    # --- archived settlements ----------------------------------------------------------------
+
+    async def _derive_archived(self, live: Positions, book: Book) -> list[Entry]:
+        if self._markets is None:
+            return []
+        held_live = {p.ticker for p in live.market_positions if p.position_e2}
+        candidates = {t for t in book.held() if t not in held_live}
+        if not candidates:
+            return []
+        archived = await self._account.positions(historical=True)
+        derived: list[Entry] = []
+        for position in archived.market_positions:
+            if position.ticker not in candidates:
+                continue
+            market = await self._market(self._markets, position.ticker)
+            entry = None if market is None else self._settle(position, market, book)
+            if entry is None:
+                log.warning("ledger: an archived settlement does not check out; left a difference")
+            else:
+                derived.append(entry)
+        return derived
+
+    def _settle(self, position: MarketPosition, market: Market, book: Book) -> Entry | None:
         """The derived settlement, or None unless Kalshi's realised P&L confirms it exactly."""
         if market.result not in ("yes", "no"):
             return None  # a scalar or undetermined result is never guessed
+        held_e2 = book.positions[position.ticker]
         wins = (market.result == "yes") == (held_e2 > 0)
         payout = value_e6(1_000_000, abs(held_e2)) if wins else 0
-        traded = sum(
-            int(b["cash_e6"]) + int(b["fields"]["fee_e6"])
-            for b in self._ledger.records(kind="fill")
-            if b["ticker"] == position.ticker
-        )
-        if traded + payout != position.realized_pnl_e6:
+        if book.traded_e6.get(position.ticker, 0) + payout != position.realized_pnl_e6:
             return None
         moment = market.settlement_ts or position.last_updated_ts
+        settled_at = None if market.settlement_ts is None else market.settlement_ts.isoformat()
         evidence = {
             "archived_position": position.model_dump(mode="json"),
             "market": {"ticker": market.ticker, "status": market.status, "result": market.result,
-                       "settlement_ts": None if market.settlement_ts is None
-                       else market.settlement_ts.isoformat()},
+                       "settlement_ts": settled_at},
         }  # fmt: skip
         return Entry(
             kind="settlement",
             at_ns=ns_of(moment),
-            source="settlement_archived",
+            source=ARCHIVED,
             source_id=position.ticker,
             ticker=position.ticker,
             fields={
@@ -266,50 +345,19 @@ class AccountImporter:
             note="derived: Kalshi archived this settlement; its realised P&L confirms the payout",
         )
 
-    async def _read(self, first: bool) -> list[Found]:
-        """Everything to consider, as (time, order within a time, model, raw JSON)."""
-        found: list[Found] = []
-        since = None if first else self._since()
-        fills = [self._account.fills(min_ts=since)]
-        if first:
-            fills.append(self._account.fills(historical=True))
-        for pages in fills:
-            found += await _gather(pages, 0, lambda f: ns_of(f.created_time))
-        settled = self._account.settlements(min_ts=since)
-        found += await _gather(settled, 1, lambda s: ns_of(s.settled_time))
-        for kind, transfers in (
-            ("deposit", self._account.deposits()),
-            ("withdrawal", self._account.withdrawals()),
-        ):
-            found += [
-                (at, order, (kind, t), raw)
-                for at, order, t, raw in await _gather(transfers, 2, lambda t: t.created_ts * NS)
-            ]
-        found += await _gather(self._account.instance_transfers(), 3, lambda t: t.created_ts * NS)
-        return found
-
-    def _since(self) -> int | None:
-        latest = [self._ledger.latest_at_ns(s) for s in ("fill", "settlement")]
-        known = [at for at in latest if at is not None]
-        return max(0, min(known) // NS - OVERLAP_S) if known else None
-
     # --- records -----------------------------------------------------------------------------
 
-    def _entry(
-        self, at_ns: int, model: Any, raw: Mapping[str, Any], positions: Mapping[str, int]
-    ) -> Entry | None:
+    def _entry(self, at_ns: int, model: Any, raw: Mapping[str, Any], book: Book) -> Entry | None:
         if isinstance(model, Fill):
-            return self._fill(at_ns, model, raw, positions.get(model.ticker, 0))
+            return self._fill(at_ns, model, raw, book.positions.get(model.ticker, 0))
         if isinstance(model, Settlement):
+            if self._ledger.has(ARCHIVED, model.ticker):
+                return None  # already settled from Kalshi's archive: never paid twice
             return self._settlement(at_ns, model, raw)
         if isinstance(model, InstanceTransfer):
             return self._instance_transfer(at_ns, model, raw)
         kind, transfer = model
         return self._transfer(at_ns, kind, transfer, raw)
-
-    def _context(self, ticker: str) -> dict[str, str]:
-        described = self._describe(ticker) if self._describe is not None else None
-        return dict(described or {})
 
     def _fill(self, at_ns: int, fill: Fill, raw: Mapping[str, Any], before: int) -> Entry:
         cash, closed, opened = fill_cash(fill, before)
@@ -396,28 +444,22 @@ class AccountImporter:
             "transfer", at_ns, "transfer", t.transfer_id, fields=fields, cash_e6=effect, raw=raw
         )
 
-    @staticmethod
-    def _move(entry: Entry, positions: dict[str, int]) -> None:
-        if entry.ticker is None:
-            return
-        if entry.kind == "fill":
-            positions[entry.ticker] = positions.get(entry.ticker, 0) + int(entry.fields["delta_e2"])
-        elif entry.kind == "settlement":
-            positions[entry.ticker] = 0
-
     # --- reconciliation ----------------------------------------------------------------------
 
-    async def reconcile(self, held: Positions | None = None) -> Reconciliation:
+    async def reconcile(
+        self, held: Positions | None = None, book: Book | None = None
+    ) -> Reconciliation:
         balance = await self._account.balance()
         held = held if held is not None else await self._account.positions()
         kalshi = {p.ticker: p.position_e2 for p in held.market_positions if p.position_e2}
-        ours, explained = replay(self._ledger)
+        book = book if book is not None else replay(self._ledger)
+        ours = book.held()
         differ = {
             t: (ours.get(t, 0), kalshi.get(t, 0))
             for t in sorted(set(ours) | set(kalshi))
             if ours.get(t, 0) != kalshi.get(t, 0)
         }
-        result = Reconciliation(balance.balance_dollars_e6, explained, differ)
+        result = Reconciliation(balance.balance_dollars_e6, book.cash_e6, differ)
         fields = {
             "balance_e6": result.balance_e6,
             "explained_e6": result.explained_e6,

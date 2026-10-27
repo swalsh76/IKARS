@@ -310,6 +310,27 @@ class Ledger:
             prev, expected, count = stored, expected + 1, count + 1
         return Verified(True, count, Head(expected - 1, prev))
 
+    def against_checkpoint(self, folder: Path, stream: str = "real") -> str | None:
+        """None when the newest checkpoint's record is still in the chain with the same hash;
+        otherwise what is wrong. This catches what :meth:`verify` cannot: newest records cut off,
+        or an older copy of the file put back."""
+        for path in sorted(folder.glob("*/*.json"), reverse=True):
+            point = json.loads(path.read_text(encoding="utf-8"))
+            if point.get("stream") != stream:
+                continue
+            seq, day = int(point["seq"]), point["date_utc"]
+            if seq == 0:
+                return None
+            row = self._db.execute(
+                "SELECT hash FROM record WHERE stream = ? AND seq = ?", (stream, seq)
+            ).fetchone()
+            if row is None:
+                return f"record {seq}, named by the checkpoint of {day}, is missing"
+            if row[0] != point["hash"]:
+                return f"record {seq} differs from the checkpoint of {day}"
+            return None
+        return None
+
     def checkpoint(self, folder: Path, now_ns: int, stream: str = "real") -> Path:
         """Write today's (UTC) head to ``folder/<yyyy>/<yyyy-mm-dd>.json``, atomically; the file
         is rewritten during the day, so the last write of a day holds that day's last hash."""

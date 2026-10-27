@@ -7,6 +7,7 @@ says so; the feed keeps running. Health shows counts and status only, never amou
 
 import asyncio
 import logging
+from dataclasses import replace
 from pathlib import Path
 
 from ikars_engine.clocks import EventClock
@@ -77,12 +78,21 @@ class LedgerService:
     def writable(self) -> bool:
         return self.verified is not None and self.verified.ok
 
+    def check(self) -> Verified:
+        """Walk the chain and compare it with the newest checkpoint. The runner calls this before
+        the feed starts, so a long walk never delays a frame."""
+        verified = self._ledger.verify()
+        problem = self._ledger.against_checkpoint(self._checkpoints) if verified.ok else None
+        self.verified = (
+            verified if problem is None else replace(verified, ok=False, problem=problem)
+        )
+        return self.verified
+
     async def start(self) -> None:
-        self.verified = self._ledger.verify()
-        if not self.writable:
+        verified = self.verified if self.verified is not None else self.check()
+        if not verified.ok:
             log.error(
-                "ledger chain broken; nothing will be appended",
-                extra={"problem": self.verified.problem},
+                "ledger chain broken; nothing will be appended", extra={"problem": verified.problem}
             )
             return
         now = self._clock.now_ns()

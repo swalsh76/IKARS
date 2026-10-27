@@ -95,9 +95,11 @@ slice still needs its own approved plan before code.
   Owner 2026-10-27: GPU detection moved to M1.6; recording volume (about 2.1 GB a day) kept. **Keep
   [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) current** in every slice that adds or drops a dependency (for the
   install instructions). Those docs merged as PR #6 (`a8ff41a`).
-  **M1.5 plan PROPOSED** (BUILD-LOG 1.5, branch `m1/5-ledger`): split M1.5a ledger / M1.5b share and portfolio;
-  waiting for the owner's answers to its 6 open questions (split, NAS go-ahead, tax time zone, import cadence,
-  unexplained balance changes, FIFO). No code before approval. The owner allows
+  **M1.5 plan APPROVED** (owner 2026-10-27: all 6 as recommended: split a/b, NAS go-ahead for M1.5b, tax zone =
+  workstation's (America/Denver), REST import each minute, owner labels unexplained money, FIFO).
+  **M1.5a in progress** on `m1/5a-ledger` (commits `3b272fb`, `8314c9e`): live import reconciles **exactly**
+  (184 records; 18 settlements derived from Kalshi's archive, confirmed by its realised P&L). Fixing the 9 merge-review
+  findings, then BUILD-LOG 1.5a, PR. Then M1.5b (share backups, restore drill, portfolio). The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
