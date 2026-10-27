@@ -91,8 +91,8 @@ slice still needs its own approved plan before code.
   file; check with `Test-Path` only; load into a single command's process. First use: M1.2's live tests.
 - **M1 slice list and gates approved (2026-10-26).** **M1.1 done:** PR #1 merged as `2f19222`, CI green on `main`
   (BUILD-LOG 1.1). **M1.2 done** (PR #3 merged as `3485b16`; BUILD-LOG 1.2). **M1.3 approved for now** (source in `docs/design/mockups/`).
-  **M1.4a done** (PR #4 merged as `b29a86e`). **M1.4b plan proposed** (BUILD-LOG 1.4b) on `m1/4b-feeds`, with five
-  open questions for the owner. The owner allows
+  **M1.4a done** (PR #4 merged as `b29a86e`). **M1.4b in progress** on `m1/4b-feeds` (plan approved: watched set
+  up to 100 markets and 3,000 deltas a second; typed per-channel recordings; 25% of the read bucket; 200 GB). The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

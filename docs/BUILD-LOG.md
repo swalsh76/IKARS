@@ -731,7 +731,14 @@ when the ask is paid. It now shows the spread separately and the figures follow 
 `docs/design/mockups/` (made-up data; a privacy scan's only match was the variable name `navItems`), and stays
 revisable before M1.8.
 
-### 1.4b Kalshi feeds and recording (plan PROPOSED 2026-10-27; branch `m1/4b-feeds`)
+### 1.4b Kalshi feeds and recording (plan APPROVED 2026-10-27; branch `m1/4b-feeds`)
+
+**Owner's answers:**
+1. Record the watched set plus all-market trades.
+2. Typed tables per channel.
+3. **A watched set of up to 100 markets** (raised from 50), with the 3,000 deltas a second budget.
+4. 25% of the read bucket.
+5. A 200 GB storage budget.
 
 **Builds** (in `ikars-engine`; uses IKARS's own read-only key). The Kalshi feed is a built-in source on the
 M1.4a core. KAPS's production ingest is the design guide (read critically; its storage, PostgreSQL on the server
