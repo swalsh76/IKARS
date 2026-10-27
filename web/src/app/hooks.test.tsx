@@ -3,8 +3,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hub } from "../api/hub";
+import { Meter } from "../api/meter";
 import type { Route } from "../nav/route";
-import { TerminalContext, useMarkets, useRoute, useSnapshot, useTerminal, useValue } from "./hooks";
+import { TerminalContext, useMarkets, useMeterReading, useRoute, useSnapshot, useTerminal, useValue } from "./hooks";
 import { Guarded } from "../screens/Guarded";
 import type { Terminal } from "./terminal";
 
@@ -19,6 +20,7 @@ function fakeTerminal(): { terminal: Terminal; setRoute: (r: Route) => void } {
   const listeners = new Set<() => void>();
   const terminal = {
     hub,
+    meter: new Meter({ frame: (f) => f(), wallMs: () => 1_000, perfMs: () => 0 }),
     stream: {} as Terminal["stream"],
     navigator: {
       current: () => route,
@@ -182,6 +184,23 @@ describe("useMarkets", () => {
     expect(container.textContent).toBe("2 7");
     await act(async () => root.render(<TerminalContext value={terminal}>{null}</TerminalContext>));
     expect(terminal.hub.get("quote:KXA")).toBeUndefined(); // released: its value goes too
+  });
+});
+
+describe("the meter's reading", () => {
+  it("is read again on its timer", async () => {
+    vi.useFakeTimers();
+    const { terminal } = fakeTerminal();
+    function View() {
+      return <p>{useMeterReading(500).samples}</p>;
+    }
+    await show(terminal, <View />);
+    expect(container.textContent).toBe("0");
+    terminal.meter.flushed([990 * 1e6]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(container.textContent).toBe("1");
   });
 });
 

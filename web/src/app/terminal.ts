@@ -2,11 +2,13 @@
 
 import { ApiFailure, change, get, signIn } from "../api/client";
 import { Hub, type HubDeps } from "../api/hub";
+import { Meter } from "../api/meter";
 import { EventStream, type StreamDeps } from "../api/stream";
 import { browserNavigator, type Navigator } from "../nav/route";
 
 export interface Terminal {
   hub: Hub;
+  meter: Meter;
   stream: EventStream;
   navigator: Navigator;
   stop(): void;
@@ -16,6 +18,7 @@ export interface TerminalDeps {
   signIn: () => Promise<boolean>;
   get: typeof get;
   hub?: Partial<HubDeps>;
+  meter?: Meter;
   stream?: StreamDeps;
   navigator?: Navigator;
 }
@@ -31,8 +34,10 @@ const timers = {
  * stream after the last alert loaded, so nothing between the two is missed. */
 export async function startTerminal(deps: Partial<TerminalDeps> = {}): Promise<Terminal> {
   const fetchJson = deps.get ?? get;
+  const meter = deps.meter ?? new Meter();
   const hub = new Hub({
     ...timers,
+    flushed: (received) => meter.flushed(received),
     subscribe: (id, quotes, books) =>
       change(`/v1/stream/${encodeURIComponent(id)}/subscriptions`, "Subscriptions", { quotes, books }),
     ...deps.hub,
@@ -82,6 +87,7 @@ export async function startTerminal(deps: Partial<TerminalDeps> = {}): Promise<T
   stream.start();
   return {
     hub,
+    meter,
     stream,
     navigator,
     stop() {

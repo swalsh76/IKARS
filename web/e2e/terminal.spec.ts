@@ -61,7 +61,8 @@ test("drills into Health and back, with real addresses, and stays signed in on r
 test("a screen address opens directly, and an unknown one says so", async ({ page }) => {
   await page.goto(await signInUrl());
   await page.goto(`${base()}/alerts`);
-  await expect(page.getByRole("region", { name: "Alerts" })).toContainText("Arrives in M1.8a-web-2b");
+  await expect(page.getByRole("region", { name: "high alerts" })).toContainText("a made-up alert");
+  await expect(page.getByRole("heading", { name: "high (1)" })).toBeVisible();
   await page.goto(`${base()}/no/such/screen`);
   await expect(page.getByRole("heading", { name: "Not found" })).toBeVisible();
 });
@@ -125,5 +126,32 @@ test("market: the live quote, the chart, the book and the linked items", async (
   await page.goto(`${base()}/market/KXDEMO-26JAN02-T9`); // not watched: no book
   await expect(page.getByRole("region", { name: "Order book" })).toContainText("not watched");
   expect(refused).toEqual([]);
+});
+
+test("ledger: its state, your records paged, and a ticker filter", async ({ page }) => {
+  const refused = watchPolicy(page);
+  await page.goto(await signInUrl());
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Ledger" }).click();
+  await expect(page.getByRole("region", { name: "Ledger status" })).toContainText("chain verified");
+  const records = page.getByRole("table", { name: "Records" });
+  await expect(records.locator("tbody tr")).toHaveCount(3);
+  await expect(records).toContainText("deposit");
+  await expect(records).toContainText("+$100.00");
+  await expect(page.getByRole("button", { name: "Older" })).toBeDisabled();
+  await page.locator("#ledger-ticker").fill("KXNONE");
+  await page.locator("#ledger-ticker").press("Enter");
+  await expect(page.getByRole("region", { name: "Ledger records" })).toContainText("No records.");
+  expect(refused).toEqual([]);
+});
+
+test("the meter measures update to screen while markets stream", async ({ page }) => {
+  await page.goto(await signInUrl());
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Health" }).click();
+  await expect(page.getByRole("region", { name: "Update to screen" })).toContainText("No updates yet");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Markets" }).click();
+  await expect(page.getByTestId("market-count")).toHaveText("30 found");
+  await page.waitForTimeout(3_000);
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Health" }).click();
+  await expect(page.getByRole("region", { name: "Update to screen" })).toContainText(/p99 \d+ ms/);
 });
 

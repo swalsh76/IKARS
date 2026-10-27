@@ -27,6 +27,8 @@ export interface HubDeps {
   clearTimeout: (handle: unknown) => void;
   /** Sends the stream's subscriptions (PUT /v1/stream/{id}/subscriptions). */
   subscribe: (streamId: string, quotes: string[], books: string[]) => Promise<unknown>;
+  /** Told at each flush the engine's received_ns of the quotes handed to the screens (the meter). */
+  flushed?: (receivedNs: readonly number[]) => void;
 }
 
 /** Newest first by line, at most ``ALERTS_PER_PRIORITY`` of each priority, each line once. */
@@ -99,6 +101,14 @@ export class Hub {
     if (!this.pending.size) return;
     const changed = [...this.pending.entries()];
     this.pending.clear();
+    if (this.deps.flushed) {
+      const received: number[] = [];
+      for (const [key, value] of changed) {
+        const at = key.startsWith("quote:") ? (value as QuoteUpdate).received_ns : null;
+        if (typeof at === "number") received.push(at);
+      }
+      this.deps.flushed(received);
+    }
     for (const [key, value] of changed) this.current.set(key, value);
     for (const [key] of changed) for (const listener of this.listeners.get(key) ?? []) listener();
   }

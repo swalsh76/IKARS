@@ -3,6 +3,7 @@
 
 import type { GapView, HealthView } from "../api/contracts";
 import type { StreamState } from "../api/stream";
+import type { Reading } from "../api/meter";
 
 export type Level = "ok" | "watch" | "problem" | "unknown";
 
@@ -144,4 +145,22 @@ export function gapRow(gap: GapView, zone?: string): GapRow {
     length: duration(Math.max(0, length)),
     recovered: `${gap.status}${gap.detail ? ` · ${gap.detail}` : ""}`,
   };
+}
+
+/** The update-to-screen card (PLAN D20 J: p99 at most 33 ms while 100 markets stream at 10 Hz). */
+export const TARGET_MS = 33;
+
+export function meterCard(r: Reading): Card {
+  if (r.samples === 0 || r.p50 === null || r.p99 === null) {
+    return card("Update to screen", "unknown", "No updates yet", ["open a screen with live markets to measure", `target p99 ≤ ${TARGET_MS} ms`]);
+  }
+  const level: Level = r.p99 <= TARGET_MS ? "ok" : "watch";
+  const work = r.workP99 === null ? "–" : `${r.workP99.toFixed(1)} ms`;
+  const engine = r.engineP50 === null || r.engineP99 === null ? "–" : `p50 ${r.engineP50.toFixed(0)} ms · p99 ${r.engineP99.toFixed(0)} ms`;
+  return card("Update to screen", level, `p50 ${r.p50.toFixed(0)} ms · p99 ${r.p99.toFixed(0)} ms`, [
+    `target p99 ≤ ${TARGET_MS} ms, from applying a change to the frame after it shows`,
+    `the page's own work p99 ${work}`,
+    `from the engine receiving it: ${engine} (with the 10 Hz batching on both sides)`,
+    `over the last ${r.samples} screen updates`,
+  ]);
 }

@@ -4,6 +4,7 @@ import { defineConfig } from "@playwright/test";
 // installed Microsoft Edge (no browser download). Run `pnpm build` first: the server serves dist.
 export default defineConfig({
   testDir: "e2e",
+  testIgnore: "load.spec.ts", // the load test runs on its own: pnpm load
   globalSetup: "./e2e/demo-server.ts",
   timeout: 30_000,
   retries: 0,

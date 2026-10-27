@@ -16,4 +16,8 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7 # the same 7-day rule as pnpm's minimumReleaseAge (PLAN D11)
+    ignore:
+      # Node's types follow the Node we run (24, docs/DEPENDENCIES.md): a new major comes with a Node upgrade
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 

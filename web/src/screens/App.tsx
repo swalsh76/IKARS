@@ -2,9 +2,11 @@ import { Suspense, lazy, useEffect } from "react";
 import { useRoute } from "../app/hooks";
 import { title, type Route } from "../nav/route";
 import { Guarded } from "./Guarded";
+import { Alerts } from "./Alerts";
 import { Health } from "./Health";
+import { Ledger } from "./Ledger";
 import { Overview } from "./Overview";
-import { Later, Link, Shell } from "./Shell";
+import { Link, Shell } from "./Shell";
 
 // the grid and chart libraries load only when their screens first open (a lighter start)
 const Markets = lazy(() => import("./Markets").then((m) => ({ default: m.Markets })));
@@ -25,8 +27,9 @@ function Screen() {
     case "market":
       return <Market ticker={route.ticker} />;
     case "ledger":
+      return <Ledger />;
     case "alerts":
-      return <Later title={route.screen === "ledger" ? "Ledger" : "Alerts"} slice="M1.8a-web-2b" />;
+      return <Alerts />;
     case "missing":
       return (
         <section className="card">

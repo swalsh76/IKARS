@@ -4,6 +4,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ContractName, Contracts } from "../api/contracts";
 import type { Values } from "../api/hub";
+import type { Reading } from "../api/meter";
 import { ApiFailure, get } from "../api/client";
 import type { Route } from "../nav/route";
 import type { Terminal } from "./terminal";
@@ -52,6 +53,17 @@ export function useMarkets(quotes: readonly string[], books: readonly string[] =
     [],
   );
   return changes;
+}
+
+/** The update-to-screen meter's reading, read again every ``everyMs``. */
+export function useMeterReading(everyMs = 1_000): Reading {
+  const { meter } = useTerminal();
+  const [reading, setReading] = useState(() => meter.reading());
+  useEffect(() => {
+    const timer = setInterval(() => setReading(meter.reading()), everyMs);
+    return () => clearInterval(timer);
+  }, [meter, everyMs]);
+  return reading;
 }
 
 export function useRoute(): Route {
