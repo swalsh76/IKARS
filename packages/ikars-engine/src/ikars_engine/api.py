@@ -98,7 +98,8 @@ class ApiContext:
     # the engine's gap log, ended at or after a time (newest first, at most a limit)
     gaps: "Callable[[int, int], list[Gap]] | None" = None
     streams: dict[str, "Stream"] = field(default_factory=dict)
-    candle_cache: dict[tuple[str, int, int], tuple[float, bytes]] = field(default_factory=dict)
+    # (loop time, body, status): successes and failures alike, for CANDLE_CACHE_S
+    candle_cache: dict[tuple[str, int, int], tuple[float, bytes, int]] = field(default_factory=dict)
     closing: bool = False  # set at stop: every stream ends
     alert_index: "AlertIndex | None" = None
 
@@ -437,7 +438,7 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         now = asyncio.get_running_loop().time()
         cached = ctx.candle_cache.get(key)
         if cached is not None and now - cached[0] < CANDLE_CACHE_S:
-            return Response(cached[1], media_type="application/json")
+            return Response(cached[1], status_code=cached[2], media_type="application/json")
         end_s = ctx.now_ns() // NS
         try:
             rows = await ctx.candles(
@@ -445,15 +446,20 @@ def create_app(ctx: ApiContext) -> ASGIApp:
             )
         except Exception as exc:  # Kalshi refused or failed: say so, never a bare 500
             log.warning("candles not read", extra={"error": type(exc).__name__})
-            return _error(503, "unavailable", "Kalshi's price history could not be read now")
+            failed = _error(503, "unavailable", "Kalshi's price history could not be read now")
+            remember(key, now, bytes(failed.body), 503)  # a failure is not asked again for a minute
+            return failed
         page = c.CandlePage(
             ticker=ticker, interval_minutes=interval, items=[candle_view(r) for r in rows]
         )
         body = msgspec.json.encode(page)
+        remember(key, now, body, 200)
+        return Response(body, media_type="application/json")
+
+    def remember(key: tuple[str, int, int], now: float, body: bytes, status: int) -> None:
         if len(ctx.candle_cache) >= MAX_CANDLE_CACHE:
             ctx.candle_cache.clear()
-        ctx.candle_cache[key] = (now, body)
-        return Response(body, media_type="application/json")
+        ctx.candle_cache[key] = (now, body, status)
 
     async def gaps(request: Request) -> Response:
         days = _int(request, "days", 7, 1, 90) or 7

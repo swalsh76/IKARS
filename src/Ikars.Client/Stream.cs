@@ -121,6 +121,9 @@ public sealed class StreamWatcher(Func<CancellationToken, Task<IIkarsApi>> conne
     /// <summary>The longest wait.</summary>
     public static readonly TimeSpan LongestWait = TimeSpan.FromSeconds(30);
 
+    /// <summary>A stream silent this long is dead (a hung engine, a half-open socket): the engine sends health every 5 s.</summary>
+    public TimeSpan IdleTimeout { get; init; } = TimeSpan.FromSeconds(20);
+
     private readonly Func<TimeSpan, CancellationToken, Task> _delay = delay ?? Task.Delay;
     private readonly object _gate = new();
     private Subscriptions _wanted = new([], []);
@@ -170,9 +173,15 @@ public sealed class StreamWatcher(Func<CancellationToken, Task<IIkarsApi>> conne
             try
             {
                 var api = await connect(cancellationToken).ConfigureAwait(false);
-                await foreach (var item in api.StreamAsync(AlertLine, cancellationToken).ConfigureAwait(false))
+                using var idle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                idle.CancelAfter(IdleTimeout);
+                await foreach (var item in api.StreamAsync(AlertLine, idle.Token).ConfigureAwait(false))
                 {
-                    wait = FirstWait;
+                    idle.CancelAfter(IdleTimeout);
+                    if (item is not StreamEvent.Refused)
+                    {
+                        wait = FirstWait;   // a refusal (too many streams) keeps backing off
+                    }
                     switch (item)
                     {
                         case StreamEvent.Opened opened:
@@ -202,6 +211,10 @@ public sealed class StreamWatcher(Func<CancellationToken, Task<IIkarsApi>> conne
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 return;
+            }
+            catch (OperationCanceledException)
+            {
+                onNotice($"the stream went quiet; reconnecting in {wait.TotalSeconds:0} s");
             }
             catch (IncompatibleEngineException ex)
             {

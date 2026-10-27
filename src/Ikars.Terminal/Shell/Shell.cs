@@ -53,9 +53,11 @@ internal sealed class ReconnectingApi(Func<CancellationToken, Task<IIkarsApi>> c
         {
             return await call(_current).ConfigureAwait(true);
         }
-        catch (Exception ex) when (ex is EngineUnavailableException or ApiException { Status: 401 })
+        catch (Exception ex) when (ex is EngineUnavailableException { TimedOut: false } or ApiException { Status: 401 })
         {
-            _current = await connect(cancellationToken).ConfigureAwait(true);   // the engine restarted: its new port and token
+            // The engine restarted (a new port and token); a slow answer is not a restart, and retrying it would repeat the request. The old client is
+            // left to the collector, not disposed: other calls may still be running on it, and it owns no sockets (every client shares one handler).
+            _current = await connect(cancellationToken).ConfigureAwait(true);
             return await call(_current).ConfigureAwait(true);
         }
     }
@@ -73,6 +75,7 @@ internal sealed class ShellViewModel : ObservableObject, IDisposable
     private string _connection = "starting";
     private string _problem = string.Empty;
     private UpdateHub? _hub;
+    private bool _ticking;
 
     public ShellViewModel(EngineConnector connector, FrameMeter frames)
     {
@@ -113,11 +116,12 @@ internal sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>About ten times a second, on the UI thread: hands the stream's changes to the screens.</summary>
     public async Task TickAsync()
     {
-        if (_hub is null)
+        if (_hub is null || _ticking)
         {
-            return;
+            return;   // a slow subscription change still running: no overlapping flush can send an older set last
         }
 
+        _ticking = true;
         try
         {
             await _hub.Flush().ConfigureAwait(true);
@@ -129,6 +133,10 @@ internal sealed class ShellViewModel : ObservableObject, IDisposable
             {
                 Problem = ex.Message;
             }
+        }
+        finally
+        {
+            _ticking = false;
         }
 
         Connection = _hub.Connection;

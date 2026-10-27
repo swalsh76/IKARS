@@ -496,9 +496,14 @@ async def test_candles_are_served_cached_and_refused_cleanly(ctx: ApiContext) ->
         await get(ctx, "/v1/markets/KXA/candles?interval=5", c.ApiError, 400)
     ).error == "bad_request"
 
+    failures: list[str] = []
+
     async def failing(*args: Any) -> list[Any]:
+        failures.append("asked")
         raise RuntimeError("Kalshi said no")
 
     ctx.candles = failing
     refused = await get(ctx, "/v1/markets/KXB/candles", c.ApiError, 503)
     assert refused.error == "unavailable" and "said no" not in refused.detail
+    again = await get(ctx, "/v1/markets/KXB/candles", c.ApiError, 503)
+    assert again == refused and len(failures) == 1  # a failure is not asked again within a minute

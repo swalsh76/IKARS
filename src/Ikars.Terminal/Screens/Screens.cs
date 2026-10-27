@@ -74,9 +74,9 @@ internal sealed class OverviewScreen(ScreenContext ctx) : Screen(Ref.Overview)
         ctx.Hub.Alert += AddAlert;
         ctx.Hub.Health += ShowHealth;
         ShowPortfolio(await ctx.Api.PortfolioAsync(cancellationToken).ConfigureAwait(true));
-        foreach (var alert in (await ctx.Api.AlertsAsync(null, 8, cancellationToken).ConfigureAwait(true)).Items.Reverse())
+        foreach (var alert in (await ctx.Api.AlertsAsync(null, AlertLists.OnOverview, cancellationToken).ConfigureAwait(true)).Items)
         {
-            Alerts.Add(alert);
+            AddAlert(alert);
         }
 
         ShowHealth(await ctx.Api.HealthAsync(cancellationToken).ConfigureAwait(true));
@@ -110,14 +110,7 @@ internal sealed class OverviewScreen(ScreenContext ctx) : Screen(Ref.Overview)
         ctx.Hub.Want(this, portfolio.Positions.Select(p => p.Ticker), []);
     }
 
-    internal void AddAlert(AlertView alert)
-    {
-        Alerts.Insert(0, alert);
-        while (Alerts.Count > 8)
-        {
-            Alerts.RemoveAt(Alerts.Count - 1);
-        }
-    }
+    internal void AddAlert(AlertView alert) => AlertLists.Add(Alerts, alert, AlertLists.OnOverview);
 
     internal void ShowHealth(HealthView health)
     {
@@ -198,6 +191,7 @@ internal sealed class MarketsScreen(ScreenContext ctx) : Screen(Ref.Markets)
     private string _category = string.Empty;
     private int _offset;
     private long _total;
+    private bool _shown;
 
     public string Query { get => _query; set => Set(ref _query, value); }
 
@@ -217,6 +211,7 @@ internal sealed class MarketsScreen(ScreenContext ctx) : Screen(Ref.Markets)
 
     public override Task OpenAsync(CancellationToken cancellationToken)
     {
+        _shown = true;
         ctx.Hub.Quote += ShowQuote;
         ctx.Selection.PropertyChanged += Highlight;
         return LoadAsync(0, cancellationToken);
@@ -224,6 +219,7 @@ internal sealed class MarketsScreen(ScreenContext ctx) : Screen(Ref.Markets)
 
     public override void Close()
     {
+        _shown = false;
         ctx.Hub.Quote -= ShowQuote;
         ctx.Selection.PropertyChanged -= Highlight;
         ctx.Hub.Release(this);
@@ -232,6 +228,11 @@ internal sealed class MarketsScreen(ScreenContext ctx) : Screen(Ref.Markets)
     internal async Task LoadAsync(int offset, CancellationToken cancellationToken)
     {
         var page = await ctx.Api.MarketsAsync(Query, string.IsNullOrWhiteSpace(Category) ? null : Category, offset, PageSize, cancellationToken).ConfigureAwait(true);
+        if (!_shown)
+        {
+            return;   // a page that arrived after the screen closed must not subscribe again
+        }
+
         _offset = (int)page.Offset;
         _total = page.Total;
         Rows.Clear();
@@ -305,6 +306,9 @@ internal sealed class MarketScreen(ScreenContext ctx, string ticker) : Screen(Re
     public IReadOnlyList<(DateTime End, double Cents)> ChartPoints { get; private set; } = [];
 
     public int ChartVersion { get => _chartVersion; private set => Set(ref _chartVersion, value); }
+
+    /// <summary>Why there is no chart, or empty when there is one.</summary>
+    public string ChartNote { get; private set; } = string.Empty;
 
     public ObservableCollection<LinkRow> SameEvent { get; } = [];
 
@@ -383,10 +387,12 @@ internal sealed class MarketScreen(ScreenContext ctx, string ticker) : Screen(Re
             ChartPoints = [.. page.Items
                 .Where(c => c.CloseE6 is not null || c.BidCloseE6 is not null)
                 .Select(c => (DateTimeOffset.Parse(c.EndUtc, System.Globalization.CultureInfo.InvariantCulture).UtcDateTime, (double)((c.CloseE6 ?? c.BidCloseE6)!.Value / 10_000m)))];
+            ChartNote = ChartPoints.Count > 0 ? string.Empty : "no trades today";
         }
         catch (ApiException ex) when (ex.Status is 404 or 503)
         {
             ChartPoints = [];
+            ChartNote = ex.Status == 404 ? "no price history for this market" : "price history unavailable now (Kalshi did not answer)";
         }
 
         ChartVersion++;
@@ -476,10 +482,37 @@ internal sealed class AlertsScreen(ScreenContext ctx) : Screen(Ref.Alerts)
 
     public override void Close() => ctx.Hub.Alert -= Add;
 
-    internal void Add(AlertView alert)
+    internal void Add(AlertView alert) =>
+        AlertLists.Add(alert.Priority switch { "urgent" => Urgent, "high" => High, _ => Other }, alert, AlertLists.PerPriority);
+}
+
+/// <summary>
+/// Alert lists newest first by log line, each alert once: a screen listens before it reads the log's snapshot (so nothing falls between), and an alert can then
+/// arrive both ways.
+/// </summary>
+internal static class AlertLists
+{
+    public const int OnOverview = 8;
+    public const int PerPriority = 200;
+
+    public static void Add(ObservableCollection<AlertView> list, AlertView alert, int most)
     {
-        var list = alert.Priority switch { "urgent" => Urgent, "high" => High, _ => Other };
-        list.Insert(0, alert);
+        var at = 0;
+        while (at < list.Count && list[at].Line > alert.Line)
+        {
+            at++;
+        }
+
+        if (at < list.Count && list[at].Line == alert.Line)
+        {
+            return;
+        }
+
+        list.Insert(at, alert);
+        while (list.Count > most)
+        {
+            list.RemoveAt(list.Count - 1);
+        }
     }
 }
 

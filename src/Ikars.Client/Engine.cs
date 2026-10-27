@@ -48,7 +48,11 @@ public sealed class ApiException(int status, string code, string detail) : Excep
 }
 
 /// <summary>The engine cannot be reached (not running, or not answering).</summary>
-public sealed class EngineUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
+public sealed class EngineUnavailableException(string message, Exception? inner = null) : Exception(message, inner)
+{
+    /// <summary>The engine is there but did not answer in time (a slow request), rather than gone: reconnecting would only repeat the request.</summary>
+    public bool TimedOut => InnerException is OperationCanceledException;
+}
 
 /// <summary>The engine speaks a different major version of the API: the terminal must not guess.</summary>
 public sealed class IncompatibleEngineException(string engineVersion)

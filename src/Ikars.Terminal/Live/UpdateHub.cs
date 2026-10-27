@@ -70,7 +70,13 @@ internal sealed class UpdateHub
     /// <summary>A screen shows these markets (it replaces what the same screen wanted before).</summary>
     public void Want(object screen, IEnumerable<string> quotes, IEnumerable<string> books)
     {
-        _wanted[screen] = ([.. quotes], [.. books]);
+        string[] quoted = [.. quotes], booked = [.. books];
+        if (_wanted.TryGetValue(screen, out var had) && had.Quotes.SequenceEqual(quoted) && had.Books.SequenceEqual(booked))
+        {
+            return;   // the same markets (the Overview re-sends its positions every second): nothing to send
+        }
+
+        _wanted[screen] = (quoted, booked);
         _wantedChanged = true;
     }
 

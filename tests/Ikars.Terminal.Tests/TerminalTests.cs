@@ -193,6 +193,26 @@ public class HubRetryTests
         await hub.Flush();
         Assert.Equal(2, calls);
     }
+
+    [Fact]
+    public async Task TheSameMarketsAgainAreNotSentAgain()
+    {
+        var calls = 0;
+        var hub = new UpdateHub(_ =>
+        {
+            calls++;
+            return Task.CompletedTask;
+        });
+        var overview = new object();
+        hub.Want(overview, ["A", "B"], []);
+        await hub.Flush();
+        hub.Want(overview, ["A", "B"], []);   // the portfolio again, a second later
+        await hub.Flush();
+        Assert.Equal(1, calls);
+        hub.Want(overview, ["A"], []);
+        await hub.Flush();
+        Assert.Equal(2, calls);
+    }
 }
 
 public class FormattingTests
@@ -254,6 +274,9 @@ public class FrameMeterTests
         Assert.Equal(FrameMeter.Window, meter.Count);
         Assert.True(meter.WithinTarget);
         Assert.Equal("frame p50 16 ms, p99 16 ms", meter.Text);
+        at += TimeSpan.FromSeconds(4);   // minimised, then restored: a pause, not a slow frame
+        meter.Frame(at);
+        Assert.True(meter.WithinTarget);
     }
 }
 
@@ -374,7 +397,16 @@ public class ScreenTests
         markets.Query = "nothing";
         await markets.Search.RunAsync();
         Assert.Equal("no markets", markets.Summary);
+        markets.Query = string.Empty;
+        markets.Category = string.Empty;
+        await markets.Search.RunAsync();
+        engine.MarketsGate = new TaskCompletionSource();
+        var late = markets.Next.RunAsync();   // slow, and the owner moves on
         markets.Close();
+        engine.MarketsGate.SetResult();
+        await late;
+        await hub.Flush();
+        Assert.Empty(hub.Streaming.Quotes);   // the late page subscribed nothing
     }
 
     [Fact]
@@ -391,6 +423,7 @@ public class ScreenTests
         Assert.Equal(string.Empty, market.BookNote);
         Assert.Equal(42.0, Assert.Single(market.ChartPoints).Cents);
         Assert.Equal(1, market.ChartVersion);
+        Assert.Equal(string.Empty, market.ChartNote);
         Assert.Equal(Ref.Market("KXDEMO-26JAN01-B"), Assert.Single(market.SameEvent).Target);
         Assert.Equal(20, market.LedgerRecords.Count);
         Assert.Equal(Ref.Market("KXDEMO-26JAN01-A"), ctx.Selection.Current);
@@ -410,6 +443,17 @@ public class ScreenTests
         await quiet.OpenAsync(CancellationToken.None);
         Assert.Equal("the engine keeps books for its watched markets only", quiet.BookNote);
         Assert.Empty(quiet.ChartPoints);
+        Assert.Equal("price history unavailable now (Kalshi did not answer)", quiet.ChartNote);
+        quiet.Close();
+        engine.Candles = _ => throw new ApiException(404, "not_found", "none");
+        var unknown = new MarketScreen(ctx, "KXOTHER-1");
+        await unknown.OpenAsync(CancellationToken.None);
+        Assert.Equal("no price history for this market", unknown.ChartNote);
+        unknown.Close();
+        engine.Candles = ticker => new CandlePage(ticker, 1, []);
+        var untraded = new MarketScreen(ctx, "KXOTHER-1");
+        await untraded.OpenAsync(CancellationToken.None);
+        Assert.Equal("no trades today", untraded.ChartNote);
         Assert.Empty(quiet.SameEvent);
         Assert.Equal("KXOTHER-1", quiet.Ticker);
     }
@@ -443,6 +487,16 @@ public class ScreenTests
         hub.Receive(new StreamEvent.Alert(new AlertView(11, "k", "urgent", "t", "x", "a", "shown")));
         await hub.Flush();
         Assert.Equal(11, alerts.Urgent[0].Line);
+        alerts.Add(new AlertView(11, "k", "urgent", "t", "x", "a", "shown"));   // also in a snapshot: once
+        alerts.Add(new AlertView(7, "k", "urgent", "t", "x", "a", "shown"));    // older: in its place
+        Assert.Equal([11, 9, 7, 6, 3], alerts.Urgent.Select(a => a.Line));
+        for (var line = 100; line < 400; line++)
+        {
+            alerts.Add(new AlertView(line, "k", "high", "t", "x", "a", "shown"));
+        }
+
+        Assert.Equal(AlertLists.PerPriority, alerts.High.Count);
+        Assert.Equal(399, alerts.High[0].Line);
         alerts.Close();
 
         var health = new HealthScreen(ctx);
@@ -557,36 +611,47 @@ public class ShellTests : IDisposable
         Assert.NotNull(api.StreamAsync(null, Ct));
         Assert.Equal(1, connects);   // once reconnected, the new engine is used
         Assert.Equal(12, restarted.Calls);   // every read but the subscription change
+
+        var slow = new FailingEngine(() => new EngineUnavailableException("slow", new OperationCanceledException()));
+        var patient = new ReconnectingApi(_ =>
+        {
+            connects++;
+            return Task.FromResult<IIkarsApi>(restarted);
+        }, slow);
+        Assert.True((await Assert.ThrowsAsync<EngineUnavailableException>(() => patient.HealthAsync(Ct))).TimedOut);
+        Assert.Equal(1, connects);   // a slow answer is not a restart: not asked twice
     }
 
-    private sealed class FailingEngine : IIkarsApi
+    private sealed class FailingEngine(Func<Exception>? failure = null) : IIkarsApi
     {
+        private Exception Failure() => failure?.Invoke() ?? new EngineUnavailableException("gone");
+
         public Task<Hello> HelloAsync(CancellationToken cancellationToken = default) => throw new ApiException(401, "unauthorised", "stale token");
 
-        public Task<HealthView> HealthAsync(CancellationToken cancellationToken = default) => throw new EngineUnavailableException("gone");
+        public Task<HealthView> HealthAsync(CancellationToken cancellationToken = default) => throw Failure();
 
-        public Task<MarketPage> MarketsAsync(string? query, string? category, int offset, int limit, CancellationToken cancellationToken = default) => throw new EngineUnavailableException("gone");
+        public Task<MarketPage> MarketsAsync(string? query, string? category, int offset, int limit, CancellationToken cancellationToken = default) => throw Failure();
 
-        public Task<MarketView> MarketAsync(string ticker, CancellationToken cancellationToken = default) => throw new EngineUnavailableException("gone");
+        public Task<MarketView> MarketAsync(string ticker, CancellationToken cancellationToken = default) => throw Failure();
 
-        public Task<BookView> BookAsync(string ticker, CancellationToken cancellationToken = default) => throw new EngineUnavailableException("gone");
+        public Task<BookView> BookAsync(string ticker, CancellationToken cancellationToken = default) => throw Failure();
 
-        public Task<CandlePage> CandlesAsync(string ticker, int intervalMinutes, int hours, CancellationToken cancellationToken = default) => throw new EngineUnavailableException("gone");
+        public Task<CandlePage> CandlesAsync(string ticker, int intervalMinutes, int hours, CancellationToken cancellationToken = default) => throw Failure();
 
-        public Task<PortfolioView> PortfolioAsync(CancellationToken cancellationToken = default) => throw new EngineUnavailableException("gone");
+        public Task<PortfolioView> PortfolioAsync(CancellationToken cancellationToken = default) => throw Failure();
 
-        public Task<LedgerStatusView> LedgerStatusAsync(CancellationToken cancellationToken = default) => throw new EngineUnavailableException("gone");
+        public Task<LedgerStatusView> LedgerStatusAsync(CancellationToken cancellationToken = default) => throw Failure();
 
-        public Task<LedgerPage> LedgerRecordsAsync(long? before, int limit, string? ticker = null, CancellationToken cancellationToken = default) => throw new EngineUnavailableException("gone");
+        public Task<LedgerPage> LedgerRecordsAsync(long? before, int limit, string? ticker = null, CancellationToken cancellationToken = default) => throw Failure();
 
-        public Task<AlertPage> AlertsAsync(long? after, int limit, CancellationToken cancellationToken = default) => throw new EngineUnavailableException("gone");
+        public Task<AlertPage> AlertsAsync(long? after, int limit, CancellationToken cancellationToken = default) => throw Failure();
 
-        public Task<RecommendationPage> RecommendationsAsync(CancellationToken cancellationToken = default) => throw new EngineUnavailableException("gone");
+        public Task<RecommendationPage> RecommendationsAsync(CancellationToken cancellationToken = default) => throw Failure();
 
-        public Task<GapPage> GapsAsync(int days, CancellationToken cancellationToken = default) => throw new EngineUnavailableException("gone");
+        public Task<GapPage> GapsAsync(int days, CancellationToken cancellationToken = default) => throw Failure();
 
-        public Task SetSubscriptionsAsync(string streamId, Subscriptions subscriptions, CancellationToken cancellationToken = default) => throw new EngineUnavailableException("gone");
+        public Task SetSubscriptionsAsync(string streamId, Subscriptions subscriptions, CancellationToken cancellationToken = default) => throw Failure();
 
-        public IAsyncEnumerable<StreamEvent> StreamAsync(long? afterAlert, CancellationToken cancellationToken = default) => throw new EngineUnavailableException("gone");
+        public IAsyncEnumerable<StreamEvent> StreamAsync(long? afterAlert, CancellationToken cancellationToken = default) => throw Failure();
     }
 }

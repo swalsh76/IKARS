@@ -31,6 +31,9 @@ internal sealed class FakeEngine : IIkarsApi
 
     public int Calls { get; private set; }
 
+    /// <summary>When set, a markets page waits for it (a slow engine).</summary>
+    public TaskCompletionSource? MarketsGate { get; set; }
+
     /// <summary>Whether the stream opens (otherwise it waits silently).</summary>
     public bool OpensStream { get; set; }
 
@@ -47,10 +50,15 @@ internal sealed class FakeEngine : IIkarsApi
 
     public Task<HealthView> HealthAsync(CancellationToken cancellationToken = default) => Done(Health);
 
-    public Task<MarketPage> MarketsAsync(string? query, string? category, int offset, int limit, CancellationToken cancellationToken = default)
+    public async Task<MarketPage> MarketsAsync(string? query, string? category, int offset, int limit, CancellationToken cancellationToken = default)
     {
+        if (MarketsGate is { } gate)
+        {
+            await gate.Task.WaitAsync(cancellationToken);
+        }
+
         var found = Markets.Where(m => (query is null || m.Ticker.Contains(query, StringComparison.OrdinalIgnoreCase)) && (category is null || m.Category == category)).ToList();
-        return Done(new MarketPage([.. found.Skip(offset).Take(limit)], found.Count, offset));
+        return await Done(new MarketPage([.. found.Skip(offset).Take(limit)], found.Count, offset));
     }
 
     public Task<MarketView> MarketAsync(string ticker, CancellationToken cancellationToken = default) =>

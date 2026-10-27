@@ -32,7 +32,6 @@ internal sealed class MarketChart : UserControl
     private readonly WpfPlot _plot = new();
     private readonly TextBlock _empty = new()
     {
-        Text = "no trades today",
         HorizontalAlignment = HorizontalAlignment.Center,
         VerticalAlignment = VerticalAlignment.Center,
         Opacity = 0.7,
@@ -79,6 +78,7 @@ internal sealed class MarketChart : UserControl
         // no axes without data: an empty plot reads as a broken chart
         _plot.Visibility = points.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         _empty.Visibility = points.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+        _empty.Text = _screen?.ChartNote ?? string.Empty;
         if (points.Count > 0)
         {
             var times = points.Select(p => p.End.ToLocalTime().ToOADate()).ToArray();

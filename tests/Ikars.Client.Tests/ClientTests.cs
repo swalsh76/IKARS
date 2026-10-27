@@ -22,6 +22,14 @@ internal sealed class FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> 
 
 public class ClientTests
 {
+    [Fact]
+    public void ATimeoutIsToldApartFromAnEngineThatIsGone()
+    {
+        Assert.True(new EngineUnavailableException("slow", new OperationCanceledException()).TimedOut);
+        Assert.False(new EngineUnavailableException("gone", new HttpRequestException("refused")).TimedOut);
+        Assert.False(new EngineUnavailableException("gone").TimedOut);
+    }
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private static readonly ApiInfo Info = new(5555, "made-up-token", "1.0");

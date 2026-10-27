@@ -12,6 +12,9 @@ internal sealed class FakeApi(string apiVersion = "1.0") : IIkarsApi
 
     public List<(string Id, Subscriptions Wanted)> Subscribed { get; } = [];
 
+    /// <summary>Each stream stays open, silent, after its items (a hung engine).</summary>
+    public bool HangAtEnd { get; init; }
+
     public Task<Hello> HelloAsync(CancellationToken cancellationToken = default) => Task.FromResult(new Hello(apiVersion, "0.0.0", "x"));
 
     public Task<HealthView> HealthAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -49,6 +52,11 @@ internal sealed class FakeApi(string apiVersion = "1.0") : IIkarsApi
         foreach (var item in Streams.Dequeue()())
         {
             yield return item;
+        }
+
+        if (HangAtEnd)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
         }
     }
 }
@@ -185,6 +193,32 @@ public class ConnectionTests : IDisposable
         Assert.Equal(TimeSpan.FromSeconds(1), waits[0]);
         Assert.Contains(notices, n => n.StartsWith("the connection dropped", StringComparison.Ordinal));
         Assert.Equal(5, events.Count);
+    }
+
+    [Fact]
+    public async Task ASilentStreamIsDroppedAndARefusalKeepsBackingOff()
+    {
+        var api = new FakeApi { HangAtEnd = true };
+        api.Streams.Enqueue(() => [Opened("s1")]);   // then silent
+        api.Streams.Enqueue(() => [new StreamEvent.Refused(new ApiError("too_many_streams", "8 open"))]);
+        api.Streams.Enqueue(() => [new StreamEvent.Refused(new ApiError("too_many_streams", "8 open"))]);
+        var waits = new List<TimeSpan>();
+        using var stop = new CancellationTokenSource();
+        var watcher = new StreamWatcher(_ => Task.FromResult<IIkarsApi>(api), (wait, _) =>
+        {
+            waits.Add(wait);
+            if (api.Streams.Count == 0)
+            {
+                stop.Cancel();
+            }
+
+            return Task.CompletedTask;
+        })
+        { IdleTimeout = TimeSpan.FromMilliseconds(50) };
+        var notices = new List<string>();
+        await watcher.RunAsync(_ => { }, notices.Add, stop.Token);
+        Assert.Contains(notices, n => n.StartsWith("the stream went quiet", StringComparison.Ordinal));
+        Assert.Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)], waits);   // refusals do not reset the wait
     }
 
     [Fact]

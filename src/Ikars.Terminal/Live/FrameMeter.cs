@@ -12,6 +12,9 @@ internal sealed class FrameMeter
     /// <summary>The owner's target for p99, in milliseconds.</summary>
     public const double TargetP99Ms = 33.0;
 
+    /// <summary>A longer gap is a pause (minimised, dragged, locked), not a slow frame.</summary>
+    public const double PauseMs = 1000.0;
+
     private readonly double[] _gaps = new double[Window];
     private int _count;
     private int _next;
@@ -20,7 +23,7 @@ internal sealed class FrameMeter
     /// <summary>A frame was rendered at <paramref name="renderingTime"/> (WPF's RenderingEventArgs.RenderingTime). WPF repeats a time when it skips a frame; that is not a frame.</summary>
     public void Frame(TimeSpan renderingTime)
     {
-        if (_last is { } last && renderingTime > last)
+        if (_last is { } last && renderingTime > last && (renderingTime - last).TotalMilliseconds <= PauseMs)
         {
             _gaps[_next] = (renderingTime - last).TotalMilliseconds;
             _next = (_next + 1) % Window;
@@ -37,18 +40,18 @@ internal sealed class FrameMeter
     public int Count => _count;
 
     /// <summary>The median gap in milliseconds, or <see langword="null"/> before two frames.</summary>
-    public double? P50 => Percentile(50);
+    public double? P50 => Percentiles()?.P50;
 
     /// <summary>The 99th-percentile gap in milliseconds, or <see langword="null"/> before two frames.</summary>
-    public double? P99 => Percentile(99);
+    public double? P99 => Percentiles()?.P99;
 
     /// <summary>Whether p99 is within the target.</summary>
     public bool WithinTarget => P99 is { } p99 && p99 <= TargetP99Ms;
 
     /// <summary>One line for the status bar.</summary>
-    public string Text => P99 is { } p99 ? $"frame p50 {P50:0} ms, p99 {p99:0} ms" : "frame time: measuring";
+    public string Text => Percentiles() is { } p ? $"frame p50 {p.P50:0} ms, p99 {p.P99:0} ms" : "frame time: measuring";
 
-    private double? Percentile(double p)
+    private (double P50, double P99)? Percentiles()
     {
         if (_count == 0)
         {
@@ -57,7 +60,8 @@ internal sealed class FrameMeter
 
         var sorted = _gaps.AsSpan(0, _count).ToArray();
         Array.Sort(sorted);
-        var rank = (int)Math.Ceiling(p / 100.0 * _count) - 1;
-        return sorted[Math.Clamp(rank, 0, _count - 1)];
+        return (At(50), At(99));
+
+        double At(double p) => sorted[Math.Clamp((int)Math.Ceiling(p / 100.0 * _count) - 1, 0, _count - 1)];
     }
 }
