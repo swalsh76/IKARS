@@ -9,7 +9,15 @@ description = "The IKARS engine: feeds, plugins, signals, recommendations and th
 license = "MIT"
 license-files = ["../../LICENSE"]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "ikars-core",
+    "msgspec>=0.22",
+    "pyarrow>=26",
+    "tomli-w>=1.2",
+]
+
+[tool.uv.sources]
+ikars-core = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ikars_engine"]
