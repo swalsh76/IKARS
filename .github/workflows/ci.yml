@@ -15,6 +15,7 @@ concurrency:
 
 env:
   UV_VERSION: "0.13.4"
+  NODE_VERSION: "24.22.1"
   GITLEAKS_VERSION: "8.30.1"
   GITLEAKS_SHA256: "d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e"
 
@@ -55,6 +56,60 @@ jobs:
 
       - name: Known vulnerabilities
         run: uv run pip-audit --skip-editable --progress-spinner off
+
+  web:
+    # the web terminal (PLAN D11 as amended): types current, lint with the injection bans, strict types,
+    # Vitest at 90%, the build, whole screens in Edge against the engine's made-up-data server, audit
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    env:
+      IKARS_UV: uv
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync the engine (for demo-api)
+        working-directory: .
+        run: uv sync --locked
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: pnpm (the version package.json names, through Corepack)
+        run: corepack enable
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Generated contracts are current
+        run: pnpm gen:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Types
+        run: pnpm typecheck
+
+      - name: Unit tests and coverage (90%)
+        run: pnpm test
+
+      - name: Build
+        run: pnpm exec vite build
+
+      - name: Screens in Edge
+        run: pnpm e2e
+
+      - name: Known vulnerabilities
+        run: pnpm audit
 
   hygiene:
     runs-on: windows-latest

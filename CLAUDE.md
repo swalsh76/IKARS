@@ -121,9 +121,11 @@ slice still needs its own approved plan before code.
   sign-in with a fixed port and a 30-day sliding DPAPI-signed cookie, `ikars open`, contracts 2.0, made-up-data
   mode), **1b** web foundation (Node 24, `web/`, types, client, hub, money, navigator, CI `web` job, Overview and
   Health), **2a** Markets and Market, **2b** Ledger, Alerts, meter and load test. Answers: fixed port in settings,
-  30-day session, `vite build --watch`, validate every reply. **M1.8a-web-1a built** on branch `m1/8a-web-1a`
-  (BUILD-LOG 1.8a-web-1a; security review and merge review itemized; the owner saw `ikars open` connect): PR
-  open, waiting for the owner's merge. Then 1b, 2a, 2b, then M1.8b. The owner allows `gh pr merge`
+  30-day session, `vite build --watch`, validate every reply. **M1.8a-web-1a done** (PR #16 merged as
+  `d70cb83`). **M1.8a-web-1b built** on branch `m1/8a-web-1b` (BUILD-LOG 1.8a-web-1b; Node 24.22.1 and pnpm 12.14.0
+  per user; `web/` with Overview and Health; CI `web` job green; security review clean; merge review 10 itemized;
+  the owner saw the real Overview): PR #17, waiting for the owner's merge, **then the owner adds `web` to the
+  ruleset's required checks**. Then 2a (Markets, Market), 2b (Ledger, Alerts, meter), then M1.8b. The owner allows `gh pr merge`
   by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
@@ -178,7 +180,14 @@ python -m uv run mypy packages tools; python -m uv run mypy conftest.py   # two 
 python -m uv run pytest --cov
 python -m uv run pip-audit --skip-editable
 
-# the web terminal's commands (pnpm, Vitest, Playwright) arrive with M1.8a-web
+# the web terminal (in web/; Node 24 and pnpm per user, see docs/DEPENDENCIES.md)
+pnpm install --frozen-lockfile
+pnpm gen            # types and validators from contracts/ (gen:check in CI)
+pnpm lint; pnpm typecheck
+pnpm test           # Vitest, 90% coverage
+pnpm dev            # vite build --watch: the engine serves web/dist (restart it once after the first build)
+pnpm build; pnpm e2e   # Playwright in Edge against demo-api (python -m ikars_engine demo-api)
+pnpm audit
 
 python tools/ci/data_guard.py          # no data, databases or keys tracked
 gitleaks git --redact --no-banner .    # secrets in the whole history

@@ -45,3 +45,32 @@ def test_large_files_are_refused_only_under_tests() -> None:
     assert problems(list(sizes), sizes) == [
         f"packages/p/tests/big.json: over {TEST_FILE_LIMIT_BYTES:,} bytes in a tests folder"
     ]
+
+
+def test_web_output_and_env_files_are_refused() -> None:
+    """M1.8a-web-1b: Playwright's reports and traces, recordings and settings files can hold live
+    data or secrets."""
+    paths = [
+        "web/playwright-report/index.html",
+        "web/test-results/run/trace.zip",
+        "web/blob-report/a.json",
+        "web/node_modules/react/index.js",
+        "web/coverage/index.html",
+        "web/dist/assets/index.js",
+        "web/.env",
+        "web/.env.local",
+        "web/e2e/session.har",
+    ]
+    assert len(problems(paths, {})) == len(paths)
+
+
+def test_the_web_terminal_s_sources_pass() -> None:
+    paths = [
+        "web/src/main.tsx",
+        "web/src/environment.ts",
+        "web/package.json",
+        "web/pnpm-lock.yaml",
+        "web/e2e/terminal.spec.ts",
+        "web/src/api/validators.js",
+    ]
+    assert problems(paths, {}) == []
