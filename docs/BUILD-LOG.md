@@ -1049,3 +1049,64 @@ minute; unexplained money labelled by the owner; FIFO.
 - A long inline shell script failed to parse twice; long edits now go through script files or whole-file writes.
 
 **M1.5a done**, subject to the owner's merge. Next: M1.5b (backups to the share, the restore drill, the portfolio).
+
+#### 1.5b built (2026-10-27)
+
+**Built** (`ikars-engine`; commits `682b581`, `9ff0be2`):
+
+| Area | What |
+|---|---|
+| Share guard | Every path is resolved under `<share>\ikars\`; anything outside is refused. Nothing is written without `ikars\.ikars-backup-marker`. `backup init` creates only that folder and marker, and saves the share in the local settings only after the share checks out. The real path is never printed or committed. |
+| Copies | Each copy is a consistent SQLite snapshot (online backup) staged in a folder of the run's own, written under a unique temporary name, read back and hash-checked, then renamed. A dated folder is built whole and swapped in, and leftovers of a dead run are swept after an hour. |
+| Tree | Per D18: ledger daily, monthly and checkpoints; the state daily; the settings; the pre-migration copy (G). Each folder has a `SHA256SUMS`. Only missing checkpoints and the newest two are sent. Retention: ledger dailies 90 days, state 30; the rest kept forever. |
+| Service | Backs up daily while the engine runs, and at start when the last backup is over a day old. It runs in a daemon thread (a stuck NAS never holds up the exit), and health never touches the share. |
+| Restore drill | `ledger restore-drill`: the newest daily copy, its hashes, its chain, its checkpoint, and its head in the local ledger. An unreachable share or a read error is a result, not a traceback. |
+| Portfolio (G1) | FIFO lots with exact fee splits; marked at the YES or NO bid after the taker fee, rounded up to the cent; unpriced rather than guessed; no bid means worth nothing; exposure by event, series and category. Its cash comes from the same `Book` the reconciliation uses. In health as counts, with the lots cached by the ledger's head; `ledger portfolio [--summary]` for the owner. |
+| Supporting | Discovery keeps each series' fee terms; the source keeps each market's YES bid and ask; `open_store` hands a migration's backup to a callback. |
+
+**Verified.**
+- 1,221 tests pass; coverage 94.5%; ruff, mypy, data guard and gitleaks clean. The "share" in tests is a folder of
+  the test's own; account records are made up.
+- **Live** (on the owner's go-ahead):
+  - the share is reachable;
+  - `ikars\` and its marker were created, and nothing else;
+  - the real ledger was started in `%LOCALAPPDATA%\IKARS` (183 records from Kalshi, reconciled exactly);
+  - backups ran twice the same day;
+  - status is clean;
+  - **the restore drill passes** (188 records);
+  - the engine runs with backups configured, and its only warnings are the expected "stopped" gaps of the four
+    feed channels.
+- The portfolio holds **0 positions**, matching Kalshi's 0 open positions. So the pricing path is so far tested
+  offline only; it is checked live the first time a position is held.
+
+**Review (R14).**
+- **Per commit (`682b581`):** 3 fixed:
+  1. no share set, or an unreachable one, crashed the commands;
+  2. one unreadable series failed the whole portfolio;
+  3. `backup init` saved a share before checking it.
+- **Per merge (medium), all 10 fixed in `9ff0be2`:**
+
+  | # | Finding | Fix |
+  |---|---|---|
+  | 1 | The engine's and the command's backups shared a staging folder and temporary names | Each run has its own staging folder and unique names |
+  | 2 | A day folder was not replaced as a whole, so a failure part-way left mixed files | The folder is built whole, then swapped in; stray leftovers swept after an hour |
+  | 3 | Ledger commands never sent the pre-migration copy to the share | `migration_copier` (now in `share.py`) is used by the commands too |
+  | 4 | Portfolio health replayed the whole ledger on every call | The lots are cached by the ledger's head sequence |
+  | 5 | A NO position with a YES ask of 0 was valued at $1.00 | No YES offered means no NO bid: worth nothing |
+  | 6 | A hung NAS could block the engine's exit (the default executor) | Backups run in a daemon thread |
+  | 7 | The drill reported an unreachable share as "no backup", and a read error as a traceback | Checks the share first; an I/O error becomes a result |
+  | 8 | Every backup re-read every checkpoint on the share, a list that only grows | Only missing checkpoints and the newest two are sent |
+  | 9 | The portfolio's replay duplicated the import's | One pass that feeds the import's `Book` |
+  | 10 | `ledger portfolio` replayed the ledger twice | The holdings are computed once and passed in |
+- **Per commit (`9ff0be2`):** none.
+
+**Kept, changed and why.**
+- *Kept from KAPS:* the marker-file rule for the share (KAPS's `.kaps-backup-marker`), applied to IKARS's own
+  subtree.
+- *New:* everything else. KAPS backs up PostgreSQL with pgBackRest, which IKARS never touches.
+
+**Problems and fixes.**
+- Long inline shell scripts with backslashes or nested quotes failed to parse; edits now go through script files
+  written with the file tool, or direct edits.
+
+**M1.5b done**, subject to the owner's merge. **M1.5 complete** with it.
