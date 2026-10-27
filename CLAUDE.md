@@ -99,10 +99,9 @@ slice still needs its own approved plan before code.
   workstation's (America/Denver), REST import each minute, owner labels unexplained money, FIFO).
   **M1.5a done** (PR #7 merged as `087b819`): reconciles **exactly** with Kalshi.
   **M1.5 done** (PR #8 merged as `5b6f702`): the real ledger lives in `%LOCALAPPDATA%\IKARS\ledger`; share backups
-  and the restore drill pass. **M1.6 built and verified live** on `m1/6-run-mode` (BUILD-LOG 1.6; commits `ad60325`, `532a3f2`, `fd4fd1a`):
-  the engine now runs in the background (`serve`/`stop`/`status`), the `IKARS Watchdog` task runs every 5 minutes,
-  auto-start is in HKCU Run; workstation notifications only. PR open, waiting for the owner's merge and sign-out
-  check. **Next after the merge:** the M1.7 slice plan (loopback API and contracts). The owner allows
+  and the restore drill pass. **M1.6 done** (PR #9 merged as `2efc95f`): the engine runs in the background with the watchdog task and
+  auto-start (the owner's sign-out check pending). **M1.7 plan PROPOSED** (BUILD-LOG 1.7, branch `m1/7-api`): waiting for
+  the owner's answers (SSE or WebSocket, port, ledger records over the API, C# contracts). No code before approval. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

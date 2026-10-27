@@ -1272,3 +1272,86 @@ PLAN G6, the M1 and M4 outlines, the M1.6 row and DEPENDENCIES were amended to m
 - The engine's lock file can't be read while it's held, so the process ID comes from the snapshot.
 
 **M1.6 done**, subject to your merge and your sign-out check.
+
+**Owner (2026-10-27):** saw the test notification. **M1.6 done:** PR #9 merged as `2efc95f`. The sign-out check of
+auto-start is still the owner's to do.
+
+### 1.7 Loopback API and contracts (plan PROPOSED 2026-10-27; branch `m1/7-api`)
+
+**Builds** (in `ikars-engine`, plus a C# contracts project for the terminal):
+1. **The API server in the engine's own process:** Starlette on uvicorn, started inside the engine's event loop,
+   listening on `127.0.0.1` only.
+2. **Access guard:**
+   - a **per-session token**: random, made at each start, and required on every request
+     (`Authorization: Bearer`);
+   - it is written with the port to `api.json` in the data folder, readable by the owner only (the ACL check from
+     `ikars-core`), and never logged;
+   - the `Host` header must be loopback, which guards against DNS rebinding;
+   - no CORS, and any browser `Origin` is refused.
+3. **Version handshake (G):** `GET /v1/hello` gives the API version, the engine version and a hash of the
+   contracts schema. The terminal refuses a different major version and says why.
+4. **Snapshots over HTTP** (read-only; there are no trading commands before M7):
+   - health, the market index (search and paging), one market (its quote and the book's top levels), a full
+     book;
+   - the portfolio, ledger status and ledger records (paged; your own data, local only);
+   - the alert log, and recommendations (empty until M1.12).
+5. **Deltas on one stream:**
+   - topics: market quotes and books for the markets the terminal subscribes to, portfolio changes, new
+     alerts, and health every 5 seconds;
+   - subscriptions are changed over HTTP;
+   - updates are **coalesced per topic at about 10 Hz** on the engine side, so a burst of 800 deltas a second never
+     floods the terminal (D3, J);
+   - each event carries an id, so a reconnect can resume.
+6. **Contracts:**
+   - every payload is a `msgspec` struct in one `contracts` module, exported as **JSON Schema** to
+     `contracts/ikars-api.schema.json`;
+   - CI fails if the committed schema differs from the generated one;
+   - the engine also writes a **golden example** of each payload, and the C# test deserialises every one into its
+     C# record with unknown fields refused, so the two sides cannot drift silently.
+7. **Latency (J):** the time from a feed frame arriving to its event leaving the stream goes into health, with p50
+   and p99.
+8. **Commands:** `serve` and `run` start the API too; `status` shows its port, never the token.
+
+**Changes on this machine:** an `api.json` file (port and token, owner-only) in the data folder while the engine
+runs, and a loopback port while it listens. Nothing else, and no firewall change: loopback only.
+
+**New packages:**
+- `starlette` (BSD-3-Clause) and `uvicorn` (BSD-3-Clause), with their dependencies `anyio` (MIT), `h11` (MIT),
+  `click` (BSD-3-Clause) and `sniffio` (MIT or Apache-2.0);
+- no new NuGet packages: the C# side uses `System.Text.Json`.
+
+**Tests:**
+- the guard: no token, a wrong token, a foreign `Host`, a browser `Origin`;
+- the handshake;
+- each snapshot route against made-up state;
+- the stream: subscribe, coalescing, resume after a reconnect, a slow reader;
+- the schema-drift check;
+- the C# golden-example test.
+
+**Live checks:**
+- the API answers on loopback only, and is refused from another address;
+- the handshake;
+- snapshots of live markets, and the portfolio;
+- the stream carries live quotes for subscribed markets, at no more than the coalescing rate;
+- feed-to-stream latency against the 250 ms target;
+- the token never appears in a log.
+
+**Open questions.**
+1. **Stream transport:**
+   - *Recommended:* **Server-Sent Events** over HTTP, with subscriptions changed by HTTP calls. KalTerm3's terminal
+     client already reads SSE and has tested reconnect code to reuse in M1.8. The engine side is simpler, and the
+     stream only flows one way.
+   - *Alternative:* one **WebSocket**, as D3 says. It is two-way, so subscriptions would travel on the socket, but
+     it means writing a new client.
+   - Choosing SSE amends D3's "one WebSocket" (its HTTP and JSON part stays).
+2. **Port:**
+   - *Recommended:* a **free port chosen at each start**, written to `api.json` with the token, so it never clashes
+     with KalTerm3 (5280) or anything else.
+   - *Alternative:* a fixed port, for example 5290.
+3. **Ledger records over the API:** *recommended:* yes, paged, token-guarded and loopback only, so the terminal can
+   show your ledger (M1.8). *Alternative:* status and counts only until M5.
+4. **C# contracts:**
+   - *Recommended:* **hand-written C# records, checked by the golden examples**. This needs no new tooling and
+     catches every drift.
+   - *Alternative:* generate them from the JSON Schema, with a code generator such as NJsonSchema (a new NuGet
+     package and build step).
