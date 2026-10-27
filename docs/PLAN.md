@@ -645,7 +645,7 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 | M1.5b Share backups, restore drill, portfolio | **done** (BUILD-LOG 1.5b; PR #8 merged as `5b6f702`) |
 | M1.6 Run mode and alerts | **done** (BUILD-LOG 1.6; PR #9 merged as `2efc95f`); the owner's sign-out check of auto-start pending |
 | M1.7 Loopback API and contracts | **done** (BUILD-LOG 1.7; PR #10 merged as `0ba5d83`) |
-| M1.8 Terminal shell | plan approved 2026-10-27 (split a/b); **M1.8a in progress** |
+| M1.8 Terminal shell | plan approved 2026-10-27 (split a/b); **M1.8a built** (BUILD-LOG 1.8a; PR pending; the frame-time check at the console pending); M1.8b next |
 
 ## 9. Parking lot
 
@@ -654,3 +654,8 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 - Engine on the server host.
 - Further source plugins (D5 options A, D, E; paid news APIs).
 - An MSI build (WiX) if a true MSI is ever needed (D12).
+- An index on the ledger's `(stream, ticker, seq)` for the Market screen's "your ledger records" (M1.8a merge
+  review). It needs a ledger migration (backup first); the scan is trivial at today's few hundred records. Revisit
+  when the ledger reaches tens of thousands.
+- Readable screen-reader names for list items: the terminal's lists expose each record's raw text to UI Automation
+  (M1.8a live check). Natural with M1.8b's hotkeys and themes, or later.
