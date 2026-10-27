@@ -12,8 +12,11 @@ foreground (M1.4b), with IKARS's read-only key from its two environment variable
 :mod:`ikars_engine.ledger_cli`).
 
 ``serve``, ``stop``, ``status``, ``watchdog``, ``install-autostart``, ``remove-autostart``, ``alerts
-test``: the engine in the background, its watchdog and workstation notifications (M1.6; see
-:mod:`ikars_engine.runmode_cli`).
+test``, ``open``: the engine in the background, its watchdog, workstation notifications and the web
+terminal's window (M1.6, M1.8a-web; see :mod:`ikars_engine.runmode_cli`).
+
+``python -m ikars_engine demo-api [--markets N] [--hz H] [--port P] [--seconds S]``: the API
+server on made-up data, for the terminal's tests (:mod:`ikars_engine.demo_api`).
 """
 
 import argparse
@@ -96,6 +99,11 @@ def main(argv: list[str]) -> int:
     exporter = commands.add_parser("contracts", help="the API's JSON Schema and golden examples")
     exporter.add_argument("action", choices=["export"])
     exporter.add_argument("--to", default="contracts", help="the folder (default: ./contracts)")
+    demo = commands.add_parser("demo-api", help="the API server on made-up data, for tests")
+    demo.add_argument("--markets", type=int, default=100)
+    demo.add_argument("--hz", type=float, default=10.0, help="quote changes a second")
+    demo.add_argument("--port", type=int, default=0, help="0: any free port")
+    demo.add_argument("--seconds", type=float, default=None, help="stop after this long")
     try:
         args = parser.parse_args(argv[1:])
     except SystemExit as exc:
@@ -116,6 +124,10 @@ def main(argv: list[str]) -> int:
             return 0
         print(json.dumps(health.get("kalshi"), indent=2, default=str))
         return 0
+    if args.command == "demo-api":
+        from ikars_engine import demo_api
+
+        return demo_api.main(args.markets, args.hz, args.port, args.seconds)
     if args.command == "contracts":
         from ikars_engine.contracts import export
 

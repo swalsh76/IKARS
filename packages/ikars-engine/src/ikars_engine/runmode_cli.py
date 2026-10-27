@@ -7,6 +7,7 @@
 - ``install-autostart`` / ``remove-autostart``: the sign-in start, the watchdog's task, and the
   notification name, all user space.
 - ``alerts test``: show one test notification.
+- ``open``: the web terminal in its own Edge window (starting the engine if needed).
 """
 
 import argparse
@@ -42,6 +43,7 @@ COMMANDS = (
     "install-autostart",
     "remove-autostart",
     "alerts",
+    "open",
 )
 STOP_WAIT_S = 60
 
@@ -54,6 +56,7 @@ def add_parsers(commands: Any) -> None:
         "watchdog": "one watchdog pass (run by the scheduled task)",
         "install-autostart": "start at sign-in, the watchdog task and the notification name",
         "remove-autostart": "remove all three",
+        "open": "the web terminal in its own Edge window",
     }
     for name, text in helps.items():
         parser = commands.add_parser(name, help=text)
@@ -99,6 +102,15 @@ def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
         return 0
     if args.command == "remove-autostart":
         _print(autostart.remove(autostart.UserRegistry(), autostart.run_quietly))
+        return 0
+    if args.command == "open":
+        from ikars_engine.open_terminal import OpenError, open_terminal
+
+        try:
+            _print(open_terminal(paths, root))
+        except OpenError as exc:
+            _print({"opened": False, "problem": str(exc)})
+            return 1
         return 0
     try:
         outcome = desk_for(paths, settings).raise_alert(
