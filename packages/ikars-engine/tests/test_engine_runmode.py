@@ -459,3 +459,20 @@ def test_install_passes_the_data_folder_to_both(tmp_path: Path) -> None:
     engine = registry.get(autostart.RUN_KEY, autostart.RUN_VALUE)
     assert engine is not None and engine.endswith(f"serve --root {tmp_path}")
     assert commands[0][-1].endswith(f"watchdog --root {tmp_path}")
+
+
+def test_a_background_engine_that_fails_says_so_in_the_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Live finding: in the background (no console) a failing start left no trace anywhere."""
+    from ikars_engine.__main__ import main
+
+    async def failing(*args: Any, **kwargs: Any) -> dict[str, object]:
+        raise RuntimeError("the key variables are not set")
+
+    monkeypatch.setattr("ikars_engine.kalshi.runner.run", failing)
+    with caplog.at_level("ERROR"):
+        assert main(["python -m ikars_engine", "serve", "--root", str(tmp_path)]) == 1
+    logged = json.dumps([r.__dict__ for r in caplog.records], default=str)
+    assert "the key variables are not set" in logged
+    assert not runmode.engine_running(tmp_path / "data")  # the lock is released

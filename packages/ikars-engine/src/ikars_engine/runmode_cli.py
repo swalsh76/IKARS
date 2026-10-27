@@ -12,6 +12,7 @@
 import argparse
 import asyncio
 import json
+import logging
 import time
 from datetime import datetime
 from pathlib import Path
@@ -30,6 +31,7 @@ from ikars_engine.paths import Paths
 from ikars_engine.settings import Settings
 from ikars_engine.watchdog import check, engine_command
 
+log = logging.getLogger("ikars_engine.serve")
 COMMANDS = (
     "serve",
     "stop",
@@ -130,6 +132,10 @@ def serve(paths: Paths, settings: Settings) -> int:
                     on_minute=snapshot,
                 )
             )
+    except Exception as exc:  # in the background nobody sees a traceback: it goes to the log
+        log.error("the engine stopped on an error", extra={"error": f"{type(exc).__name__}: {exc}"})
+        _print({"stopped_on_error": type(exc).__name__})
+        return 1
     finally:
         (paths.data / runmode.STOP).unlink(missing_ok=True)
         lock.release()
