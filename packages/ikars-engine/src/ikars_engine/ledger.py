@@ -24,7 +24,7 @@ Nothing here logs a record's contents: they are account values (only counts and 
 import hashlib
 import json
 import os
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -159,10 +159,12 @@ class Verified:
 
 
 class Ledger:
-    def __init__(self, path: Path, zone: ZoneInfo) -> None:
+    def __init__(
+        self, path: Path, zone: ZoneInfo, on_backup: Callable[[Path], None] | None = None
+    ) -> None:
         self.path = path
         self.zone = zone
-        self._db = open_store(path, LEDGER_MIGRATIONS)
+        self._db = open_store(path, LEDGER_MIGRATIONS, on_backup)
 
     def close(self) -> None:
         self._db.close()
@@ -262,6 +264,12 @@ class Ledger:
         for (body,) in self._db.execute(query + " ORDER BY seq", args):
             yield json.loads(body)
 
+    def hash_at(self, seq: int, stream: str = "real") -> str | None:
+        row = self._db.execute(
+            "SELECT hash FROM record WHERE stream = ? AND seq = ?", (stream, seq)
+        ).fetchone()
+        return None if row is None else str(row[0])
+
     def latest_at_ns(self, source: str, stream: str = "real") -> int | None:
         row = self._db.execute(
             "SELECT MAX(at_ns) FROM record WHERE stream = ? AND source = ?", (stream, source)
@@ -321,12 +329,10 @@ class Ledger:
             seq, day = int(point["seq"]), point["date_utc"]
             if seq == 0:
                 return None
-            row = self._db.execute(
-                "SELECT hash FROM record WHERE stream = ? AND seq = ?", (stream, seq)
-            ).fetchone()
-            if row is None:
+            stored = self.hash_at(seq, stream)
+            if stored is None:
                 return f"record {seq}, named by the checkpoint of {day}, is missing"
-            if row[0] != point["hash"]:
+            if stored != point["hash"]:
                 return f"record {seq} differs from the checkpoint of {day}"
             return None
         return None

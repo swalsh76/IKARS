@@ -108,12 +108,13 @@ def main(argv: list[str]) -> int:
             return 0
         print(json.dumps(health.get("kalshi"), indent=2, default=str))
         return 0
-    if args.command == "ledger":
+    if args.command in ("ledger", "backup"):
         from ikars_engine.kalshi.runner import default_paths
         from ikars_engine.settings import load
 
         paths = default_paths(Path(args.root) if args.root else None)
-        return ledger_cli.run(args, paths, load(paths.settings))
+        command = ledger_cli.run if args.command == "ledger" else ledger_cli.run_backup
+        return command(args, paths, load(paths.settings))
     parser.print_usage(sys.stderr)
     return 2
 

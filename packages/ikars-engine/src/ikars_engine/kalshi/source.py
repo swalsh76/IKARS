@@ -157,6 +157,7 @@ class KalshiSource:
         self.books: dict[str, OrderBook] = {}
         self.last_received: dict[str, int] = {}
         self.last_price_e6: dict[str, int] = {}
+        self.quotes: dict[str, tuple[int | None, int | None]] = {}  # ticker -> (YES bid, YES ask)
         self._live_since = 0  # when the subscriptions went live: a loss starts here at the latest
         self._snapshots = 0
         self._snapshot_wanted: set[str] = set()  # asked for, not yet arrived
@@ -279,6 +280,12 @@ class KalshiSource:
             ticker = message.market_ticker
             if message.price_e6 is not None:
                 self.last_price_e6[ticker] = message.price_e6
+            if message.yes_bid_e6 is not None or message.yes_ask_e6 is not None:
+                bid, ask = self.quotes.get(ticker, (None, None))
+                self.quotes[ticker] = (
+                    bid if message.yes_bid_e6 is None else message.yes_bid_e6,
+                    ask if message.yes_ask_e6 is None else message.yes_ask_e6,
+                )
             published = message.ts_ms
             if ticker in self.watched.current:
                 self.recorder.write("ticker", self._ticker_row(message, at))

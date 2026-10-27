@@ -25,11 +25,13 @@ from ikars_core.auth import AccountSigner, DataSigner
 from ikars_core.clock import ClockCheckError, sample_from_response
 from ikars_core.config import Environment, KalshiConfig
 from ikars_core.endpoints import MarketData
+from ikars_core.fees import FeeSchedule
 from ikars_core.ratelimit import TokenBucket
 from ikars_core.rest import KalshiAccountClient, KalshiPublicClient
 from ikars_core.ws import FeedConfig, KalshiFeed
 
 from ikars_engine import taxzone
+from ikars_engine.backup_service import BackupService
 from ikars_engine.clocks import WallClock
 from ikars_engine.engine import Engine
 from ikars_engine.governor import GB, StorageGovernor
@@ -43,8 +45,10 @@ from ikars_engine.ledger_service import LedgerService
 from ikars_engine.logs import Redactor, configure
 from ikars_engine.metrics import Metrics
 from ikars_engine.paths import Paths
+from ikars_engine.portfolio import portfolio
 from ikars_engine.recorder import Recorder
 from ikars_engine.settings import Settings
+from ikars_engine.share import Share, ShareError, pre_migration
 from ikars_engine.skew import SkewMonitor
 from ikars_engine.store import StateStore
 
@@ -91,6 +95,7 @@ class Live:
     state: StateStore
     ledger: Ledger
     ledger_service: LedgerService
+    backup: BackupService
     account_client: KalshiAccountClient
 
 
@@ -145,7 +150,8 @@ async def build(paths: Paths, settings: Settings) -> Live:
         governor=StorageGovernor(paths.recordings, settings.feed.storage_budget_gb * GB),
         signer=signer,
     )
-    ledger = Ledger(paths.ledger / "ledger.sqlite", zone.zone)
+    share = Share(settings.backup.share) if settings.backup.share.strip() else None
+    ledger = Ledger(paths.ledger / "ledger.sqlite", zone.zone, migration_copier(share))
     account_client = KalshiAccountClient(config, account_signer, bucket=bucket)  # opened last
     service = LedgerService(
         ledger,
@@ -159,8 +165,42 @@ async def build(paths: Paths, settings: Settings) -> Live:
     engine = Engine(clock, source, metrics=metrics, skew=skew)
     engine.health_parts["kalshi"] = source.health
     engine.health_parts["ledger"] = service.health
+    backups = BackupService(share, paths, state, clock)
+    engine.health_parts["backup"] = backups.health
+    engine.health_parts["portfolio"] = lambda: portfolio_counts(
+        ledger, source.quotes, index.fees.get, index.categories.get
+    )
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
-    return Live(engine, source, state, ledger, service, account_client)
+    return Live(engine, source, state, ledger, service, backups, account_client)
+
+
+def migration_copier(share: Share | None) -> Callable[[Path], None] | None:
+    """Before a ledger migration, its local copy also goes to the share (G); a share that cannot
+    be reached is logged, and the local copy still stands."""
+    if share is None:
+        return None
+
+    def copy(path: Path) -> None:
+        try:
+            pre_migration(share, path)
+        except (OSError, ShareError) as exc:
+            log.warning(
+                "pre-migration copy not sent to the share", extra={"error": type(exc).__name__}
+            )
+
+    return copy
+
+
+def portfolio_counts(
+    ledger: Ledger,
+    quotes: Mapping[str, tuple[int | None, int | None]],
+    fees: Callable[[str], FeeSchedule | None],
+    categories: Callable[[str], str | None],
+) -> dict[str, object]:
+    """The portfolio in health: counts only (its values go to the terminal, M1.7)."""
+    held = portfolio(ledger, quotes, fees, categories)
+    priced = sum(1 for p in held.positions if p.unrealised_e6 is not None)
+    return {"positions": len(held.positions), "priced": priced}
 
 
 def requests_used(
@@ -239,6 +279,8 @@ async def run(
         await live.source.start()
         stack.push_async_callback(live.ledger_service.stop)
         await live.ledger_service.start()  # after discovery, so records get market titles
+        stack.push_async_callback(live.backup.stop)
+        await live.backup.start()
         running.append(asyncio.create_task(engine.run(), name="engine"))
         elapsed = 0.0
         while minutes is None or elapsed < minutes * 60:

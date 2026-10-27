@@ -47,6 +47,12 @@ class FeedSettings(msgspec.Struct, frozen=True, kw_only=True):
     storage_budget_gb: int = 200  # for raw recordings (owner, 2026-10-27)
 
 
+class BackupSettings(msgspec.Struct, frozen=True, kw_only=True):
+    # the NAS share IKARS backs up to (its own ikars\ subtree only); empty: no backups. The real
+    # path lives only in the local settings file, never in the repository (PLAN D18)
+    share: str = ""
+
+
 class PluginDefaults(msgspec.Struct, frozen=True, kw_only=True):
     queue_size: int = 10_000
     call_timeout_seconds: float = 30.0
@@ -62,6 +68,7 @@ class Settings(msgspec.Struct, frozen=True, kw_only=True):
     budget: BudgetSettings = BudgetSettings()
     feed: FeedSettings = FeedSettings()
     plugins: PluginDefaults = PluginDefaults()
+    backup: BackupSettings = BackupSettings()
     plugin_settings: dict[str, dict[str, Any]] = {}
 
 

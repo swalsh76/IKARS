@@ -274,6 +274,8 @@ async def test_full_discovery_indexes_markets_with_categories_and_skips_combos(
     index = rig.discovery.index
     assert set(index.markets) == {"A", "U"} and index.combos_skipped == 1
     assert index.markets["A"].category == "Crypto" and index.markets["A"].series_ticker == "KXDEMO"
+    fees = index.fees["KXDEMO"]
+    assert fees is not None and fees.multiplier_e6 == 500_000  # the series' fee terms
     assert rig.state.bookmark(BOOKMARK) == T0 // 10**9 - 120
     assert [m.ticker for m in index.open_markets()] == ["A"]
     assert index.snapshot(tmp_path / "markets.parquet") == 2
@@ -367,6 +369,7 @@ async def test_frames_become_items_and_recordings_and_keep_the_books(tmp_path: P
     assert items[3].received_ns == T0 + 4 and items[3].published_ns == 2 * 10**6
     assert rig.source.books["M1"].best_bid("yes") == (490_000, 900)
     assert rig.source.last_price_e6["M1"] == 500_000
+    assert rig.source.quotes["M1"] == (490_000, 510_000)  # the YES bid and ask
     await rig.source.stop()
     trades = read_rows(hours(tmp_path / "rec", "trade"), "trade")
     assert trades.column("trade_id").to_pylist() == ["t1"]

@@ -261,7 +261,7 @@ class AccountImporter:
         for ticker in sorted(tickers):
             if ticker in self._looked_up or (self._describe and self._describe(ticker)):
                 continue
-            market = await self._market(self._markets, ticker)
+            market = await self.market_of(self._markets, ticker)
             event = (market.event_ticker or "") if market is not None else ""
             self._looked_up[ticker] = (
                 {}
@@ -278,7 +278,8 @@ class AccountImporter:
         return dict(described or self._looked_up.get(ticker) or {})
 
     @staticmethod
-    async def _market(markets: MarketData, ticker: str) -> Market | None:
+    async def market_of(markets: MarketData, ticker: str) -> Market | None:
+        """The market, live or archived; None when Kalshi has neither."""
         for read in (markets.market, markets.historical_market):
             try:
                 return await read(ticker)
@@ -301,7 +302,7 @@ class AccountImporter:
         for position in archived.market_positions:
             if position.ticker not in candidates:
                 continue
-            market = await self._market(self._markets, position.ticker)
+            market = await self.market_of(self._markets, position.ticker)
             entry = None if market is None else self._settle(position, market, book)
             if entry is None:
                 log.warning("ledger: an archived settlement does not check out; left a difference")
