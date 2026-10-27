@@ -127,7 +127,9 @@ slice still needs its own approved plan before code.
   requires `python`, `hygiene`, `CodeQL` and **`web`** (owner, 2026-10-27). **M1.8a-web-2a done** (PR #19 merged as `94dbcaa`). **M1.8a-web-2b built** on `m1/8a-web-2b`
   (BUILD-LOG 1.8a-web-2b; Ledger, Alerts, the update-to-screen meter, `pnpm load`; merge review 10 itemized): PR
   **done** (PR #20 merged as `1aeb2bf`; the owner's console run passed: p99 19 ms). **M1.8a-web is complete.**
-  **Next:** the M1.8b plan for approval (hotkeys, layouts, themes, settings and wizard, support bundle), branch `m1/8b`.
+  **M1.8b plan APPROVED** (owner 2026-10-27, all as recommended; BUILD-LOG 1.8b): **1b-1** mock-ups of
+  Settings and the wizard (approved before building), hotkeys, themes, Settings and the wizard; **1b-2** layouts
+  (sets of windows) and the support bundle. **Now: M1.8b-1** on branch `m1/8b`.
   That completes M1.8a-web. **Next:** M1.8b (Markets, Market), 2b (Ledger, Alerts, meter), then M1.8b. The owner allows `gh pr merge`
   by a local permission rule; merge only when asked.
 

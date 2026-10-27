@@ -2153,3 +2153,30 @@ drawing): update to screen p50 9 ms, p99 19 ms; the page's own work p99 1.4 ms; 
   batching on both sides).
 
 **M1.8a-web-2b built and its console check passed**, subject to the owner's merge.
+
+### 1.8b Hotkeys, layouts, themes, settings and wizard, support bundle (plan APPROVED 2026-10-27; two slices)
+
+The M1.8 plan's second part (G15, G16, D20 G, I), redrafted for the web terminal (WPF themes and KalTerm3's window
+placement no longer apply). **Owner's answers (2026-10-27): all as recommended.**
+
+| Slice | Builds |
+|---|---|
+| **M1.8b-1** | mock-ups of the Settings screen and the first-run wizard (approved before they are built); the hotkeys; the themes; the Settings screen and the first-run wizard, writing the engine's settings |
+| **M1.8b-2** | layouts (several IKARS windows, saved and restored); the redacted support bundle |
+
+- **Hotkeys** (the mock-up's list): `Ctrl+K` search; `Ctrl+1`..`5` the screens; `Alt+Left/Right` back and forward
+  (Edge's own); `Enter` the newest urgent alert; `B` the order book; `X` the Linked panel; `Ctrl+Shift+L` the theme;
+  `?` the list. `T`/`I`/`D` and `C` are listed as arriving with the recommendations (M1.12).
+- **Themes:** dark, light or Windows', remembered.
+- **Layouts:** a layout is a set of IKARS windows (each a screen, a position and a size, on any monitor); "Save
+  layout as..."; `ikars open --layout NAME`; the last one restored at start. Panes docked within a window are parked
+  (PLAN section 9).
+- **Settings and the wizard:** terminal preferences and the engine settings the owner would change (share, tax zone,
+  quiet hours, port, session length), each written through the engine (versioned, migrated, backed up first), with a
+  note when a restart is needed; the wizard opens when there is no settings file and checks the key variables (present
+  or not, never shown), the engine and feed, the share, the tax zone and quiet hours.
+- **Support bundle:** saved to `%LOCALAPPDATA%\IKARS\support\` (logs, health, versions, settings without the share
+  path, the gap log; never keys, tokens, key paths or account amounts, checked before it is kept); never sent.
+- **Machine:** a settings migration (backup first) and the `support\` folder. **Packages:** none.
+- **Live checks:** each hotkey; the theme across a restart; two windows on two monitors saved and restored; the
+  wizard on a scratch data folder; a bundle searched for the key id, token, share path and amounts.

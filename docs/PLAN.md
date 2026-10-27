@@ -735,5 +735,7 @@ M1.11. M1.10 can run any time after M1.2; M1.13 any time after M1.12 and before 
   when the ledger reaches tens of thousands.
 - One `times` module for the duplicated time helpers (`api.utc_text` and `ledger.iso_utc`; `alerts._ns` and
   `ledger_import.ns_of`): with the next slice that touches those files (2026-10-27 platform review, item 10).
+- Panes docked, floated and moved within an IKARS window (the Layout mock-up's caption): M1.8b's layouts are
+  sets of windows instead (owner, 2026-10-27); a docking library would come back through a proposal.
 - Readable screen-reader names for list items: the terminal's lists expose each record's raw text to UI Automation
   (M1.8a live check). Natural with M1.8b's hotkeys and themes, or later.
