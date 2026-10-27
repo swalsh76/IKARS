@@ -40,8 +40,16 @@ FORBIDDEN_SUFFIXES = frozenset(
         ".key",
         ".pfx",
         ".p12",
+        # browser network recordings (they can hold live replies)
+        ".har",
     }
 )
+# Output folders that can hold live data or secrets (Playwright's reports, traces and screenshots;
+# coverage; builds; installed packages): nothing under them is committed (PLAN D11, 2026-10-27).
+FORBIDDEN_FOLDERS = frozenset(
+    {"playwright-report", "test-results", "blob-report", "node_modules", "coverage", "dist"}
+)
+ENV_FILE = re.compile(r"\.env(\..+)?")  # .env, .env.local, ...: settings files that hold secrets
 # The ledger's tax-year package (PLAN D18): IKARS-<year>-summary.pdf, -form8949.csv, -6781.csv,
 # -manifest.txt, -ledger.jsonl. Only that exact shape, so ordinary files named ikars-... still pass.
 LEDGER_EXPORT = re.compile(r"ikars-\d{4}-[a-z0-9]+\.(pdf|csv|txt|jsonl)")
@@ -57,8 +65,11 @@ def is_forbidden(name: str) -> bool:
 def problems(paths: list[str], size_of: dict[str, int]) -> list[str]:
     found: list[str] = []
     for path in paths:
-        if is_forbidden(PurePosixPath(path).name):
+        parts = PurePosixPath(path).parts
+        if is_forbidden(parts[-1]) or ENV_FILE.fullmatch(parts[-1].lower()):
             found.append(f"{path}: this kind of file is never committed")
+        elif FORBIDDEN_FOLDERS & set(parts[:-1]):
+            found.append(f"{path}: output folders are never committed")
         elif "tests" in PurePosixPath(path).parts and size_of.get(path, 0) > TEST_FILE_LIMIT_BYTES:
             found.append(f"{path}: over {TEST_FILE_LIMIT_BYTES:,} bytes in a tests folder")
     return found

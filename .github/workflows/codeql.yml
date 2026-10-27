@@ -1,7 +1,7 @@
 name: codeql
 
-# Static security analysis (G12; owner, 2026-10-27). javascript-typescript joins the matrix with M1.8a-web's first
-# terminal code: CodeQL fails a language with no source.
+# Static security analysis (G12; owner, 2026-10-27): the engine, the CI workflows and, from M1.8a-web-1b, the
+# web terminal.
 
 on:
   push:
@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [python, actions]
+        language: [python, actions, javascript-typescript]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0

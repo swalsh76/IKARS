@@ -21,11 +21,16 @@ TestResults/
 .vs/
 *.user
 
-# the web terminal (M1.8a-web); dist/ is listed under python
+# the web terminal (M1.8a-web); dist/ is listed under python. Reports, traces, recordings and .env
+# files can hold live data or secrets: the data guard refuses them too
 node_modules/
 coverage/
 playwright-report/
 test-results/
+blob-report/
+*.har
+.env
+.env.*
 
 # market data, recordings, databases, ledger exports and logs: never commit
 data/
