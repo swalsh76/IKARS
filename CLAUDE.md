@@ -110,8 +110,8 @@ slice still needs its own approved plan before code.
   pruned:** PR #13 merged as `1b92d49`. The `main protection` ruleset requires `python`, `hygiene` and
   `CodeQL` (strict; CodeQL added at the owner's request 2026-10-27); `web` joins once that job exists.
   **M1.R Base hardening** (owner 2026-10-27: a whole-code-base review before the web terminal; items 1 to 26
-  approved): **done** (PR #14 merged as `fca7941`, CI green on `main`; BUILD-LOG 1.R). Pending from the owner: a
-  resting **buy** to confirm the reconciliation rule live (a resting sell checked OK 2026-10-27; GET only), and the M1.6 auto-start sign-out check.
+  approved): **done** (PR #14 merged as `fca7941`, CI green on `main`; BUILD-LOG 1.R). Resting orders checked live 2026-10-27 (Kalshi's
+  balance does not hold back a resting buy; reconciliation exact). Pending from the owner: the M1.6 auto-start sign-out check.
   **Web review and security posture decided** (owner 2026-10-27; BUILD-LOG 1.8w-sec): browser hardening and npm
   rules fold into M1.8a-web; **CodeQL** added (PR #15 merged as `179dd8c`; green on `main`; required since 2026-10-27).
   **Next:** the **M1.8a-web** plan for approval, on branch `m1/8a-web`; then M1.8b. The owner allows `gh pr merge`

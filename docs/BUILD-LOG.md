@@ -1769,7 +1769,7 @@ approved as "read with GET only"); the key still signs GETs only, and other orde
   | Ledger | chain verified, **reconciles exactly**, no import errors |
   | Stop | **3.5 s**; recorded as a clean stop (the next start's gaps say "stopped") |
   | A torn real recording hour (a scratch copy, deleted after) | the start went on; the hour set aside as `07.parquet.damaged`; the open file's rows kept |
-  | Resting orders (item 8) | **partly confirmed (2026-10-27):** a resting **sell** closing part of a held YES position is read (Kalshi labels it `side` yes, `action` sell, `outcome_side` no, as the model maps it); it holds back no cash, so the balance matched and every reconciliation stayed exact. The **buy** case (cash held back) still needs a resting buy |
+  | Resting orders (item 8) | **Checked (2026-10-27).** Both resting orders are read correctly: a **sell** closing part of a held YES position (Kalshi labels it `side` yes, `action` sell, `outcome_side` no, as the model maps it) and a **buy** of YES. **Kalshi's `balance` does not hold back a resting buy's cost:** with the buy open, the balance equals the ledger's cash exactly, so every reconciliation stayed exact with a zero difference, and the resting-cost allowance was not needed. It is kept (it is read only when the balance falls short) |
 
 **Live finding, fixed (`66fcec0`).** The minute import re-reads a day of fills; each already-recorded fill older
 than a later one was flagged and warned about before being skipped as already recorded (4 warnings). The real
