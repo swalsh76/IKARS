@@ -1427,3 +1427,94 @@ runs, and a loopback port while it listens. Nothing else, and no firewall change
   port, behind a session token.
 
 **M1.7 done**, subject to the owner's merge.
+
+**M1.7 done:** PR #10 merged as `0ba5d83` (2026-10-27).
+
+### 1.8 Terminal shell (plan PROPOSED 2026-10-27; branch `m1/8-terminal`)
+
+**Proposed split** (like M1.4 and M1.5): **M1.8a** the shell, the client, navigation and the main screens;
+**M1.8b** hotkeys, layouts, themes, settings with the first-run wizard, and the support bundle. Each is reviewed
+and merged on its own.
+
+**M1.8a builds** (new `Ikars.Client` and `Ikars.Terminal` .NET projects, on `Ikars.Contracts`):
+1. **The client (`Ikars.Client`):**
+   - reads `api.json`, sends the token, and refuses a different API major version (the handshake);
+   - typed calls for every snapshot route;
+   - the stream from KalTerm3's tested SSE reader and reconnect code (resuming alerts by line), changing
+     subscriptions as screens open and close.
+2. **Connect or start:** the terminal connects to the running engine. If none is running it starts the engine with
+   the command `install-autostart` registered, and shows progress while the engine starts up.
+3. **Navigation (R9):**
+   - one navigation service over a typed reference (kind plus id);
+   - a breadcrumb trail with back and forward;
+   - every view model built from a reference, so a link is just a reference.
+4. **Screens, per the approved mock-ups:**
+   - **Overview:** portfolio and exposure, alerts, and a health strip are live now. Panels whose data comes in
+     later slices (top recommendations and journal from M1.12, movers from M1.12, source items from M2, perp
+     funding and book signals from M3) are drawn in place with a short "arrives in …" note (open question 2).
+   - **Markets:** search and categories (from the engine's index), opening into a market.
+   - **Market drill-down:**
+     - the title and live quote;
+     - the YES price chart for today (from a new engine route, open question 3);
+     - the order book (both sides are bids);
+     - the linked-items panel. For now it holds same-event markets and your ledger records for the market;
+       source items, recommendations and perps join in their slices. Selection stays in sync across panels.
+   - **Health:** engine, feed, ledger, backups, GPU and API, with the gap log.
+   - **Ledger:** status and paged records (your data; local only).
+   - **Alerts:** the alert log by priority.
+5. **Rendering:** stream updates are coalesced and repainted at a fixed rate (about 10 Hz), as D3 says, so WPF stays
+   light under bursts.
+6. **Frame time (J):** measured from WPF's render loop, with p50 and p99 shown in the health view (open
+   question 4).
+7. **Engine addition:** `GET /v1/markets/{ticker}/candles` (Kalshi's candlesticks through the engine's request
+   budget, cached for a minute), with its contract and golden example.
+
+**M1.8b builds:**
+- hotkeys (the mock-up's list, and `?` to show them);
+- saved layouts across monitors (KalTerm3's window placement);
+- light and dark themes (WPF's Windows 11 theme, as KalTerm3);
+- versioned terminal settings with a migration, and the **first-run wizard** (G15): it checks the key variables
+  (never shows them), the engine, the share, the tax zone and quiet hours;
+- the redacted **support bundle** (I): logs, health and versions in one zip, with no keys, tokens, account values
+  or paths.
+
+**Kept from KalTerm3, and changed.**
+- *Kept:* the MVVM helpers, the SSE reader and reconnect, markets, market detail, order book, chart and layout
+  code, the toaster and formatting. Each is read critically and adapted.
+- *Removed:* the SQL Server and multi-user parts, trading (recommend-only until M7), and watchlists (to the
+  parking lot unless you want them).
+
+**Changes on this machine:** the terminal's settings under `%LOCALAPPDATA%\IKARS\terminal`. Nothing else in M1.8a.
+The packaged install comes in M1.9.
+
+**New packages:** `ScottPlot.WPF` (MIT, KalTerm3's chart) for the price chart. Nothing else: KalTerm3's own small
+MVVM helpers are reused instead of a toolkit.
+
+**Tests:**
+- view models against a fake API: navigation, breadcrumbs, back and forward, subscriptions following the open
+  screens, coalescing, the handshake refusal, connect-or-start;
+- the client against a local test server: token, SSE parsing, reconnect and resume;
+- the candles route in the engine.
+
+**Live checks:**
+- the terminal connects to the running engine, and starts one when none is running;
+- the Overview shows the real portfolio, alerts and health;
+- drill into a live market: its quote, book and chart update;
+- the linked-items panel opens and selection stays in sync;
+- the ledger view pages your records;
+- frame time is measured while 100 markets stream.
+
+**Open questions.**
+1. **Split into M1.8a and M1.8b?** *Recommended:* yes, as above.
+2. **Overview panels whose data comes later:**
+   - *Recommended:* draw them now, in their mock-up places, with a short "arrives in M1.12" (or M2, M3) note, so
+     the layout is final and nothing moves later.
+   - *Alternative:* hide them until their data exists.
+3. **The price chart:** *recommended:* `ScottPlot.WPF` (MIT, KalTerm3's) with the new candles route on the engine.
+   *Alternative:* no chart until M1.12.
+4. **Frame-time target:** *recommended:* **p99 at most 33 ms** (30 frames a second) while 100 markets stream at
+   10 Hz.
+5. **Coverage gate for the WPF project:**
+   - *Recommended:* the views stay thin (XAML and minimal code-behind) and are left out of the 90% line gate; the
+     view models, client and navigation are held to it.
+   - *Alternative:* UI automation tests to cover the views too, which are slower and more brittle.
