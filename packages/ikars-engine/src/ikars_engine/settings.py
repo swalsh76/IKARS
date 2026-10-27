@@ -231,8 +231,22 @@ def _refuse_secrets(data: Any, where: str = "") -> None:
 def load(path: Path) -> Settings:
     """The settings in ``path`` (defaults when it does not exist), migrated to this version. A
     migrated file is rewritten, with the old one kept beside it as a backup."""
+    settings, version = _read(path)
+    if version != VERSION:
+        backup(path)
+        save(settings, path)
+    return settings
+
+
+def read(path: Path) -> Settings:
+    """The settings in ``path``, migrated in memory only: the file is left as it is (a reader that
+    must not write, such as the support bundle)."""
+    return _read(path)[0]
+
+
+def _read(path: Path) -> tuple[Settings, int]:
     if not path.exists():
-        return Settings()
+        return Settings(), VERSION
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
@@ -243,10 +257,7 @@ def load(path: Path) -> Settings:
         settings = msgspec.convert(migrated, Settings)
     except msgspec.ValidationError as exc:
         raise SettingsError(f"the settings file has a bad value: {exc}") from exc
-    if _version(raw) != VERSION:
-        backup(path)
-        save(settings, path)
-    return settings
+    return settings, _version(raw)
 
 
 def backup(path: Path) -> Path:

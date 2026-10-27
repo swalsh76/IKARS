@@ -86,15 +86,16 @@ def support_bundle(paths: Paths, settings: Settings) -> Done:
     is redacted); makes one here when no engine answers."""
     from ikars_engine import support
 
-    record = read_api_file(paths.data) if runmode.engine_running(paths.data) else None
+    # the token is redacted even when the engine is stopped: it outlives a restart (merge review 3)
+    record = read_api_file(paths.data)
     token = str(record.get("token", "")) if record else None
-    if record is not None:
-        request = urllib.request.Request(  # noqa: S310 (a fixed loopback address)
-            f"http://127.0.0.1:{int(record['port'])}/v1/support/bundle",
-            method="POST",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        try:
+    if record is not None and runmode.engine_running(paths.data):
+        try:  # a half-written api.json falls back too (merge review 4)
+            request = urllib.request.Request(  # noqa: S310 (a fixed loopback address)
+                f"http://127.0.0.1:{int(record['port'])}/v1/support/bundle",
+                method="POST",
+                headers={"Authorization": f"Bearer {token}"},
+            )
             with urllib.request.urlopen(request, timeout=120) as answer:  # noqa: S310
                 return msgspec.json.decode(answer.read(), type=Done)
         except (OSError, ValueError, KeyError, msgspec.DecodeError):

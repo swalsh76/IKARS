@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiFailure, change, get } from "../api/client";
 import type { LayoutsView } from "../api/contracts";
-import { gather } from "../app/layout";
+import { allowPlacement, gather } from "../app/layout";
 import { layoutLine } from "../view/settings";
 
 /** Saved layouts in Settings (M1.8b-2): save the open windows, choose the one ikars open restores,
@@ -26,13 +26,19 @@ export function Layouts() {
     const wanted = name.trim();
     if (!wanted) return setNote("Name the layout first.");
     setNote("Asking the open windows where they are…");
-    gather()
+    let anywhere = false;
+    allowPlacement()
+      .then((allowed) => {
+        anywhere = allowed;
+        return gather();
+      })
       .then((windows) => change("/v1/layouts", "LayoutsView", { name: wanted, windows }))
       .then((v) => {
         setView(v);
         setName("");
         const saved = v.layouts.find((l) => l.name.toLowerCase() === wanted.toLowerCase());
-        setNote(`Saved ${wanted} (${saved ? layoutLine(saved) : "its windows"}); ikars open restores it.`);
+        const where = anywhere ? "" : " Edge did not allow other monitors: those windows may open on this one.";
+        setNote(`Saved ${wanted} (${saved ? layoutLine(saved) : "its windows"}); ikars open restores it.${where}`);
       })
       .catch(failed);
   };

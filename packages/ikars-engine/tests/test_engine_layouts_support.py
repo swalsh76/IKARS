@@ -220,6 +220,23 @@ def test_amounts_are_written_every_way_and_small_ones_are_left_alone() -> None:
     assert support.amount_texts([-CASH_E6, 9_999_999]) == [
         "1234560000", "1,234.56", "1234.56", "123456",
     ]  # fmt: skip
+    # $100.00 in cents is 10000, a common number: searched for as dollars and millionths only
+    assert support.amount_texts([100_000_000]) == ["100000000", "100.00"]
+
+
+def test_one_bundle_is_made_at_a_time(tmp_path: Path) -> None:
+    paths, environ = engine_folder(tmp_path)
+    with support._ONE_AT_A_TIME, pytest.raises(support.BundleRefused, match="already"):
+        support.make(paths, Settings(), environ, windows={})
+    assert support.make(paths, Settings(), environ, windows={}).done
+
+
+def test_a_bundle_reads_old_settings_without_rewriting_them(tmp_path: Path) -> None:
+    paths, environ = engine_folder(tmp_path)
+    paths.settings.write_text("version = 4\n[terminal]\nskin = 'paper'\n", encoding="utf-8")
+    support.make(paths, Settings(), environ, windows={})
+    assert paths.settings.read_text(encoding="utf-8").startswith("version = 4")
+    assert not list(paths.root.glob("settings.*.bak.toml"))
 
 
 def test_a_broken_settings_file_still_gives_a_bundle(tmp_path: Path) -> None:
@@ -239,8 +256,25 @@ def test_the_command_makes_a_bundle_when_no_engine_answers(
     monkeypatch.setattr("ikars_engine.support.user_environment", lambda names: {})
     for name, value in environ.items():
         monkeypatch.setenv(name, value)
+    # a stopped engine's token is still redacted: it outlives restarts (merge review 3)
+    (paths.data / "api.json").write_text(json.dumps({"port": 1, "token": TOKEN}), "utf-8")
+    with (paths.logs / "ikars.jsonl").open("a", encoding="utf-8") as log:
+        log.write(json.dumps({"message": f"the token alone: {TOKEN}"}) + "\n")
     done = support_bundle(paths, Settings())
-    assert done.done and list((paths.root / "support").glob("*.zip"))
+    [made] = list((paths.root / "support").glob("*.zip"))
+    assert done.done and TOKEN not in "".join(bundle_text(made).values())
+
+
+def test_a_half_written_api_file_falls_back_to_a_bundle_made_here(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ikars_engine.runmode_cli import support_bundle
+
+    paths, environ = engine_folder(tmp_path)
+    monkeypatch.setattr("ikars_engine.runmode.engine_running", lambda folder: True)
+    monkeypatch.setattr("ikars_engine.support.user_environment", lambda names: {})
+    (paths.data / "api.json").write_text(json.dumps({"token": TOKEN}), "utf-8")  # no port
+    assert support_bundle(paths, Settings()).done
 
 
 # --- the routes ---------------------------------------------------------------------------------

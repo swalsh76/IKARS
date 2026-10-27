@@ -143,7 +143,15 @@ def open_terminal(
     for n, window in enumerate(windows):
         if n:
             sleep(LAUNCH_GAP_S)
-        spent = first if n == 0 else code(port, token)  # each window spends a code of its own
-        url = f"http://127.0.0.1:{port}{window.screen}#code={spent}"
+        try:  # each window spends a code of its own
+            spent = first if n == 0 else code(port, token)
+        except (OSError, KeyError, ValueError, TypeError) as exc:  # merge review 1: said in words
+            raise OpenError(
+                f"window {n + 1} of {len(windows)} could not sign in ({exc}); the rest did not open"
+            ) from exc
+        # Edge takes its window switches from its first process only: a window joining a running
+        # Edge places itself from "at" once it loads (merge review 2)
+        place = f"{window.x},{window.y},{window.width},{window.height}"
+        url = f"http://127.0.0.1:{port}{window.screen}#code={spent}&at={place}"
         run(edge_command(browser, url, profile, window))
     return {"opened": True, "started_engine": started, "port": port, "windows": len(windows) or 1}

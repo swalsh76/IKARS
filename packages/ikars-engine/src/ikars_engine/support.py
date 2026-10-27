@@ -4,8 +4,9 @@ One zip in ``<data root>\\support\\`` for the owner to look at, or to hand on if
 never sends it anywhere. It holds the logs (the newest, up to a size), the health report when the
 engine runs, the versions, the settings without the share's path, and the gap log.
 
-It never holds a key, a key's id or path, the API token, the share's path or an account amount.
-Two fences:
+It never holds a key, a key's id or path, the API token or the share's path, nor the account's
+balance or a position's amount (the logs carry no account amounts in the first place: a test of
+the logs enforces it). Two fences:
 
 1. every text is redacted as it goes in: those values (paths with either slash, the key file's
    name alone), PEM blocks, bearer tokens, and the account's amounts as dollars, cents or
@@ -17,8 +18,10 @@ Two fences:
 import json
 import platform
 import re
+import secrets
 import sqlite3
 import sys
+import threading
 import zipfile
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
@@ -31,7 +34,7 @@ import tomli_w
 from ikars_engine import contracts as c
 from ikars_engine.logs import Redactor, secret_forms
 from ikars_engine.paths import Paths
-from ikars_engine.settings import Settings, SettingsError, load
+from ikars_engine.settings import Settings, SettingsError, read
 from ikars_engine.settings_api import user_environment
 
 FOLDER = "support"
@@ -39,6 +42,9 @@ BUNDLES_KEPT = 10
 LOG_BYTES = 50_000_000  # the newest logs, up to this much (the zip is a tenth of it or less)
 GAPS_KEPT = 1_000
 AMOUNT_FLOOR_E6 = 10_000_000  # an amount under $10 is too short a text to search for safely
+# an amount in cents is searched for from $1,000 (six digits): fewer digits are common numbers
+# (timeouts, limits, counts) a bundle would lose (merge review 8)
+CENTS_FLOOR = 100_000
 REDACTED = "[redacted]"
 AMOUNT = "[amount]"
 _PEM = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
@@ -50,8 +56,8 @@ class BundleRefused(RuntimeError):
 
 
 def amount_texts(amounts_e6: Iterable[int]) -> list[str]:
-    """How an amount may be written: dollars (with and without a thousands comma), cents and
-    millionths; amounts under AMOUNT_FLOOR_E6 are left out."""
+    """How an amount may be written: dollars (with and without a thousands comma), cents (from
+    CENTS_FLOOR) and millionths; amounts under AMOUNT_FLOOR_E6 are left out."""
     texts: set[str] = set()
     for amount in amounts_e6:
         e6 = abs(amount)
@@ -59,7 +65,9 @@ def amount_texts(amounts_e6: Iterable[int]) -> list[str]:
             continue
         dollars, rest = divmod(e6, 1_000_000)
         cents = rest // 10_000
-        texts |= {f"{dollars}.{cents:02d}", f"{dollars:,}.{cents:02d}", str(e6 // 10_000), str(e6)}
+        texts |= {f"{dollars}.{cents:02d}", f"{dollars:,}.{cents:02d}", str(e6)}
+        if e6 // 10_000 >= CENTS_FLOOR:
+            texts.add(str(e6 // 10_000))
     return sorted(texts, key=len, reverse=True)
 
 
@@ -68,7 +76,9 @@ class Cleaner:
 
     def __init__(self, secrets: Iterable[str], amounts: Iterable[str], places: Mapping[str, str]):
         self._secrets = Redactor(secrets)
-        self._words = sorted({s.casefold() for s in secrets if s and len(s) >= 4}, key=len)
+        words = sorted({s for s in secrets if s and len(s) >= 4}, key=len, reverse=True)
+        found_words = "|".join(re.escape(w) for w in words)
+        self._words = re.compile(found_words, re.IGNORECASE) if words else None
         # an amount is a number of its own: not part of a longer number (times, ids)
         found = "|".join(re.escape(a) for a in amounts)
         self._amounts = re.compile(rf"(?<![\d.,])(?:{found})(?![\d])") if found else None
@@ -88,9 +98,8 @@ class Cleaner:
         return value
 
     def leaks(self, value: str) -> bool:
-        folded = value.casefold()
         return (
-            any(word in folded for word in self._words)
+            bool(self._words is not None and self._words.search(value))
             or bool(self._amounts is not None and self._amounts.search(value))
             or bool(_PEM.search(value) or _BEARER.search(value))
         )
@@ -192,10 +201,16 @@ def check(bundle: Path, cleaner: Cleaner) -> list[str]:
     found: list[str] = []
     with zipfile.ZipFile(bundle) as archive:
         for member in archive.namelist():
-            text = archive.read(member).decode("utf-8", errors="replace")
-            if cleaner.leaks(member) or cleaner.leaks(text):
-                found.append(member)
+            with archive.open(member) as lines:  # line by line: a log may be tens of MB
+                if cleaner.leaks(member) or any(
+                    cleaner.leaks(line.decode("utf-8", errors="replace")) for line in lines
+                ):
+                    found.append(member)
     return found
+
+
+# one bundle at a time: two at once (a double click) would share a name to the second (review 7)
+_ONE_AT_A_TIME = threading.Lock()
 
 
 def make(
@@ -209,9 +224,28 @@ def make(
     now: datetime | None = None,
     windows: Mapping[str, str] | None = None,
 ) -> c.Done:
-    """Build, check and keep a bundle; raises BundleRefused when the check finds anything."""
+    """Build, check and keep a bundle; raises BundleRefused when the check finds anything, or
+    when another bundle is being made."""
+    if not _ONE_AT_A_TIME.acquire(blocking=False):
+        raise BundleRefused("a bundle is being made already: wait for it")
     try:
-        settings = load(paths.settings) if paths.settings.exists() else running
+        return _make(paths, running, environ, token, health, amounts_e6, now, windows)
+    finally:
+        _ONE_AT_A_TIME.release()
+
+
+def _make(
+    paths: Paths,
+    running: Settings,
+    environ: Mapping[str, str],
+    token: str | None,
+    health: bytes | None,
+    amounts_e6: Iterable[int],
+    now: datetime | None,
+    windows: Mapping[str, str] | None,
+) -> c.Done:
+    try:  # read, never rewritten: a bundle changes nothing (merge review 6)
+        settings = read(paths.settings) if paths.settings.exists() else running
     except SettingsError:
         settings = running  # the bundle is most wanted when the file is broken: the running ones
     names = (settings.kalshi.key_id_variable, settings.kalshi.key_path_variable)
@@ -227,13 +261,13 @@ def make(
     folder = paths.root / FOLDER
     folder.mkdir(parents=True, exist_ok=True)
     final = folder / f"ikars-support-{at:%Y%m%d-%H%M%S}.zip"
-    partial = final.with_suffix(".partial")
+    partial = folder / f"{final.stem}-{secrets.token_hex(4)}.partial"
     texts = {
         "README.txt": (
             f"IKARS support bundle, made {at.isoformat(timespec='seconds')}.\n"
-            "Redacted: keys, key ids and paths, the API token, the share's path and account\n"
-            "amounts; the user's folder and the computer's name are placeholders. IKARS never\n"
-            "sends this file anywhere.\n"
+            "Redacted: keys, key ids and paths, the API token, the share's path, and the\n"
+            "account's balance and position amounts; the user's folder and the computer's name\n"
+            "are placeholders. IKARS never sends this file anywhere.\n"
         ),
         "versions.json": json.dumps(versions(), indent=2),
         "settings.toml": settings_text(settings),

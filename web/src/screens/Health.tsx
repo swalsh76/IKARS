@@ -48,11 +48,14 @@ const BUNDLE_WAIT_MS = 120_000; // up to 50 MB of logs are redacted and checked
 /** A redacted support bundle, saved in IKARS's support folder (D20 I; M1.8b-2). */
 function SupportBundle() {
   const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
   const make = () => {
+    setBusy(true); // one at a time (the engine refuses a second anyway)
     setNote("Making the bundle…");
     change("/v1/support/bundle", "Done", {}, { method: "POST", timeoutMs: BUNDLE_WAIT_MS })
       .then((done) => setNote(done.detail))
-      .catch((error: unknown) => setNote(error instanceof ApiFailure ? error.message : "could not make the bundle"));
+      .catch((error: unknown) => setNote(error instanceof ApiFailure ? error.message : "could not make the bundle"))
+      .finally(() => setBusy(false));
   };
   return (
     <section className="card span-3" aria-label="Support bundle">
@@ -62,7 +65,7 @@ function SupportBundle() {
         checked for before it is kept. IKARS never sends it anywhere.
       </p>
       <div className="actions">
-        <button type="button" onClick={make}>
+        <button type="button" onClick={make} disabled={busy}>
           Make a support bundle
         </button>
         <span className="muted small" data-testid="support-note">

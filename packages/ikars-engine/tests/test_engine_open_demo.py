@@ -101,9 +101,31 @@ def test_a_layout_opens_each_window_at_its_place_with_a_code_of_its_own(
     result, _, launched = opener(paths, code=lambda port, token: next(codes),
                                  settings=with_layouts(), layout="trading")  # fmt: skip
     assert result["windows"] == 2
-    assert launched[0][1] == "--app=http://127.0.0.1:47821/markets?q=fed#code=one"
+    # Edge honours its window switches in its first process only: each window also carries its
+    # place, and moves itself there once it loads (merge review 2)
+    assert (
+        launched[0][1] == "--app=http://127.0.0.1:47821/markets?q=fed#code=one&at=-1920,10,1600,900"
+    )
     assert launched[0][-2:] == ["--window-position=-1920,10", "--window-size=1600,900"]
-    assert launched[1][1] == "--app=http://127.0.0.1:47821/overview#code=two"
+    assert launched[1][1] == "--app=http://127.0.0.1:47821/overview#code=two&at=0,0,1280,800"
+
+
+def test_a_later_window_that_cannot_sign_in_is_said_in_words(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = Paths(tmp_path)
+    monkeypatch.setattr("ikars_engine.runmode.engine_running", lambda folder: True)
+    write_api(paths)
+    calls = [0]
+
+    def code(port: int, token: str) -> str:
+        calls[0] += 1
+        if calls[0] > 1:
+            raise OSError("the engine is restarting")
+        return "c"
+
+    with pytest.raises(ot.OpenError, match="window 2 of 2 could not sign in"):
+        opener(paths, code=code, settings=with_layouts(), layout="Trading")
 
 
 def test_the_start_layout_opens_by_default_and_an_empty_name_opens_one_window(
