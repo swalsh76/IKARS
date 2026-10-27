@@ -1793,5 +1793,5 @@ ledger holds no flagged fill; the warning now comes only for a fill actually add
   | 9 | `_free_name` repeated the name loop item 25 consolidated | One `files.first_free`, used by both |
   | 10 | The resume point did not mention M1.R | Updated |
 
-**M1.R built**, subject to the owner's merge (and the resting-order check when convenient).
+**M1.R done:** PR #14 merged as `fca7941` (2026-10-27), CI green on `main`. The resting-order check stays pending.
 
