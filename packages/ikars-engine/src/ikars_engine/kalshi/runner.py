@@ -108,8 +108,21 @@ async def build(paths: Paths, settings: Settings) -> tuple[Engine, KalshiSource,
     )
     engine = Engine(clock, source, metrics=metrics, skew=skew)
     engine.health_parts["kalshi"] = source.health
-    engine.health_parts["request_budget"] = lambda: budget
+    engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
     return engine, source, state
+
+
+def requests_used(
+    budget: dict[str, object], bucket: TokenBucket, client: KalshiPublicClient
+) -> dict[str, object]:
+    """The budget, and what IKARS has spent of it since start (tokens, waits, requests, 429s)."""
+    return {
+        **budget,
+        "tokens_spent": round(bucket.stats.spent),
+        "waits": bucket.stats.waits,
+        "requests": client.stats.requests,
+        "rate_limited": client.stats.rate_limited,
+    }
 
 
 def _at(tree: object, *keys: str) -> object:
@@ -123,14 +136,20 @@ def _at(tree: object, *keys: str) -> object:
 
 def summary(health: dict[str, object]) -> str:
     """One line for the console: the numbers that say whether the feed is healthy."""
-    p99 = _at(health, "metrics", "timings", "engine.feed_to_route_ns", "p99_ns")
+
+    def ms(percentile: str) -> float | None:
+        ns = _at(health, "metrics", "timings", "engine.feed_to_route_ns", f"{percentile}_ns")
+        return round(ns / 1e6, 1) if isinstance(ns, int) else None
+
     return json.dumps(
         {
             "frames": _at(health, "kalshi", "frames"),
             "watched": _at(health, "kalshi", "watched"),
             "books_ready": _at(health, "kalshi", "books_ready"),
             "open_gaps": _at(health, "kalshi", "open_gaps"),
-            "feed_to_route_p99_ms": round(p99 / 1e6, 1) if isinstance(p99, int) else None,
+            "feed_to_route_p50_ms": ms("p50"),
+            "feed_to_route_p99_ms": ms("p99"),
+            "rest_tokens_spent": _at(health, "request_budget", "tokens_spent"),
             "clock": health.get("clock"),
         },
         default=str,

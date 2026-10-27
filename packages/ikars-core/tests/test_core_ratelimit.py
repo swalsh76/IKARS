@@ -30,7 +30,7 @@ async def test_a_new_bucket_is_full() -> None:
     for _ in range(5):
         await b.acquire(10)
     assert fake.sleeps == []
-    assert b.stats.acquired == 5
+    assert b.stats.acquired == 5 and b.stats.spent == 50
     assert b.stats.waits == 0
 
 

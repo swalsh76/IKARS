@@ -18,7 +18,7 @@ from ikars_core.ws_models import parse_frame
 from ikars_engine.clocks import VirtualClock
 from ikars_engine.kalshi.discovery import BOOKMARK, Discovery, MarketIndex, series_of
 from ikars_engine.kalshi.exchange import ExchangeWatch
-from ikars_engine.kalshi.runner import _at, clock_observer, summary
+from ikars_engine.kalshi.runner import _at, clock_observer, requests_used, summary
 from ikars_engine.kalshi.source import Intervals, KalshiSource
 from ikars_engine.kalshi.watched import WatchedSet
 from ikars_engine.metrics import Metrics
@@ -511,11 +511,15 @@ def test_the_clock_observer_samples_at_most_once_a_minute() -> None:
 def test_the_summary_line_reads_nested_health() -> None:
     health: dict[str, object] = {
         "kalshi": {"frames": {"trade": 3}, "open_gaps": 0},
-        "metrics": {"timings": {"engine.feed_to_route_ns": {"p99_ns": 50_000_000}}},
+        "metrics": {
+            "timings": {"engine.feed_to_route_ns": {"p50_ns": 2_500_000, "p99_ns": 50_000_000}}
+        },
+        "request_budget": {"tokens_spent": 120},
         "clock": {"status": "ok"},
     }
     line = json.loads(summary(health))
     assert line["frames"] == {"trade": 3} and line["feed_to_route_p99_ms"] == 50.0
+    assert line["feed_to_route_p50_ms"] == 2.5 and line["rest_tokens_spent"] == 120
     assert _at(health, "kalshi", "missing", "x") is None
 
 
@@ -755,3 +759,16 @@ async def test_the_heartbeat_compacts_finished_hours_after_the_grace(tmp_path: P
     await rig.source._heartbeat()
     assert len(hours(tmp_path / "rec", "trade")) == 1
     await rig.source.stop()
+
+
+async def test_the_request_budget_reports_what_was_spent(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, [market("M1")])
+    client = KalshiPublicClient(
+        KalshiConfig(environment=Environment.PRODUCTION),
+        bucket=TokenBucket(rate=1e9, capacity=1e9),
+        transport=httpx.MockTransport(rig.kalshi.handle),
+    )
+    await MarketData(client).exchange_status()
+    used = requests_used({"tokens_per_s": 50.0}, client.bucket, client)
+    assert used["tokens_per_s"] == 50.0 and used["requests"] == 1 and used["rate_limited"] == 0
+    assert used["tokens_spent"] == round(client.bucket.stats.spent) > 0
