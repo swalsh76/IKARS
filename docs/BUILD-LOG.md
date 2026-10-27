@@ -885,3 +885,9 @@ of a recorded hour; the governor's pruning order; the budget's share; migration 
 **Open for the owner.**
 - **GPU detection** is in PLAN §4.1's line for M1.4b but was not in the approved slice plan, so it was not built. *Recommended:* move it to M1.6 (background run mode, which already reports the machine) or to M2's local-model slice, where it is first used.
 - **Recording volume:** about 2.1 GB a day, above the plan's "few hundred MB" estimate, because all-market trades are busy (about 300 a second). The 200 GB budget holds about three months before the governor prunes.
+
+**Owner's decisions (2026-10-27):** merge (PR #5 merged as `58abbe5`); GPU detection moves to **M1.6**; the
+recording volume stays as is. A dependencies register, [DEPENDENCIES.md](DEPENDENCIES.md), now lists what IKARS
+needs installed now and later, for the install instructions; each slice keeps it current.
+
+**M1.4b done.**
