@@ -1626,3 +1626,73 @@ made-up context: 100 watched markets whose quotes and books all change every 100
 **M1.8a built**, subject to the owner's merge.
 
 **M1.8a done:** PR #11 merged as `77849e3` (2026-10-27).
+
+### 1.8w Direction change: a TypeScript web terminal (owner, 2026-10-27)
+
+**Decision.** After M1.8a, the owner compared the WPF terminal with Avalonia, WinUI 3, Blazor Hybrid and a
+TypeScript web app, and chose **TypeScript** for flexibility and future expansion and customisation. All the
+recommended answers were approved:
+1. **Window:** the engine serves the app on its loopback address; it opens as a **Microsoft Edge app window**
+   (`msedge --app`) with its own IKARS profile (none of the owner's extensions or cookies). No host program.
+2. **Sign-in:** a **one-time code** in the launch link, exchanged by the engine for an `HttpOnly`,
+   `SameSite=Strict` cookie for this port only; the session token is never readable by page scripts. The guard
+   accepts only the engine's own loopback origin.
+3. **Framework:** **React**, with Vite, strict TypeScript, pnpm, Vitest (90%), Playwright, ESLint and `pnpm audit`.
+4. **Money:** the web terminal does no money arithmetic. The engine's integers (10^-6 dollars, 10^-2 contracts)
+   are exact as JavaScript numbers up to 2^53; a distinct money type and integer-only formatting, with tests,
+   keep them that way.
+
+Decisions amended: D1 (the terminal), D3 (static files, sign-in, fetch-based stream reading), D11 (the web gates),
+D12 (no .NET runtime shipped); M1.8 replanned as **M1.8a-web** and **M1.8b**. R9 (Overview, drill-down,
+cross-reference) and D20 J (update to screen, p99 at most 33 ms) are unchanged.
+
+**What was reusable.**
+
+| Part | Verdict |
+|---|---|
+| The Python engine | Kept. Two changes come with M1.8a-web: serving the app, and the browser sign-in. |
+| `contracts/` (the JSON Schema and golden examples) | Kept: the source of the generated TypeScript types and their golden test. |
+| `docs/design/mockups/` (HTML and CSS) | Kept: the starting point of the screens. |
+| `Ikars.Terminal`, `Ikars.Client`, `Ikars.Contracts`, `Ikars.Core`, their tests, and the .NET build files | Removed (about 4,100 lines of C# and XAML). History keeps them at the tag `wpf-terminal-final`. |
+| CI's `dotnet` job, Dependabot's `nuget` entry, `tools/ci/check-coverage.ps1` | Removed; the web job and `npm` entry come with M1.8a-web. |
+
+**Behaviour that carries over** (settled and tested in M1.8a; re-implemented and re-tested in TypeScript):
+1. One navigator: drill-down, breadcrumbs, back and forward; in the browser, real URLs, so every screen can be
+   linked to.
+2. A screen left while loading cancels its requests and lets go of its subscriptions.
+3. Updates handed to the screens about ten times a second; a subscription change sent only when the union changed;
+   one flush at a time; a failed change retried.
+4. The stream: resume after the last alert; backoff that a refusal does not reset; a stream silent for 20 s is
+   dropped; a request timeout is not taken for an engine restart.
+5. Lists updated in place; alerts once each, newest first by line, at most 200 per priority.
+6. The **update-to-screen meter** (D20 J): from a change to the frame after the one that shows it, with the UI work
+   per update; and the console load test (100 made-up markets at 10 Hz through the engine's real API server).
+7. Open markets first; an empty chart says why; the book note for unwatched markets.
+
+#### 1.8w prune (2026-10-27)
+
+**Done** on branch `m1/8-prune-wpf`: `2ce5d1e` (the decision record: PLAN D1, D3, D11, D12, M1.8 and §5; this
+entry; DEPENDENCIES; README; the mock-ups README; CLAUDE.md), `371d646` (the prune), and the merge-review fixes. The
+tag `wpf-terminal-final` (on `d73921b`) keeps the WPF terminal.
+
+**Verified:** 1,279 Python tests pass (93.8%); ruff, mypy, pip-audit, the data guard (168 tracked files) and
+gitleaks are clean; CI's jobs are now `python` and `hygiene`. Nothing changed on the machine: the background engine,
+watchdog and auto-start are untouched; the local build folders went with the projects.
+
+**Review.**
+- **Per commit (`2ce5d1e`):** none (run after the commit; docs only).
+- **Per commit (`371d646`):** none.
+- **Merge review (medium), 9 findings:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | The `main` ruleset still requires the `dotnet` check, so no PR could merge | **Owner action:** Claude was not permitted to change branch protection. The owner removes `dotnet` from the required checks; M1.8a-web adds `web` |
+  | 2 | `contracts.py` said the terminal's golden test exists, but it was deleted and the TypeScript one comes later | Docstring now says only the engine-side test guards the contracts until M1.8a-web |
+  | 3 | The .NET ignores were dropped, so building the tag would leave build output that `git add -A` could commit | Restored (`bin/`, `obj/`, `TestResults/`, `.vs/`, `*.user`) |
+  | 4 | `dist/` was listed twice in `.gitignore` | Duplicate removed |
+  | 5 | D3 still justified SSE by reusing KalTerm3's C# client | Amended: the web terminal keeps that client's rules, not its code |
+  | 6 | PLAN's M1.7 row and GPU section still described the C# contract test and WPF rendering as current | Annotated as retired 2026-10-27 |
+  | 7 | D11 opened with C# gates as if still enforced | Rewritten: Python gates, the web gates from M1.8a-web, and the retired C# gates listed separately |
+  | 8 | The resume point still said the prune was to do and kept stale M1.8a text | Rewritten to the current state |
+  | 9 | No terminal gate exists between the prune and M1.8a-web | No change: there is no terminal code in that gap; M1.8a-web adds the `web` job and makes it a required check (recorded in D11) |
+

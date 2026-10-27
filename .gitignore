@@ -14,12 +14,18 @@ dist/
 build/
 *.egg-info/
 
-# .NET
+# .NET build output (the WPF terminal at the tag wpf-terminal-final can still be built from a checkout)
 bin/
 obj/
 TestResults/
 .vs/
 *.user
+
+# the web terminal (M1.8a-web); dist/ is listed under python
+node_modules/
+coverage/
+playwright-report/
+test-results/
 
 # market data, recordings, databases, ledger exports and logs: never commit
 data/

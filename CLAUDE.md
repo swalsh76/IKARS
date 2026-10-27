@@ -10,7 +10,8 @@ IKARS uses **external news and data sources** to recommend **Kalshi** trades in 
 P&L net of fees on entry and exit.
 
 - **KAPS** (`%USERPROFILE%\dev\KAPS`, Python) is the infrastructure basis; **KalTerm3** (`%USERPROFILE%\dev\KalTerm3`,
-  .NET WPF) is the UI basis; **SPARQ** (`%USERPROFILE%\dev\SPARQ`, KAPS's successor) may be used freely for code,
+  .NET WPF) was the UI basis and is now a behaviour reference only (the terminal is a TypeScript web app since
+  2026-10-27); **SPARQ** (`%USERPROFILE%\dev\SPARQ`, KAPS's successor) may be used freely for code,
   findings and data (R13). Read them; never edit them
   from here. Treat their code as a guide to question and improve, not to copy blindly; record what was kept or
   changed in the BUILD-LOG.
@@ -28,7 +29,9 @@ slice still needs its own approved plan before code.
 - **Direction:** beat the humans, not the big bots. Strategies, in order: news/data estimates and momentum, then
   sniping (as fast alerts), then perpetuals (D13).
 - **Approved 2026-10-26:**
-  - D1: Python engine + .NET WPF terminal; navigation **Overview → drill-down → cross-reference** (R9).
+  - D1: Python engine + terminal (**amended 2026-10-27: a TypeScript web app** — React, Vite, pnpm — served by the
+    engine and opened as an Edge app window with a one-time-code cookie sign-in; WPF retired, tag
+    `wpf-terminal-final`); navigation **Overview → drill-down → cross-reference** (R9).
   - D2: single box on the workstation.
   - D3: loopback WebSocket/HTTP with `msgspec`.
   - D5: weather (NWS/NOAA) + general news (RSS/GDELT + LLM).
@@ -100,8 +103,13 @@ slice still needs its own approved plan before code.
   **M1.5a done** (PR #7 merged as `087b819`): reconciles **exactly** with Kalshi.
   **M1.5 done** (PR #8 merged as `5b6f702`): the real ledger lives in `%LOCALAPPDATA%\IKARS\ledger`; share backups
   and the restore drill pass. **M1.6 done** (PR #9 merged as `2efc95f`): the engine runs in the background with the watchdog task and
-  auto-start (the owner's sign-out check pending). **M1.7 done** (PR #10 merged as `0ba5d83`): token-guarded loopback API with an SSE stream. **M1.8 plan APPROVED** (BUILD-LOG 1.8: split a/b, later panels drawn with notes, ScottPlot + candles route, p99
-  frame <= 33 ms, views out of the coverage gate). **M1.8a built** on `m1/8-terminal` (BUILD-LOG 1.8a; merge review done, itemized): PR #11 open. D20 J amended by the owner (2026-10-27): **update to screen p99 <= 33 ms** (frame gaps measure WPF idling, not slowness); met at the console (p99 24 to 32 ms under the 100-market load). **M1.8a done** (PR #11 merged as `77849e3`). **Paused by the owner (2026-10-27).** Next on resume: propose the M1.8b plan (hotkeys, layouts, themes, versioned settings with the first-run wizard, support bundle) for approval; the owner's M1.6 auto-start sign-out check is still pending. The owner allows
+  auto-start (the owner's sign-out check pending). **M1.7 done** (PR #10 merged as `0ba5d83`): token-guarded loopback API with an SSE stream. **M1.8a (WPF) done** (PR #11 merged as `77849e3`; BUILD-LOG 1.8a); D20 J amended by the owner: **update to screen
+  p99 <= 33 ms**. **Direction change (owner, 2026-10-27):** the terminal becomes a **TypeScript web app** (D1, D3,
+  D11, D12 amended; BUILD-LOG 1.8w; all recommended answers approved: engine-served Edge app window, one-time code to
+  an HttpOnly cookie, React with Vite and pnpm). PR #12 merged (`d73921b`); tag `wpf-terminal-final` pushed. **WPF
+  pruned** on branch `m1/8-prune-wpf` (`2ce5d1e` decision record, `371d646` prune, merge-review fixes): PR open. **Blocked until the owner removes `dotnet` from the `main protection` ruleset's
+  required checks** (GitHub settings; Claude was not permitted to change it). Then the owner's merge. Next: the
+  **M1.8a-web** plan for approval (it adds the `web` CI job and makes `web` a required check), then M1.8b. The owner's M1.6 auto-start sign-out check is still pending. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
@@ -156,11 +164,7 @@ python -m uv run mypy packages tools; python -m uv run mypy conftest.py   # two 
 python -m uv run pytest --cov
 python -m uv run pip-audit --skip-editable
 
-dotnet restore Ikars.slnx
-dotnet format Ikars.slnx --verify-no-changes --no-restore
-dotnet build Ikars.slnx -c Release --no-restore
-dotnet test --solution Ikars.slnx -c Release --no-build --coverlet --coverlet-output-format cobertura --report-trx --results-directory TestResults
-./tools/ci/check-coverage.ps1 -Path TestResults -MinLinePercent 90
+# the web terminal's commands (pnpm, Vitest, Playwright) arrive with M1.8a-web
 
 python tools/ci/data_guard.py          # no data, databases or keys tracked
 gitleaks git --redact --no-banner .    # secrets in the whole history

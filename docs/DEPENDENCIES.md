@@ -14,7 +14,6 @@ replaced) in its slice plan, with its licence checked then.
 | Windows 11 | 24H2 or later | target | — | The only supported OS. |
 | Python | 3.13 (`.python-version`) | engine | PSF | Developers: managed by `uv`. Releases: bundled standalone CPython (D12); nothing for the user to install. |
 | uv | current | development and CI | MIT / Apache-2.0 | `python -m uv` on the workstation; not shipped. |
-| .NET SDK / runtime | 10 (`net10.0`) | terminal | MIT | Developers: the SDK. Releases: self-contained publish (D12); nothing for the user to install. |
 | gitleaks | current | development and CI | MIT | Needed by the pre-commit hook (`winget install gitleaks`). |
 
 ### Python packages (engine)
@@ -35,15 +34,10 @@ replaced) in its slice plan, with its licence checked then.
 Development only: `ruff`, `mypy`, `pytest` (with `pytest-asyncio`, `pytest-cov`, `hypothesis`), `pip-audit`; the
 exact set and versions are in `uv.lock`.
 
-### .NET packages (terminal)
+### Terminal
 
-| Package | Used for | Licence |
-|---|---|---|
-| `ScottPlot.WPF` 5.1.59 | the market price chart (M1.8a; KalTerm3's choice) | MIT |
-| its dependencies: `SkiaSharp` and `HarfBuzzSharp` (with native Windows assets), `OpenTK` and `OpenTK.GLWpfControl`, the GLFW redistributable | drawing | MIT; GLFW zlib |
-
-Tests only: `xunit.v3.mtp-v2` (Apache-2.0), `coverlet.MTP` (MIT), `Microsoft.Testing.Extensions.TrxReport` (MIT).
-The terminal itself uses WPF from the .NET Windows desktop runtime (bundled by the self-contained publish, D12).
+None yet. The .NET WPF terminal and its packages (ScottPlot, xUnit, coverlet) were removed with the D1 amendment
+(2026-10-27); the web terminal's packages arrive with M1.8a-web (below).
 
 ### Outside services
 
@@ -70,5 +64,11 @@ The terminal itself uses WPF from the .NET Windows desktop runtime (bundled by t
 | Local LLM runtime (llama.cpp server, Ollama or ONNX Runtime GenAI) and a 7 to 14B quantised model | M2 (D9) | optional extra | MIT (runtimes); model licences per model | Chosen by measured speed and quality in the slice; downloaded on demand. |
 | XGBoost (CUDA) or LightGBM; PyTorch (cu128) for sequence models; CuPy for sweeps | M3 to M5 (D15, D16) | optional extra | Apache-2.0; MIT; BSD-3; MIT | CUDA wheels run to gigabytes: optional, on demand. CPU fallbacks for each. |
 | Other-venue prices (exchange WebSockets, odds APIs) | later milestones (D19 G7) | plugin | per source | A paid odds API counts against the cost ceiling. |
+| **Node.js LTS and pnpm** | M1.8a-web (D1 amended) | development and CI only | MIT | Build the web terminal; not shipped. `winget install OpenJS.NodeJS.LTS`; pnpm through Corepack. |
+| **React, Vite, TypeScript** | M1.8a-web | base (built into static files) | MIT; MIT; Apache-2.0 | Nothing for the user to install. |
+| **AG Grid Community** | M1.8a-web | base | MIT | The live market tables. |
+| **TradingView Lightweight Charts** | M1.8a-web | base | Apache-2.0, with TradingView's attribution notice | The price charts; the attribution's exact form confirmed in the slice. |
+| Vitest, Playwright, ESLint, a JSON Schema to TypeScript generator, a runtime validator (ajv or zod) | M1.8a-web | development and CI only | MIT / Apache-2.0 | Chosen in the slice plan. |
+| **Microsoft Edge** | M1.8a-web | base | built into Windows 11 | Shows the terminal as an app window with its own IKARS profile under `%LOCALAPPDATA%\IKARS\browser`. |
 | Velopack | M1.9 (D12) | build only | MIT | Builds `Setup.exe` and the portable zip; the user installs nothing extra. |
 | Code signing (SignPath free plan or Azure Trusted Signing) | M1.9 (D12) | build only | service | Removes SmartScreen warnings; chosen in the packaging slice. |
