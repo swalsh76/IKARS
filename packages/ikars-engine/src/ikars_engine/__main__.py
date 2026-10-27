@@ -10,6 +10,10 @@ foreground (M1.4b), with IKARS's read-only key from its two environment variable
 
 ``python -m ikars_engine ledger {verify,status,import,annotate}``: the audit ledger (M1.5a; see
 :mod:`ikars_engine.ledger_cli`).
+
+``serve``, ``stop``, ``status``, ``watchdog``, ``install-autostart``, ``remove-autostart``, ``alerts
+test``: the engine in the background, its watchdog and workstation notifications (M1.6; see
+:mod:`ikars_engine.runmode_cli`).
 """
 
 import argparse
@@ -85,9 +89,10 @@ def main(argv: list[str]) -> int:
     live.add_argument(
         "--root", type=Path, default=None, help="the data folder (default: the usual)"
     )
-    from ikars_engine import ledger_cli
+    from ikars_engine import ledger_cli, runmode_cli
 
     ledger_cli.add_parser(commands)
+    runmode_cli.add_parsers(commands)
     try:
         args = parser.parse_args(argv[1:])
     except SystemExit as exc:
@@ -108,6 +113,12 @@ def main(argv: list[str]) -> int:
             return 0
         print(json.dumps(health.get("kalshi"), indent=2, default=str))
         return 0
+    if args.command in runmode_cli.COMMANDS:
+        from ikars_engine.kalshi.runner import default_paths
+        from ikars_engine.settings import load
+
+        paths = default_paths(Path(args.root) if args.root else None)
+        return runmode_cli.run(args, paths, load(paths.settings))
     if args.command in ("ledger", "backup"):
         from ikars_engine.kalshi.runner import default_paths
         from ikars_engine.settings import load

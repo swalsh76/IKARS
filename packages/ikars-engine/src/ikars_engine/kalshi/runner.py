@@ -15,6 +15,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,7 +31,7 @@ from ikars_core.ratelimit import TokenBucket
 from ikars_core.rest import KalshiAccountClient, KalshiPublicClient
 from ikars_core.ws import FeedConfig, KalshiFeed
 
-from ikars_engine import taxzone
+from ikars_engine import gpu, taxzone
 from ikars_engine.backup_service import BackupService
 from ikars_engine.clocks import WallClock
 from ikars_engine.engine import Engine
@@ -54,6 +55,8 @@ from ikars_engine.store import StateStore
 
 log = logging.getLogger("ikars_engine.kalshi.runner")
 SAMPLE_EVERY_S = 60.0
+TICK_S = 2.0  # how often the run loop looks for a stop request
+MINUTE_S = 60.0
 
 
 def clock_observer(skew: SkewMonitor) -> Callable[[float, float, Mapping[str, str]], None]:
@@ -163,6 +166,8 @@ async def build(paths: Paths, settings: Settings) -> Live:
         settings_sha256=settings_digest(settings),
     )
     engine = Engine(clock, source, metrics=metrics, skew=skew)
+    cards = gpu.health(await asyncio.to_thread(gpu.detect))  # once: the card does not change
+    engine.health_parts["gpu"] = lambda: cards
     engine.health_parts["kalshi"] = source.health
     engine.health_parts["ledger"] = service.health
     backups = BackupService(share, paths, state, clock)
@@ -249,8 +254,16 @@ def summary(health: dict[str, object]) -> str:
 
 
 async def run(
-    paths: Paths, settings: Settings, minutes: float | None, out: Callable[[str], None] = print
+    paths: Paths,
+    settings: Settings,
+    minutes: float | None,
+    out: Callable[[str], None] = print,
+    should_stop: Callable[[], bool] | None = None,
+    on_minute: Callable[[dict[str, object]], None] | None = None,
 ) -> dict[str, object]:
+    """The live engine until ``minutes`` pass or ``should_stop`` says so (checked every two
+    seconds); each minute, a summary line to ``out`` and the health to ``on_minute`` (and once at
+    once, so a watchdog sees a fresh snapshot from the start)."""
     paths.create()
     redactor = Redactor.from_environment(
         [settings.kalshi.key_id_variable, settings.kalshi.key_path_variable]
@@ -281,11 +294,24 @@ async def run(
         stack.push_async_callback(live.backup.stop)
         await live.backup.start()
         running.append(asyncio.create_task(engine.run(), name="engine"))
-        elapsed = 0.0
-        while minutes is None or elapsed < minutes * 60:
-            await asyncio.sleep(min(60.0, minutes * 60 - elapsed) if minutes else 60.0)
-            elapsed += 60.0 if minutes is None else min(60.0, minutes * 60 - elapsed)
-            out(summary(engine.health()))
+        if on_minute is not None:
+            on_minute(engine.health())
+        started = last = time.monotonic()
+        while True:
+            await asyncio.sleep(TICK_S)
+            now = time.monotonic()
+            if now - last >= MINUTE_S:
+                last = now
+                current = engine.health()
+                out(summary(current))
+                if on_minute is not None:
+                    on_minute(current)
+            if (should_stop is not None and should_stop()) or (
+                minutes is not None and now - started >= minutes * 60
+            ):
+                if last != now:  # a last summary, unless this tick just printed one
+                    out(summary(engine.health()))
+                break
     return health
 
 
