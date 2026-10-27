@@ -13,7 +13,7 @@ channel, so a crash becomes a gap and not silence) and the exchange's status his
 """
 
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,9 +38,14 @@ def backup_store(connection: sqlite3.Connection, path: Path) -> Path:
     return target
 
 
-def open_store(path: Path, migrations: Sequence[str]) -> sqlite3.Connection:
+def open_store(
+    path: Path,
+    migrations: Sequence[str],
+    on_backup: Callable[[Path], None] | None = None,
+) -> sqlite3.Connection:
     """Open (or create) ``path`` and bring it to ``len(migrations)``, backing it up first when an
-    existing file must change. A file from a newer IKARS is refused."""
+    existing file must change (``on_backup`` is then given the copy to send further: the
+    ledger's goes to the share too). A file from a newer IKARS is refused."""
     path.parent.mkdir(parents=True, exist_ok=True)
     existed = path.exists() and path.stat().st_size > 0
     connection = sqlite3.connect(path, isolation_level=None)  # transactions are explicit
@@ -54,7 +59,9 @@ def open_store(path: Path, migrations: Sequence[str]) -> sqlite3.Connection:
             f"{path.name} is from a newer IKARS (schema {version} > {len(migrations)})"
         )
     if existed and version < len(migrations):
-        backup_store(connection, path)
+        copy = backup_store(connection, path)
+        if on_backup is not None:
+            on_backup(copy)
     for number in range(version, len(migrations)):
         connection.execute("BEGIN")
         try:

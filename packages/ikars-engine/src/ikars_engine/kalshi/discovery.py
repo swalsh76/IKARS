@@ -21,6 +21,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 from ikars_core.endpoints import MarketData
+from ikars_core.fees import FeeSchedule, fee_schedule
 from ikars_core.models import Market
 
 from ikars_engine.clocks import EventClock
@@ -54,6 +55,7 @@ class MarketIndex:
     def __init__(self) -> None:
         self.markets: dict[str, MarketInfo] = {}
         self.categories: dict[str, str] = {}  # series -> category
+        self.fees: dict[str, FeeSchedule | None] = {}  # series -> fee terms (None: not modelled)
         self.rejects = 0
         self.combos_skipped = 0
 
@@ -116,6 +118,7 @@ class Discovery:
         for series in await self._data.series_list():
             if series.category:
                 self.index.categories[series.ticker] = series.category
+            self.index.fees[series.ticker] = fee_schedule(series.fee_type, series.fee_multiplier_e6)
         count = 0
         for status in ("unopened", "open"):
             async for page in self._data.markets(
