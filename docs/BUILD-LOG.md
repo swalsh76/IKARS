@@ -1978,3 +1978,60 @@ background engine:
   | 8 | `demo-api --hz 0` crashed after starting | Fixed in `efc8824`: refused by the command line; tested |
 
 **M1.8a-web-1a built**, subject to the owner's merge.
+
+#### 1.8a-web-1b built (2026-10-27)
+
+**Built** on `m1/8a-web-1b`: `cea9ffd` (the web terminal), `7869da7` (CI and repository settings), `d26af73` (the
+merge-review fixes). After 1a merged as PR #16 (`d70cb83`).
+
+- **On this machine:** Node.js 24.22.1 per user, from the official zip checked against `SHASUMS256.txt`, in
+  `%LOCALAPPDATA%\Programs\nodejs` on the user `PATH` (winget's package is a machine-wide MSI needing admin; the
+  plan said per user); pnpm 12.14.0 through Corepack. No Playwright browser download: the installed Edge.
+- **`web/`** (React 19, strict TypeScript 6.0, Vite 8, pnpm 12): `scripts/gen-contracts.mjs` makes `src/api/contracts.ts`
+  and ajv's standalone validators from `contracts/` (unknown fields refused; no code compiled in the page, so the CSP
+  holds; `gen:check` in CI). The client (the cookie; timeouts; signed-out, refused, timeout, unreachable and contract
+  failures kept apart). The stream reader over `fetch` (resume after the last alert; the backoff grows and only an
+  opened stream resets it; 20 s of silence drops it; signed-out apart). The update hub (10 Hz flushes; subscriptions
+  by the union of every screen's markets, one change in flight, retried, re-sent to a new stream). Money: a distinct
+  type, integer-only formatting with BigInt, no arithmetic (100% tested). The navigator over real addresses with
+  breadcrumbs. The Overview (portfolio and exposure, alerts; later panels drawn with "arrives in" notes) and Health
+  (the cards, the gap log, the engine's whole report) from the mock-ups' tokens, dark or light with Windows.
+- **Checks:** ESLint with the injection bans; Vitest 131 tests (98% lines, 91% functions; thin screens left to
+  Playwright as decided); Playwright 6 screen tests in Edge against `demo-api`, watching for CSP refusals; `pnpm
+  audit` clean. CI's `web` job runs all of it on Windows; CodeQL adds `javascript-typescript`; Dependabot watches
+  `web/` with a 7-day cooldown (actions too); the data guard and `.gitignore` refuse Playwright output, coverage,
+  builds, `node_modules`, `.har` and `.env` files.
+- **Found on the way:** `demo-api`'s made-up books went below 1 cent near the price limits and its snapshot failed
+  (found by the screen tests; fixed, tested); the Playwright setup left the demo server running (uv's child survives
+  `kill()` on Windows; the tree is stopped now).
+
+**Verified.** All of the above green locally and in CI on PR #17 (`python`, `web`, `hygiene`, CodeQL for Python,
+actions and TypeScript). **Live:** the engine restarted on the same port with the old cookie still valid, and serves
+the built terminal; **the owner opened it with `ikars open` and saw the real Overview** (portfolio, live feed, the
+latest alerts); the status strip was cut off at the bottom of a short window, so header and strip now stay in view
+(a screen test checks it).
+
+**Review.**
+- **Per commit:** `cea9ffd` 1 fixed before committing (a stream that opened while a subscription change was in
+  flight got none; the hub now catches up after every change); `7869da7` none; `d26af73` 2 fixed before committing
+  (a screen's error boundary kept failing on the next screen: keyed by the address; two first loads could run at
+  once: one at a time).
+- **Security review** (`/security-review`): **no findings** (outside text drawn only as text and banned otherwise;
+  links built from fixed addresses or encoded; the code never visible to scripts; every reply validated; no inline
+  script in the build; the supply-chain settings in force).
+- **Merge review (medium), 10 findings:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | An unreadable reply (not JSON, or a timeout part way) threw a raw error and the start-up left a blank window | Fixed in `d26af73`: always a failure kind; `main.tsx` shows a start-up error as text; tested |
+  | 2 | A malformed %-escape in the address threw and blanked the page | Fixed: it is "Not found"; tested |
+  | 3 | One value that cannot be drawn (an integer past 2^53) took down the whole terminal | Fixed: each Overview panel and each screen is guarded and says so in its place; tested |
+  | 4 | When the first load failed (engine starting, signed out), the alert history was never loaded | Fixed: the first values load once a stream opens; tested |
+  | 5 | A renumbered alert log (cut back) would mix old and new lines | No change: the engine only appends to the alert log; one cut back by hand needs a reload |
+  | 6 | The strip and pill worked out their own levels and disagreed with the Health cards | Fixed: one place decides a level; tested |
+  | 7 | Quotes and books stayed for the session after no screen wanted them, and came back stale | Fixed: released markets' values are dropped; tested |
+  | 8 | Every render re-subscribed each hub listener | Fixed: memoised per key |
+  | 9 | A failed refresh blanked the gap table; failed subscription changes stacked retry timers that stop never cleared | Fixed: the last value stays, marked stale; one retry timer, cancelled at stop; tested |
+  | 10 | DEPENDENCIES.md still listed the web packages as to be chosen | Fixed: in use, with versions and licences |
+
+**M1.8a-web-1b built**, subject to the owner's merge (and then `web` added to the required checks).
