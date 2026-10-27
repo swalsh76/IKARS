@@ -121,8 +121,9 @@ slice still needs its own approved plan before code.
   sign-in with a fixed port and a 30-day sliding DPAPI-signed cookie, `ikars open`, contracts 2.0, made-up-data
   mode), **1b** web foundation (Node 24, `web/`, types, client, hub, money, navigator, CI `web` job, Overview and
   Health), **2a** Markets and Market, **2b** Ledger, Alerts, meter and load test. Answers: fixed port in settings,
-  30-day session, `vite build --watch`, validate every reply. **Now: M1.8a-web-1a** on branch `m1/8a-web-1a`;
-  then 1b, 2a, 2b, then M1.8b. The owner allows `gh pr merge`
+  30-day session, `vite build --watch`, validate every reply. **M1.8a-web-1a built** on branch `m1/8a-web-1a`
+  (BUILD-LOG 1.8a-web-1a; security review and merge review itemized; the owner saw `ikars open` connect): PR
+  open, waiting for the owner's merge. Then 1b, 2a, 2b, then M1.8b. The owner allows `gh pr merge`
   by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

@@ -1911,3 +1911,70 @@ owner, at the console).
 3. Session: 30 days, sliding.
 4. Development: `vite build --watch`, served by the engine (one origin, production's CSP).
 5. Every reply and stream event validated in production.
+
+#### 1.8a-web-1a built (2026-10-27)
+
+**Built** on `m1/8a-web-1a`: `5ce96fb` (DPAPI helper, sessions, settings v4), `c08f9af` (two pre-existing fixes
+from the per-commit review), `8ce2538` (serving, hardening, sign-in, fixed port), `6f9b82f` (contracts 2.0),
+`22547ce` (`ikars open`, `demo-api`, the watchdog's port rule), `ab83c07` (the security-review fix), `efc8824` (the
+merge-review fixes). **No new packages.**
+
+- **`ikars_core.dpapi`**: DPAPI for the current user through `ctypes` (D8).
+- **`session`**: one-time codes (single use, 30 s, at most 16 waiting) and HMAC-SHA256-signed cookies, 30 days and
+  renewed once a day old; the signing key in `data\session.key`, DPAPI-protected, so a restart keeps the terminal
+  signed in. Without DPAPI the key lives in memory; an undecryptable key is set aside under a free name and
+  replaced; a key that cannot be read right now fails the start (the watchdog retries) rather than signing every
+  terminal out.
+- **`webserve`** and the guard: the terminal's files (the placeholder page until `web/dist` exists), a fixed
+  content-type table, screen addresses answered by `index.html`; on every response a strict CSP, `nosniff`, no
+  referrer, `DENY` framing, same-origin opener and resource policies, `no-store` on the API and `no-cache` on
+  files. The API takes the bearer token or the cookie; any `Origin` but the engine's own is refused; a change on a
+  cookie needs the engine's own page (`Origin` and `Sec-Fetch-Site: same-origin`). `POST /v1/session/code` (bearer
+  only) and `POST /v1/session`.
+- **The port**: `[terminal] port = 47821` (settings version 4, migrated with a backup), bound exclusively, retried
+  for 5 s, then a free one reported as `port_fallback` (the watchdog alerts).
+- **Contracts 2.0** (review 1.R2 items 2 to 5): typed health (`FeedHealth`, `LedgerHealth`, `BackupHealth`, the
+  clock, GPU, API and plugins; the whole report in `detail`); `AlertView.at_local`; the time rule written down; a
+  test holding every wire integer to `_ns`, `_e6`, `_e2` or `SMALL_INTEGERS`; `SessionCode`, `SessionCodeIssued`;
+  a lowercase search key made once per market.
+- **`ikars open`** (`python -m ikars_engine open`): starts the engine if needed, gets a code with the bearer token,
+  opens Edge as an app window with `<data root>\browser` as its profile and extensions off.
+- **`demo-api`**: the real API server on made-up markets, books, ledger and alerts in a temporary folder.
+
+**Verified.** 1,377 Python tests pass (94%); ruff, mypy, the data guard and gitleaks are clean. **Live**, on the
+background engine:
+
+| Check | Result |
+|---|---|
+| Restart on the new code | settings migrated to version 4 (one backup); port 47821, no fallback; session key kept |
+| Sign in as the page does, restart the engine (new token), use the same cookie | **200 on the same port** (review 1.R2 item 1) |
+| The same with a stream open during the restart | same port, no fallback, the cookie still works |
+| A spent code; another origin; a change without the own page | 401; 403; 403 |
+| A UNC path and a drive path at the file route (after the fix) | 404, nothing outside the folder touched |
+| `ikars open` (the owner, at the console) | the IKARS Edge window opened and showed "Connected to the engine", API 2.0 |
+| After the restarts | feed connected, the ledger verified and reconciled exactly, restart gaps backfilled |
+
+**Review.**
+- **Per commit:** `5ce96fb` 2 pre-existing findings, fixed in `c08f9af` (a removed long-settled market did not move
+  the index version; a file gone mid-prune was counted as pruned); `8ce2538` none; `6f9b82f` 1 fixed (a non-ASCII
+  cookie raised in `compare_digest`, a 500, now refused); `22547ce` none; `ab83c07` none; `efc8824` none.
+- **Security review** (`/security-review`), 1 finding:
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | Medium: the public file route resolved the request path before checking it, so a UNC path (`\\host\share`) from any web page (an `<img>` at `127.0.0.1:47821`) made Windows contact that host and send the owner's NTLM credentials | Fixed in `ab83c07`: only plain names pass (no backslash, colon, empty part, `.` or `..`), checked on the text before any filesystem call; tested, and probed live |
+
+- **Merge review (medium), 8 findings:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | Overlapping gaps could store a trade twice: an earlier backfill's rows carry their fetch time, which M1.R's per-slice change stopped reading | Fixed in `efc8824`: the recent two hours read once per backfill; tested |
+  | 2 | The exclusive port bind might fail after a restart while old connections linger, so the terminal would lose its port | No change to the bind: tested on this Windows (rebinding works with TIME_WAIT, exclusive or not) and live with a stream open (same port). The fallback socket is now exclusive too |
+  | 3 | A second damaged copy (`.damaged.1`) escaped the storage budget; the recorder's docstring said damaged files are never deleted | Fixed in `efc8824`: the governor counts and prunes any `.damaged` name; docstring corrected; tested |
+  | 4 | An unreadable session key overwrote an earlier set-aside copy, and a passing read failure signed every terminal out | Fixed in `efc8824`: free names; only an undecryptable key is replaced, a read failure fails the start; tested |
+  | 5 | A wrong method on an API route was a plain-text 405, not the contract's JSON | Fixed in `efc8824`: a JSON error; tested |
+  | 6 | Each stream rebuilt the whole health report every 5 s | Fixed in `efc8824`: one view per half interval for all streams; tested |
+  | 7 | `ikars open` crashed on an `api.json` with a null port | Fixed in `efc8824`: waited past, then a plain refusal; tested |
+  | 8 | `demo-api --hz 0` crashed after starting | Fixed in `efc8824`: refused by the command line; tested |
+
+**M1.8a-web-1a built**, subject to the owner's merge.
