@@ -175,7 +175,8 @@ async def test_the_gap_log_by_days(ctx: ApiContext, tmp_path: Path) -> None:
 async def test_hello_health_and_recommendations(ctx: ApiContext) -> None:
     hello = await get(ctx, "/v1/hello", c.Hello)
     assert hello.api_version == c.API_VERSION and hello.schema_sha256 == c.schema_sha256()
-    assert (await get(ctx, "/v1/health", c.HealthView)).parts == {"kalshi": {"open_gaps": 0}}
+    health = await get(ctx, "/v1/health", c.HealthView)
+    assert health.feed.open_gaps == 0 and health.detail == {"kalshi": {"open_gaps": 0}}
     assert (await get(ctx, "/v1/recommendations", c.RecommendationPage)).items == []
 
 
@@ -741,3 +742,65 @@ def test_the_built_terminal_is_served_when_it_exists(tmp_path: Path) -> None:
     built.mkdir(parents=True)
     (built / "index.html").write_text("<!doctype html>", encoding="utf-8")
     assert terminal_root(tmp_path) == built
+
+
+# --- M1.8a-web-1a: contracts 2.0 (review 1.R2 items 2 to 5) --------------------------------------
+
+
+def test_health_is_typed_and_odd_values_become_none() -> None:
+    from ikars_engine.api import health_view
+
+    view = health_view({
+        "kalshi": {"feed": {"connected": True, "seconds_since_last_frame": 1},
+                   "open_gaps": "two", "books_ready": True, "watched": {"markets": 7},
+                   "storage": {"state": "ok"}},
+        "ledger": {"verified": True, "reconciled_exact": False, "records": 3, "errors": 0},
+        "backup": {"configured": True, "hours_since": 2, "last_error": None},
+        "clock": {"status": "ok", "offset_ms": 4}, "gpu": {"device": "Made-up GPU"},
+        "api": {"streams": 1, "port_fallback": False}, "plugins": {"demo": "running"},
+    })  # fmt: skip
+    assert view.feed.connected is True and view.feed.seconds_since_last_frame == 1.0
+    assert view.feed.open_gaps is None and view.feed.books_ready is None  # a str, a bool: refused
+    assert view.feed.watched_markets == 7 and view.storage_state == "ok"
+    assert view.ledger.reconciled_exact is False and view.backup.hours_since == 2
+    assert view.clock_offset_ms == 4.0 and view.gpu == "Made-up GPU"
+    assert view.port_fallback is False and view.plugins == {"demo": "running"}
+    assert health_view({}).feed.connected is None  # nothing measured yet
+    msgspec.json.encode(view)
+
+
+def test_every_integer_on_the_wire_is_exact_in_javascript() -> None:
+    """Review 1.R2 item 3: an integer field is a time (_ns), money (_e6), a count (_e2) or a known
+    small number; and every example's non-time integer fits 2^53."""
+    schema = json.loads(c.schema_text())
+    for name, definition in schema["$defs"].items():
+        for field, spec in definition.get("properties", {}).items():
+            kinds = [spec.get("type")] + [s.get("type") for s in spec.get("anyOf", [])]
+            if "integer" in kinds:
+                assert field.endswith(("_ns", "_e6", "_e2")) or field in c.SMALL_INTEGERS, (
+                    f"{name}.{field}: say which kind of integer it is"
+                )
+
+    def walk(value: Any, key: str = "") -> None:
+        if isinstance(value, dict):
+            for k, v in value.items():
+                walk(v, k)
+        elif isinstance(value, list):
+            for v in value:
+                walk(v, key)
+        elif isinstance(value, int) and not isinstance(value, bool) and not key.endswith("_ns"):
+            assert abs(value) <= 2**53, key
+
+    walk({n: msgspec.to_builtins(v) for n, v in c.examples().items()})
+
+
+def test_alerts_carry_their_local_time_by_name() -> None:
+    from ikars_engine.api import _alert
+
+    view = _alert(1, json.dumps({"at": "2026-01-01T05:00:00-07:00", "title": "t"}))
+    assert view is not None and view.at_local == "2026-01-01T05:00:00-07:00"
+
+
+def test_the_search_key_is_made_once_from_ticker_and_title() -> None:
+    market = info("KXA", 1)
+    assert market.search == "kxa\nmade up kxa"  # a line break: a query never spans the two

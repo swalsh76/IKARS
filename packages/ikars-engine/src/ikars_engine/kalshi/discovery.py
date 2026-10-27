@@ -16,7 +16,7 @@ the engine needs it for the watched set, the drill-down tree and tradability, no
 import logging
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -49,6 +49,12 @@ class MarketInfo:
     close_time: datetime | None
     result: str | None
     volume_24h_e2: int  # contracts traded in the last day, in hundredths
+    # the ticker and title in lower case, made once: the markets search reads it on every request
+    # (review 1.R2 item 5)
+    search: str = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "search", f"{self.ticker}\n{self.title}".lower())
 
 
 def _long_settled(

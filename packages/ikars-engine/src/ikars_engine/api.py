@@ -52,6 +52,7 @@ from ikars_engine.kalshi.discovery import OPEN_STATUSES, MarketIndex, MarketInfo
 from ikars_engine.ledger import KINDS, Ledger
 from ikars_engine.metrics import Metrics
 from ikars_engine.portfolio import Portfolio
+from ikars_engine.runmode import at
 from ikars_engine.session import COOKIE, Sessions
 from ikars_engine.store import Gap
 from ikars_engine.webserve import SECURITY_HEADERS, files_route
@@ -284,6 +285,53 @@ def utc_text(ns: int) -> str:
     return datetime.fromtimestamp(ns // NS, UTC).isoformat().replace("+00:00", "Z")
 
 
+def _typed[T](value: Any, kind: type[T]) -> T | None:
+    """``value`` when it is a ``kind`` (never a bool for a number), else None: an odd value in
+    the engine's report must never break the typed payload."""
+    if isinstance(value, bool) and kind is not bool:
+        return None
+    if kind is float and isinstance(value, int):
+        return float(value)  # type: ignore[return-value]
+    return value if isinstance(value, kind) else None
+
+
+def health_view(health: dict[str, Any]) -> c.HealthView:
+    """The engine's health report as the terminal's typed view (PLAN D3; review 1.R2 item 2)."""
+    plugins = at(health, "plugins")
+    return c.HealthView(
+        at_utc=now_utc(),
+        feed=c.FeedHealth(
+            connected=_typed(at(health, "kalshi", "feed", "connected"), bool),
+            seconds_since_last_frame=_typed(
+                at(health, "kalshi", "feed", "seconds_since_last_frame"), float
+            ),
+            open_gaps=_typed(at(health, "kalshi", "open_gaps"), int),
+            books_ready=_typed(at(health, "kalshi", "books_ready"), int),
+            watched_markets=_typed(at(health, "kalshi", "watched", "markets"), int),
+            trading_active=_typed(at(health, "kalshi", "trading_active"), bool),
+        ),
+        storage_state=_typed(at(health, "kalshi", "storage", "state"), str),
+        ledger=c.LedgerHealth(
+            verified=_typed(at(health, "ledger", "verified"), bool),
+            reconciled_exact=_typed(at(health, "ledger", "reconciled_exact"), bool),
+            records=_typed(at(health, "ledger", "records"), int),
+            errors=_typed(at(health, "ledger", "errors"), int),
+        ),
+        backup=c.BackupHealth(
+            configured=_typed(at(health, "backup", "configured"), bool),
+            hours_since=_typed(at(health, "backup", "hours_since"), int),
+            last_error=_typed(at(health, "backup", "last_error"), str),
+        ),
+        clock_status=_typed(at(health, "clock", "status"), str),
+        clock_offset_ms=_typed(at(health, "clock", "offset_ms"), float),
+        gpu=_typed(at(health, "gpu", "device"), str),
+        api_streams=_typed(at(health, "api", "streams"), int),
+        port_fallback=_typed(at(health, "api", "port_fallback"), bool),
+        plugins={str(k): str(v) for k, v in plugins.items()} if isinstance(plugins, dict) else {},
+        detail=health,
+    )
+
+
 def gap_view(gap: Gap) -> c.GapView:
     return c.GapView(
         id=gap.id, channel=gap.channel, reason=gap.reason, start_utc=utc_text(gap.start_ns),
@@ -382,7 +430,7 @@ def _alert(line: int, text: str) -> c.AlertView | None:
     return c.AlertView(
         line=line, key=str(entry.get("key", "")), priority=str(entry.get("priority", "")),
         title=str(entry.get("title", "")), text=str(entry.get("text", "")),
-        at=str(entry.get("at", "")), outcome=str(entry.get("outcome", "")),
+        at_local=str(entry.get("at", "")), outcome=str(entry.get("outcome", "")),
     )  # fmt: skip
 
 
@@ -450,7 +498,7 @@ def create_app(ctx: ApiContext) -> ASGIApp:
                              schema_sha256=c.schema_sha256()))  # fmt: skip
 
     async def health(request: Request) -> Response:
-        return _json(c.HealthView(at_utc=now_utc(), parts=ctx.health()))
+        return _json(health_view(ctx.health()))
 
     async def markets(request: Request) -> Response:
         query = request.query_params.get("q", "").strip().lower()
@@ -459,8 +507,7 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         limit = _int(request, "limit", 100, 1, MAX_PAGE) or 100
         found = [
             m for m in sorted_markets(ctx)
-            if (not query or query in m.ticker.lower() or query in m.title.lower())
-            and (category is None or m.category == category)
+            if (not query or query in m.search) and (category is None or m.category == category)
         ]  # fmt: skip
         page = [market_view(ctx, m) for m in found[offset : offset + limit]]
         return _json(c.MarketPage(items=page, total=len(found), offset=offset))
@@ -706,7 +753,7 @@ async def _events(ctx: ApiContext, state: Stream, request: Request) -> AsyncGene
                     yield _event(state, "alert", alert)
             if now - health_at >= HEALTH_EVERY_S:
                 health_at = now
-                yield _event(state, "health", c.HealthView(at_utc=now_utc(), parts=ctx.health()))
+                yield _event(state, "health", health_view(ctx.health()))
             await asyncio.sleep(ctx.coalesce_s)
     finally:
         ctx.streams.pop(state.id, None)

@@ -97,7 +97,8 @@ class Sessions:
         issued_text, _, rest = value.partition(".")
         expires_text, _, signature = rest.partition(".")
         body = f"{issued_text}.{expires_text}"
-        if not hmac.compare_digest(signature, self._sign(body)):
+        # compare_digest raises on non-ASCII text: such a value is no cookie of ours
+        if not value.isascii() or not hmac.compare_digest(signature, self._sign(body)):
             return False, None
         try:
             issued, expires = int(issued_text), int(expires_text)

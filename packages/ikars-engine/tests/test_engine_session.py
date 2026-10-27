@@ -62,7 +62,7 @@ def test_a_cookie_is_renewed_once_a_day_old_and_ends_after_its_days(tmp_path: Pa
     assert s.check(renewed)[0]
 
 
-@pytest.mark.parametrize("change", ["signature", "times", "shape"])
+@pytest.mark.parametrize("change", ["signature", "times", "shape", "non-ascii"])
 def test_a_forged_cookie_is_refused(tmp_path: Path, change: str) -> None:
     s = sessions(tmp_path)
     cookie = s.redeem(s.issue_code())
@@ -72,6 +72,7 @@ def test_a_forged_cookie_is_refused(tmp_path: Path, change: str) -> None:
         "signature": f"{issued}.{expires}.{signature[:-2]}AA",
         "times": f"{issued}.{int(expires) + 10**9}.{signature}",
         "shape": "x",
+        "non-ascii": f"{issued}.{expires}.{signature[:-1]}é",
     }[change]
     assert s.check(forged) == (False, None)
 

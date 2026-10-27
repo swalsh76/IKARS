@@ -17,7 +17,7 @@
     },
     "AlertView": {
       "properties": {
-        "at": {
+        "at_local": {
           "type": "string"
         },
         "key": {
@@ -45,7 +45,7 @@
         "priority",
         "title",
         "text",
-        "at",
+        "at_local",
         "outcome"
       ],
       "title": "AlertView",
@@ -65,6 +65,47 @@
         "detail"
       ],
       "title": "ApiError",
+      "type": "object"
+    },
+    "BackupHealth": {
+      "properties": {
+        "configured": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hours_since": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "configured",
+        "hours_since",
+        "last_error"
+      ],
+      "title": "BackupHealth",
       "type": "object"
     },
     "BookView": {
@@ -212,6 +253,80 @@
       "title": "CandlePage",
       "type": "object"
     },
+    "FeedHealth": {
+      "properties": {
+        "books_ready": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "connected": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "open_gaps": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seconds_since_last_frame": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trading_active": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "watched_markets": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "connected",
+        "seconds_since_last_frame",
+        "open_gaps",
+        "books_ready",
+        "watched_markets",
+        "trading_active"
+      ],
+      "title": "FeedHealth",
+      "type": "object"
+    },
     "GapPage": {
       "description": "``GET /v1/gaps``: newest first.",
       "properties": {
@@ -270,18 +385,103 @@
       "type": "object"
     },
     "HealthView": {
-      "description": "``GET /v1/health``: the engine's health as it reports it (counts and states only).",
+      "description": "``GET /v1/health`` and the stream's ``health`` event: what the terminal shows, typed (None\nwhere the engine has not measured it yet), and the engine's whole report in ``detail`` for the\nHealth screen's details (counts and states only).",
       "properties": {
+        "api_streams": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "at_utc": {
           "type": "string"
         },
-        "parts": {
+        "backup": {
+          "$ref": "#/$defs/BackupHealth"
+        },
+        "clock_offset_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clock_status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "detail": {
           "type": "object"
+        },
+        "feed": {
+          "$ref": "#/$defs/FeedHealth"
+        },
+        "gpu": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ledger": {
+          "$ref": "#/$defs/LedgerHealth"
+        },
+        "plugins": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "port_fallback": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "storage_state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "at_utc",
-        "parts"
+        "feed",
+        "storage_state",
+        "ledger",
+        "backup",
+        "clock_status",
+        "clock_offset_ms",
+        "gpu",
+        "api_streams",
+        "port_fallback",
+        "plugins",
+        "detail"
       ],
       "title": "HealthView",
       "type": "object"
@@ -305,6 +505,58 @@
         "schema_sha256"
       ],
       "title": "Hello",
+      "type": "object"
+    },
+    "LedgerHealth": {
+      "properties": {
+        "errors": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reconciled_exact": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "records": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "verified",
+        "reconciled_exact",
+        "records",
+        "errors"
+      ],
+      "title": "LedgerHealth",
       "type": "object"
     },
     "LedgerPage": {
@@ -878,5 +1130,5 @@
     "quote": "QuoteUpdate"
   },
   "title": "IKARS loopback API",
-  "version": "1.0"
+  "version": "2.0"
 }
