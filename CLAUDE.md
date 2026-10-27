@@ -129,7 +129,9 @@ slice still needs its own approved plan before code.
   **done** (PR #20 merged as `1aeb2bf`; the owner's console run passed: p99 19 ms). **M1.8a-web is complete.**
   **M1.8b plan APPROVED** (owner 2026-10-27, all as recommended; BUILD-LOG 1.8b): **1b-1** mock-ups of
   Settings and the wizard (approved before building), hotkeys, themes, Settings and the wizard; **1b-2** layouts
-  (sets of windows) and the support bundle. **Now: M1.8b-1** on branch `m1/8b`.
+  (sets of windows) and the support bundle. Mock-ups approved; skins added by the owner (built-in palettes
+  only). **M1.8b-1 built** on `m1/8b` (BUILD-LOG 1.8b-1; merge review 10 itemized): PR open, waiting for
+  the owner's merge. Then **M1.8b-2** (layouts, support bundle).
   That completes M1.8a-web. **Next:** M1.8b (Markets, Market), 2b (Ledger, Alerts, meter), then M1.8b. The owner allows `gh pr merge`
   by a local permission rule; merge only when asked.
 

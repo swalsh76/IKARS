@@ -2185,3 +2185,55 @@ placement no longer apply). **Owner's answers (2026-10-27): all as recommended.*
 - **Machine:** a settings migration (backup first) and the `support\` folder. **Packages:** none.
 - **Live checks:** each hotkey; the theme across a restart; two windows on two monitors saved and restored; the
   wizard on a scratch data folder; a bundle searched for the key id, token, share path and amounts.
+
+#### 1.8b-1 built (2026-10-27)
+
+**Built** on `m1/8b`: `fd8e4b8` (the mock-ups), `8e97baa` (hotkeys and themes), `74fe784` (the engine's settings
+for the terminal), `8581d27` (Settings, the wizard and skins), `95b9412` (the merge-review fixes). After M1.8a-web
+completed (PR #20, `1aeb2bf`). **No new packages.**
+
+- **Hotkeys** (`src/app/keys.ts`, `screens/Keys.tsx`): `Ctrl+K`, `Ctrl+1`..`5`, `Enter` (the Alerts screen), `B`,
+  `X`, `Ctrl+Shift+L`, `?` (the list; `T`/`I`/`D` and `C` shown as arriving in M1.12); single keys are left to a text
+  box, `Enter` to a focused control, `Esc` to the box unless the list is open.
+- **Skins** (owner: built-in palettes only): Dark, Light, High contrast, Midnight, Paper, or follow Windows; one
+  `Skin` type in `settings.py`, used by the settings, the contracts and the generated terminal type; `data-theme`
+  on the page; the chart repaints; loaded at start; `Ctrl+Shift+L` and the picker save it at once. CSP unchanged.
+- **Engine** (`settings_api.py`; routes `GET`/`PUT /v1/settings`, `POST /v1/settings/share-check` and
+  `share-init`, `POST /v1/engine/autostart` and `restart`): the view (the key as yes or no only, also from Windows'
+  current user variables with a restart note; which saved settings wait for a restart; start at sign-in), a change
+  checked and saved with a backup first (a skin makes none; the latest 20 kept), the share tested and set up in a
+  thread with a time limit and written only inside its `ikars\` folder, start at sign-in, and a restart (a marker
+  and a stop; `serve` starts the fresh engine before releasing its lock; a start spends a stale marker; a foreground
+  engine refuses). Off the event loop: the view, a change and start at sign-in. `demo-api` gets a config with an
+  in-memory registry and `--first-run`.
+- **Settings and the wizard** (the approved mock-ups): Settings with the skin picker, the key, alerts, ledger and
+  backups (a share test), feed and storage, terminal, and Save / Discard / Restart the engine; the wizard at
+  `/welcome` when there are no settings (key, engine and feed, backups: test, set up or skip, tax zone and quiet
+  hours, done with start at sign-in).
+
+**Verified.** Python 1,407 tests; Vitest 184 (98% lines, 92% functions); Playwright 14 screen tests in Edge (a skin
+kept across a reload; a change and its restart note; the whole wizard on a first-run demo server; hotkeys); lint,
+types, audit, data guard clean. **Live:** the engine restarted on the new code (the same port, the old cookie valid);
+its settings view: not a first run, skin system, nothing waiting for a restart, the key set (file found, readable by
+the owner only), the share set, start at sign-in installed, the tax zone America/Denver.
+
+**Review.**
+- **Per commit:** `8e97baa` 2 fixed before committing (Enter on a focused link or button, and Esc in a box, were
+  taken); `74fe784` 1 fixed (an unreadable settings file gave a 500: refused in words, never overwritten); `8581d27`
+  none; `95b9412` 1 fixed (an expandable registry value was not expanded).
+- **Merge review (medium), 10 findings, all fixed in `95b9412`:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | The settings view ran the task scheduler and file reads on the event loop (so did a change and start at sign-in) | In a thread |
+  | 2 | A restart request left behind (by a foreground engine) turned a later stop into a restart | A start spends it; a foreground engine refuses a restart; tested |
+  | 3 | The wizard saved a share before setting it up; a relative path was accepted | Set up first, saved only with its marker; a full path is required; tested |
+  | 4 | Every skin toggle made a new settings backup, without limit | A skin makes none; the latest 20 kept; tested |
+  | 5 | After a port change the restart said the window reconnects by itself | It says to reopen with ikars open on the new port |
+  | 6 | The key's status read the engine's own environment, fixed at its start | Also Windows' current user variables, with a restart note; tested |
+  | 7 | A bad tax zone in the file gave a 500; a blank zone was refused | Refused in words; blank means the workstation's; tested |
+  | 8 | The watchdog could start a second engine in the restart gap | The fresh engine starts before the old releases its lock |
+  | 9 | Three copies of the in-memory registry fake | One, `autostart.MemoryRegistry` |
+  | 10 | The skin's values were listed by hand in Python and TypeScript | One `Skin` Literal; the TypeScript type is generated from it |
+
+**M1.8b-1 built**, subject to the owner's merge.
