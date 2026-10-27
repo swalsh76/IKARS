@@ -1,0 +1,680 @@
+{
+  "$defs": {
+    "AlertPage": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AlertView"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "AlertPage",
+      "type": "object"
+    },
+    "AlertView": {
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "line",
+        "key",
+        "priority",
+        "title",
+        "text",
+        "at",
+        "outcome"
+      ],
+      "title": "AlertView",
+      "type": "object"
+    },
+    "ApiError": {
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "error",
+        "detail"
+      ],
+      "title": "ApiError",
+      "type": "object"
+    },
+    "BookView": {
+      "description": "A market's order book: both sides' bids, best first (Kalshi's books are bids only).",
+      "properties": {
+        "no": {
+          "items": {
+            "$ref": "#/$defs/Level"
+          },
+          "type": "array"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "ticker": {
+          "type": "string"
+        },
+        "yes": {
+          "items": {
+            "$ref": "#/$defs/Level"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ticker",
+        "ready",
+        "yes",
+        "no"
+      ],
+      "title": "BookView",
+      "type": "object"
+    },
+    "HealthView": {
+      "description": "``GET /v1/health``: the engine's health as it reports it (counts and states only).",
+      "properties": {
+        "at_utc": {
+          "type": "string"
+        },
+        "parts": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "at_utc",
+        "parts"
+      ],
+      "title": "HealthView",
+      "type": "object"
+    },
+    "Hello": {
+      "description": "``GET /v1/hello``: the version handshake (PLAN D20 G).",
+      "properties": {
+        "api_version": {
+          "type": "string"
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "schema_sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "api_version",
+        "engine_version",
+        "schema_sha256"
+      ],
+      "title": "Hello",
+      "type": "object"
+    },
+    "LedgerPage": {
+      "properties": {
+        "before": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "head_seq": {
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/LedgerRecordView"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items",
+        "head_seq",
+        "before"
+      ],
+      "title": "LedgerPage",
+      "type": "object"
+    },
+    "LedgerRecordView": {
+      "properties": {
+        "cash_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context": {
+          "type": "object"
+        },
+        "fields": {
+          "type": "object"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "ticker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "time_local": {
+          "type": "string"
+        },
+        "time_utc": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "seq",
+        "kind",
+        "time_utc",
+        "time_local",
+        "source",
+        "ticker",
+        "cash_e6",
+        "fields",
+        "context",
+        "note"
+      ],
+      "title": "LedgerRecordView",
+      "type": "object"
+    },
+    "LedgerStatusView": {
+      "properties": {
+        "head_seq": {
+          "type": "integer"
+        },
+        "reconciled_exact": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "records": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "tax_zone": {
+          "type": "string"
+        },
+        "verified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "records",
+        "head_seq",
+        "verified",
+        "reconciled_exact",
+        "tax_zone"
+      ],
+      "title": "LedgerStatusView",
+      "type": "object"
+    },
+    "Level": {
+      "properties": {
+        "count_e2": {
+          "type": "integer"
+        },
+        "price_e6": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "price_e6",
+        "count_e2"
+      ],
+      "title": "Level",
+      "type": "object"
+    },
+    "MarketPage": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/MarketView"
+          },
+          "type": "array"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "items",
+        "total",
+        "offset"
+      ],
+      "title": "MarketPage",
+      "type": "object"
+    },
+    "MarketView": {
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "close_time_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "event_ticker": {
+          "type": "string"
+        },
+        "last_price_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "series_ticker": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "ticker": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "volume_24h_e2": {
+          "type": "integer"
+        },
+        "watched": {
+          "type": "boolean"
+        },
+        "yes_ask_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "yes_bid_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ticker",
+        "title",
+        "event_ticker",
+        "series_ticker",
+        "category",
+        "status",
+        "close_time_utc",
+        "volume_24h_e2",
+        "yes_bid_e6",
+        "yes_ask_e6",
+        "last_price_e6",
+        "watched"
+      ],
+      "title": "MarketView",
+      "type": "object"
+    },
+    "PortfolioView": {
+      "properties": {
+        "cash_e6": {
+          "type": "integer"
+        },
+        "cost_e6": {
+          "type": "integer"
+        },
+        "exposure_by_category": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "exposure_by_event": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "positions": {
+          "items": {
+            "$ref": "#/$defs/PositionView"
+          },
+          "type": "array"
+        },
+        "unrealised_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cash_e6",
+        "cost_e6",
+        "unrealised_e6",
+        "positions",
+        "exposure_by_category",
+        "exposure_by_event"
+      ],
+      "title": "PortfolioView",
+      "type": "object"
+    },
+    "PositionView": {
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "cost_e6": {
+          "type": "integer"
+        },
+        "count_e2": {
+          "type": "integer"
+        },
+        "event_ticker": {
+          "type": "string"
+        },
+        "exit_fee_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exit_price_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "series_ticker": {
+          "type": "string"
+        },
+        "side": {
+          "type": "string"
+        },
+        "ticker": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "unrealised_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ticker",
+        "title",
+        "side",
+        "count_e2",
+        "cost_e6",
+        "event_ticker",
+        "series_ticker",
+        "category",
+        "exit_price_e6",
+        "exit_fee_e6",
+        "unrealised_e6"
+      ],
+      "title": "PositionView",
+      "type": "object"
+    },
+    "QuoteUpdate": {
+      "properties": {
+        "last_price_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "received_ns": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ticker": {
+          "type": "string"
+        },
+        "yes_ask_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "yes_bid_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ticker",
+        "yes_bid_e6",
+        "yes_ask_e6",
+        "last_price_e6",
+        "received_ns"
+      ],
+      "title": "QuoteUpdate",
+      "type": "object"
+    },
+    "RecommendationPage": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/RecommendationView"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "RecommendationPage",
+      "type": "object"
+    },
+    "RecommendationView": {
+      "description": "Filled from M1.12; the shape the Overview will show (provenance, PLAN D20 F, comes then).",
+      "properties": {
+        "at_utc": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "side": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "ticker": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "ticker",
+        "side",
+        "summary",
+        "at_utc"
+      ],
+      "title": "RecommendationView",
+      "type": "object"
+    },
+    "StreamOpened": {
+      "description": "The first event of every stream: its id, for ``PUT .../subscriptions``.",
+      "properties": {
+        "coalesce_ms": {
+          "type": "integer"
+        },
+        "stream_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "stream_id",
+        "coalesce_ms"
+      ],
+      "title": "StreamOpened",
+      "type": "object"
+    },
+    "Subscriptions": {
+      "additionalProperties": false,
+      "description": "``PUT /v1/stream/{id}/subscriptions``: the markets whose quotes and books to stream.",
+      "properties": {
+        "books": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "quotes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [],
+      "title": "Subscriptions",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "stream_events": {
+    "alert": "AlertView",
+    "book": "BookView",
+    "error": "ApiError",
+    "health": "HealthView",
+    "opened": "StreamOpened",
+    "portfolio": "PortfolioView",
+    "quote": "QuoteUpdate"
+  },
+  "title": "IKARS loopback API",
+  "version": "1.0"
+}

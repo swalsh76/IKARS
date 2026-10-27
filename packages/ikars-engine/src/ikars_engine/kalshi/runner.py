@@ -32,6 +32,8 @@ from ikars_core.rest import KalshiAccountClient, KalshiPublicClient
 from ikars_core.ws import FeedConfig, KalshiFeed
 
 from ikars_engine import gpu, taxzone
+from ikars_engine.alerts import ALERT_LOG
+from ikars_engine.api import ApiContext, ApiServer
 from ikars_engine.backup_service import BackupService
 from ikars_engine.clocks import WallClock
 from ikars_engine.engine import Engine
@@ -46,7 +48,7 @@ from ikars_engine.ledger_service import LedgerService
 from ikars_engine.logs import Redactor, configure
 from ikars_engine.metrics import Metrics
 from ikars_engine.paths import Paths
-from ikars_engine.portfolio import Held, holdings, portfolio
+from ikars_engine.portfolio import Held, Portfolio, holdings, portfolio
 from ikars_engine.recorder import Recorder
 from ikars_engine.settings import Settings
 from ikars_engine.share import configured, migration_copier
@@ -102,6 +104,7 @@ class Live:
     backup: BackupService
     account_client: KalshiAccountClient
     gpu_task: asyncio.Task[None]
+    api: ApiServer
 
 
 def describer(index: MarketIndex) -> Describe:
@@ -185,17 +188,39 @@ async def build(paths: Paths, settings: Settings) -> Live:
     engine.health_parts["ledger"] = service.health
     backups = BackupService(share, paths, state, clock)
     engine.health_parts["backup"] = backups.health
-    engine.health_parts["portfolio"] = PortfolioHealth(
-        ledger, source.quotes, index.fees.get, index.categories.get
-    )
+    held = PortfolioHealth(ledger, source.quotes, index.fees.get, index.categories.get)
+    engine.health_parts["portfolio"] = held
+
+    def api_context(token: str) -> ApiContext:
+        return ApiContext(
+            token=token,
+            health=engine.health,
+            index=index,
+            quotes=source.quotes,
+            last_price=source.last_price_e6,
+            changed_ns=source.changed_ns,
+            book_changed_ns=source.book_changed_ns,
+            books=source.books,
+            book_version=source.book_version,
+            watched=lambda: source.watched.current,
+            ledger=ledger,
+            ledger_health=service.health,
+            portfolio=held.portfolio,
+            alert_log=paths.data / ALERT_LOG,
+            metrics=metrics,
+            now_ns=clock.now_ns,
+        )
+
+    api = ApiServer(api_context, paths.data)
+    engine.health_parts["api"] = api.health
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
-    return Live(engine, source, state, ledger, service, backups, account_client, gpu_task)
+    return Live(engine, source, state, ledger, service, backups, account_client, gpu_task, api)
 
 
 class PortfolioHealth:
-    """The portfolio in health, as counts (its values go to the terminal, M1.7). The lots are
-    rebuilt only when the ledger's head moves, so a health call never replays the whole ledger
-    on the event loop; pricing them from the live quotes is cheap."""
+    """The portfolio, for health (as counts) and the API (in full). The lots are rebuilt only
+    when the ledger's head moves, so neither replays the whole ledger on the event loop; pricing
+    them from the live quotes is cheap."""
 
     def __init__(
         self,
@@ -211,11 +236,14 @@ class PortfolioHealth:
         self._seq = -1
         self._held: Held | None = None
 
-    def __call__(self) -> dict[str, object]:
+    def portfolio(self) -> Portfolio:
         seq = self._ledger.head().seq
         if self._held is None or seq != self._seq:
             self._held, self._seq = holdings(self._ledger), seq
-        held = portfolio(self._quotes, self._fees, self._categories, self._held)
+        return portfolio(self._quotes, self._fees, self._categories, self._held)
+
+    def __call__(self) -> dict[str, object]:
+        held = self.portfolio()
         priced = sum(1 for p in held.positions if p.unrealised_e6 is not None)
         return {"positions": len(held.positions), "priced": priced}
 
@@ -306,6 +334,8 @@ async def run(
         await live.ledger_service.start()  # after discovery, so records get market titles
         stack.push_async_callback(live.backup.stop)
         await live.backup.start()
+        stack.push_async_callback(live.api.stop)  # stops before the ledger it reads closes
+        await live.api.start()
         running.append(asyncio.create_task(engine.run(), name="engine"))
         if on_minute is not None:
             on_minute(engine.health())

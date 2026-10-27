@@ -264,6 +264,17 @@ class Ledger:
         for (body,) in self._db.execute(query + " ORDER BY seq", args):
             yield json.loads(body)
 
+    def page(self, before: int | None, limit: int, stream: str = "real") -> list[dict[str, Any]]:
+        """Up to ``limit`` record bodies with a sequence below ``before`` (all when None), newest
+        first: the API's ledger pages."""
+        query = "SELECT body FROM record WHERE stream = ?"
+        params: list[str | int] = [stream]
+        if before is not None:
+            query += " AND seq < ?"
+            params.append(before)
+        rows = self._db.execute(query + " ORDER BY seq DESC LIMIT ?", [*params, limit])
+        return [json.loads(body) for (body,) in rows]
+
     def hash_at(self, seq: int, stream: str = "real") -> str | None:
         row = self._db.execute(
             "SELECT hash FROM record WHERE stream = ? AND seq = ?", (stream, seq)

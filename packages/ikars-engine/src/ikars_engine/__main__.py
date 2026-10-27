@@ -93,6 +93,9 @@ def main(argv: list[str]) -> int:
 
     ledger_cli.add_parser(commands)
     runmode_cli.add_parsers(commands)
+    exporter = commands.add_parser("contracts", help="the API's JSON Schema and golden examples")
+    exporter.add_argument("action", choices=["export"])
+    exporter.add_argument("--to", default="contracts", help="the folder (default: ./contracts)")
     try:
         args = parser.parse_args(argv[1:])
     except SystemExit as exc:
@@ -112,6 +115,11 @@ def main(argv: list[str]) -> int:
         except KeyboardInterrupt:
             return 0
         print(json.dumps(health.get("kalshi"), indent=2, default=str))
+        return 0
+    if args.command == "contracts":
+        from ikars_engine.contracts import export
+
+        print(json.dumps({"written": len(export(Path(args.to)))}))
         return 0
     if args.command in runmode_cli.COMMANDS:
         from ikars_engine.kalshi.runner import default_paths

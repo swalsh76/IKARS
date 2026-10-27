@@ -1,0 +1,15 @@
+{
+  "cash_e6": 100000000,
+  "context": {},
+  "fields": {
+    "amount_e6": 100000000,
+    "status": "applied"
+  },
+  "kind": "deposit",
+  "note": null,
+  "seq": 1,
+  "source": "deposit",
+  "ticker": null,
+  "time_local": "2025-12-31T17:00:00-07:00",
+  "time_utc": "2026-01-01T00:00:00.000000000Z"
+}

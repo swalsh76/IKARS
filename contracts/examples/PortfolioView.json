@@ -1,0 +1,26 @@
+{
+  "cash_e6": 100000000,
+  "cost_e6": 1518000,
+  "exposure_by_category": {
+    "Demo": 1518000
+  },
+  "exposure_by_event": {
+    "KXDEMO-26JAN01": 1518000
+  },
+  "positions": [
+    {
+      "category": "Demo",
+      "cost_e6": 1518000,
+      "count_e2": 300,
+      "event_ticker": "KXDEMO-26JAN01",
+      "exit_fee_e6": 60000,
+      "exit_price_e6": 550000,
+      "series_ticker": "KXDEMO",
+      "side": "yes",
+      "ticker": "KXDEMO-26JAN01-T50",
+      "title": "Made-up market",
+      "unrealised_e6": 72000
+    }
+  ],
+  "unrealised_e6": 72000
+}

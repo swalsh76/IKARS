@@ -158,6 +158,12 @@ class KalshiSource:
         self.last_received: dict[str, int] = {}
         self.last_price_e6: dict[str, int] = {}
         self.quotes: dict[str, tuple[int | None, int | None]] = {}  # ticker -> (YES bid, YES ask)
+        # for the API's stream (M1.7): when each market's quote and book last changed (the frame's
+        # received time; kept apart so neither makes the other's latency look smaller), and each
+        # book's version, so only what changed is sent
+        self.changed_ns: dict[str, int] = {}
+        self.book_changed_ns: dict[str, int] = {}
+        self.book_version: dict[str, int] = {}
         self._live_since = 0  # when the subscriptions went live: a loss starts here at the latest
         self._snapshots = 0
         self._snapshot_wanted: set[str] = set()  # asked for, not yet arrived
@@ -278,6 +284,7 @@ class KalshiSource:
         published: int | None = None
         if isinstance(message, TickerMsg):
             ticker = message.market_ticker
+            before = (self.quotes.get(ticker), self.last_price_e6.get(ticker))
             if message.price_e6 is not None:
                 self.last_price_e6[ticker] = message.price_e6
             if message.yes_bid_e6 is not None or message.yes_ask_e6 is not None:
@@ -286,6 +293,8 @@ class KalshiSource:
                     bid if message.yes_bid_e6 is None else message.yes_bid_e6,
                     ask if message.yes_ask_e6 is None else message.yes_ask_e6,
                 )
+            if (self.quotes.get(ticker), self.last_price_e6.get(ticker)) != before:
+                self.changed_ns[ticker] = at  # a volume-only frame leaves the quote's time
             published = message.ts_ms
             if ticker in self.watched.current:
                 self.recorder.write("ticker", self._ticker_row(message, at))
@@ -305,6 +314,7 @@ class KalshiSource:
             ticker = message.market_ticker
             book = self.books.setdefault(ticker, OrderBook(ticker))
             book.apply_snapshot(message)
+            self._book_changed(ticker, at)
             self._snapshot_wanted.discard(ticker)
             self._snapshots += 1
             for side, levels in (("yes", message.yes), ("no", message.no)):
@@ -319,7 +329,9 @@ class KalshiSource:
             published = message.ts_ms
             self.watched.note_delta(ticker)
             book = self.books.setdefault(ticker, OrderBook(ticker))
-            if book.apply_delta(message) is Applied.BROKEN:
+            applied = book.apply_delta(message)
+            self._book_changed(ticker, at)
+            if applied is Applied.BROKEN:
                 self._metrics.count("kalshi.book.broken")
                 self._request_snapshots([ticker])
             self.recorder.write(
@@ -338,6 +350,10 @@ class KalshiSource:
                 payload=message.model_dump(mode="json"),
             )
         )
+
+    def _book_changed(self, ticker: str, at: int) -> None:
+        self.book_version[ticker] = self.book_version.get(ticker, 0) + 1
+        self.book_changed_ns[ticker] = at
 
     @staticmethod
     def _ticker_row(message: TickerMsg, at: int) -> dict[str, Any]:

@@ -1,0 +1,9 @@
+{
+  "at": "2026-01-01T12:00:00-07:00",
+  "key": "watchdog:engine",
+  "line": 1,
+  "outcome": "shown",
+  "priority": "urgent",
+  "text": "the engine is not running",
+  "title": "problem"
+}

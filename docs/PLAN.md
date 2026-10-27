@@ -103,10 +103,11 @@ and approved in M1 before any screen is built:
   on the workstation for live market data. **No trading key** until the live-trading milestone (D6, M7).
 - The engine stays OS-neutral Python, so it can move to the server host later without a rewrite.
 
-### D3. Engine-to-terminal link: loopback WebSocket + HTTP, JSON (APPROVED 2026-10-26)
+### D3. Engine-to-terminal link: loopback HTTP + Server-Sent Events, JSON (APPROVED 2026-10-26; SSE 2026-10-27)
 
-- Engine serves `127.0.0.1` only: HTTP for snapshots and commands, one WebSocket for pushed **deltas** (markets,
-  source items, recommendations, health). Server: Starlette/uvicorn; serialisation with `msgspec` (fastest
+- Engine serves `127.0.0.1` only: HTTP for snapshots and commands, one **Server-Sent Events** stream for pushed
+  **deltas** (markets, source items, recommendations, health), with subscriptions changed over HTTP (owner,
+  2026-10-27: amended from one WebSocket, so KalTerm3's tested SSE client and reconnect code carry over). Server: Starlette/uvicorn; serialisation with `msgspec` (fastest
   validated JSON in Python).
 - The terminal coalesces updates and repaints at a fixed rate (about 5 to 10 Hz) so WPF stays light under bursts.
 - Contracts are defined once in the engine and exported as JSON Schema; the C# records are generated/checked from
@@ -642,7 +643,8 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 | M1.4b Kalshi feeds and recording | **done** (BUILD-LOG 1.4b; PR #5 merged as `58abbe5`); recording volume of about 2.1 GB a day accepted as is |
 | M1.5a Audit ledger | **done** (BUILD-LOG 1.5a; PR #7 merged as `087b819`): reconciles exactly with Kalshi |
 | M1.5b Share backups, restore drill, portfolio | **done** (BUILD-LOG 1.5b; PR #8 merged as `5b6f702`) |
-| M1.6 Run mode and alerts | **built and verified live** (BUILD-LOG 1.6); PR waiting for the owner's merge; the owner's sign-out check of auto-start pending |
+| M1.6 Run mode and alerts | **done** (BUILD-LOG 1.6; PR #9 merged as `2efc95f`); the owner's sign-out check of auto-start pending |
+| M1.7 Loopback API and contracts | **built and verified live** (BUILD-LOG 1.7): p99 feed-to-stream ≤ 200 ms; PR waiting for the owner's merge |
 
 ## 9. Parking lot
 

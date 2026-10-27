@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Ikars.Contracts/Ikars.Contracts.csproj" />
     <Project Path="src/Ikars.Core/Ikars.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Ikars.Contracts.Tests/Ikars.Contracts.Tests.csproj" />
     <Project Path="tests/Ikars.Core.Tests/Ikars.Core.Tests.csproj" />
   </Folder>
 </Solution>
