@@ -209,6 +209,9 @@ async def build(paths: Paths, settings: Settings) -> Live:
             alert_log=paths.data / ALERT_LOG,
             metrics=metrics,
             now_ns=clock.now_ns,
+            candles=lambda series, ticker, start, end, interval: data.candlesticks(
+                series, ticker, start_ts=start, end_ts=end, period_interval=interval
+            ),
         )
 
     api = ApiServer(api_context, paths.data)

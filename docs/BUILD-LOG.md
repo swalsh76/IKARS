@@ -1430,7 +1430,7 @@ runs, and a loopback port while it listens. Nothing else, and no firewall change
 
 **M1.7 done:** PR #10 merged as `0ba5d83` (2026-10-27).
 
-### 1.8 Terminal shell (plan PROPOSED 2026-10-27; branch `m1/8-terminal`)
+### 1.8 Terminal shell (plan APPROVED 2026-10-27, all five answers as recommended; branch `m1/8-terminal`)
 
 **Proposed split** (like M1.4 and M1.5): **M1.8a** the shell, the client, navigation and the main screens;
 **M1.8b** hotkeys, layouts, themes, settings with the first-run wizard, and the support bundle. Each is reviewed
@@ -1518,3 +1518,10 @@ MVVM helpers are reused instead of a toolkit.
    - *Recommended:* the views stay thin (XAML and minimal code-behind) and are left out of the 90% line gate; the
      view models, client and navigation are held to it.
    - *Alternative:* UI automation tests to cover the views too, which are slower and more brittle.
+
+**Owner's answers (2026-10-27):** all five as recommended:
+1. split into M1.8a and M1.8b;
+2. later panels drawn now, each with an "arrives in" note;
+3. ScottPlot with the engine's candles route;
+4. p99 frame time at most 33 ms while 100 markets stream;
+5. thin views left out of the coverage gate, with view models, client and navigation held to it.

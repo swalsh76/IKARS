@@ -100,9 +100,8 @@ slice still needs its own approved plan before code.
   **M1.5a done** (PR #7 merged as `087b819`): reconciles **exactly** with Kalshi.
   **M1.5 done** (PR #8 merged as `5b6f702`): the real ledger lives in `%LOCALAPPDATA%\IKARS\ledger`; share backups
   and the restore drill pass. **M1.6 done** (PR #9 merged as `2efc95f`): the engine runs in the background with the watchdog task and
-  auto-start (the owner's sign-out check pending). **M1.7 done** (PR #10 merged as `0ba5d83`): token-guarded loopback API with an SSE stream. **M1.8 plan
-  PROPOSED** (BUILD-LOG 1.8, branch `m1/8-terminal`): waiting for the owner's answers (split a/b, placeholder panels,
-  chart, frame-time target, WPF coverage gate). No code before approval. The owner allows
+  auto-start (the owner's sign-out check pending). **M1.7 done** (PR #10 merged as `0ba5d83`): token-guarded loopback API with an SSE stream. **M1.8 plan APPROVED** (BUILD-LOG 1.8: split a/b, later panels drawn with notes, ScottPlot + candles route, p99
+  frame <= 33 ms, views out of the coverage gate). **M1.8a in progress** on `m1/8-terminal`. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

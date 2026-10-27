@@ -107,6 +107,20 @@ public sealed record AlertView(long Line, string Key, string Priority, string Ti
 /// <summary><c>GET /v1/alerts</c>.</summary>
 public sealed record AlertPage(IReadOnlyList<AlertView> Items);
 
+/// <summary>One period of a market's prices: the traded band (null when nothing traded), the closing bid and ask, volume.</summary>
+public sealed record Candle(
+    string EndUtc,
+    long? OpenE6,
+    long? HighE6,
+    long? LowE6,
+    long? CloseE6,
+    long? BidCloseE6,
+    long? AskCloseE6,
+    long? VolumeE2);
+
+/// <summary><c>GET /v1/markets/{ticker}/candles</c>, oldest first.</summary>
+public sealed record CandlePage(string Ticker, long IntervalMinutes, IReadOnlyList<Candle> Items);
+
 /// <summary>A recommendation (filled from M1.12).</summary>
 public sealed record RecommendationView(string Id, string Ticker, string Side, string Summary, string AtUtc);
 

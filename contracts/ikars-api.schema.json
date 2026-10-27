@@ -98,6 +98,120 @@
       "title": "BookView",
       "type": "object"
     },
+    "Candle": {
+      "description": "One period of a market's prices (Kalshi's candlestick): the traded band (None when nothing\ntraded), the closing YES bid and ask, and the contracts traded.",
+      "properties": {
+        "ask_close_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bid_close_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "close_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_utc": {
+          "type": "string"
+        },
+        "high_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "low_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "open_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "volume_e2": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "end_utc",
+        "open_e6",
+        "high_e6",
+        "low_e6",
+        "close_e6",
+        "bid_close_e6",
+        "ask_close_e6",
+        "volume_e2"
+      ],
+      "title": "Candle",
+      "type": "object"
+    },
+    "CandlePage": {
+      "description": "``GET /v1/markets/{ticker}/candles``: oldest first.",
+      "properties": {
+        "interval_minutes": {
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Candle"
+          },
+          "type": "array"
+        },
+        "ticker": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ticker",
+        "interval_minutes",
+        "items"
+      ],
+      "title": "CandlePage",
+      "type": "object"
+    },
     "HealthView": {
       "description": "``GET /v1/health``: the engine's health as it reports it (counts and states only).",
       "properties": {

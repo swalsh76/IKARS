@@ -1,0 +1,16 @@
+{
+  "interval_minutes": 1,
+  "items": [
+    {
+      "ask_close_e6": 430000,
+      "bid_close_e6": 410000,
+      "close_e6": 420000,
+      "end_utc": "2026-01-01T12:01:00Z",
+      "high_e6": 430000,
+      "low_e6": 400000,
+      "open_e6": 410000,
+      "volume_e2": 2500
+    }
+  ],
+  "ticker": "KXDEMO-26JAN01-T50"
+}

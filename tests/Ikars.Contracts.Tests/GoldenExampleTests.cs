@@ -25,6 +25,8 @@ public class GoldenExampleTests
         ["LedgerPage"] = typeof(LedgerPage),
         ["AlertView"] = typeof(AlertView),
         ["AlertPage"] = typeof(AlertPage),
+        ["Candle"] = typeof(Candle),
+        ["CandlePage"] = typeof(CandlePage),
         ["RecommendationView"] = typeof(RecommendationView),
         ["RecommendationPage"] = typeof(RecommendationPage),
         ["Subscriptions"] = typeof(Subscriptions),

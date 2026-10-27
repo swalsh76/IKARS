@@ -192,6 +192,9 @@ async def test_ledger_status_and_pages(ctx: ApiContext) -> None:
     rest = await get(ctx, f"/v1/ledger/records?limit=2&before={first.before}", c.LedgerPage)
     assert [r.seq for r in rest.items] == [1] and rest.before is None
     assert rest.items[0].cash_e6 == 1_000_000 and rest.items[0].kind == "deposit"
+    ctx.ledger.append(Entry("fill", T0 + 9, "fill", "f9", ticker="KXA", cash_e6=-400_000))
+    one = await get(ctx, "/v1/ledger/records?ticker=KXA", c.LedgerPage)
+    assert [(r.seq, r.ticker) for r in one.items] == [(4, "KXA")]  # one market's records
 
 
 async def test_the_alert_log_by_line(ctx: ApiContext) -> None:
@@ -434,3 +437,46 @@ async def test_the_stream_cap_holds_when_streams_arrive_together(ctx: ApiContext
         ctx.streams[f"busy{n}"] = Stream(id=f"busy{n}")
     late = [chunk async for chunk in _events(ctx, Stream(id="late"), FakeRequest(5))]  # type: ignore[arg-type]
     assert len(late) == 1 and b"event: error" in late[0] and "late" not in ctx.streams
+
+
+# --- the candles route (M1.8a) ------------------------------------------------------------------
+
+
+def made_up_candles() -> list[Any]:
+    from ikars_core.models import Candlestick
+
+    return [Candlestick.model_validate({
+        "end_period_ts": 1_767_225_660,
+        "price": {"open_dollars": "0.4100", "close_dollars": "0.4200",
+                  "high_dollars": "0.4300", "low_dollars": "0.4000"},
+        "yes_bid": {"close_dollars": "0.4100"}, "yes_ask": {"close_dollars": "0.4300"},
+        "volume_fp": "25.00",
+    })]  # fmt: skip
+
+
+async def test_candles_are_served_cached_and_refused_cleanly(ctx: ApiContext) -> None:
+    calls: list[tuple[str, str, int, int, int]] = []
+
+    async def candles(series: str, ticker: str, start: int, end: int, interval: int) -> list[Any]:
+        calls.append((series, ticker, start, end, interval))
+        return made_up_candles()
+
+    ctx.candles = candles
+    page = await get(ctx, "/v1/markets/KXA/candles?interval=1&hours=2", c.CandlePage)
+    assert page.interval_minutes == 1 and page.items[0].close_e6 == 420_000
+    assert page.items[0].volume_e2 == 2_500 and page.items[0].end_utc.endswith("Z")
+    series, ticker, start, end, interval = calls[0]
+    assert (series, ticker, interval, end - start) == ("KXDEMO", "KXA", 1, 2 * 3600)
+    await get(ctx, "/v1/markets/KXA/candles?interval=1&hours=2", c.CandlePage)
+    assert len(calls) == 1  # the second within a minute came from the cache
+    assert (await get(ctx, "/v1/markets/NOPE/candles", c.ApiError, 404)).error == "not_found"
+    assert (
+        await get(ctx, "/v1/markets/KXA/candles?interval=5", c.ApiError, 400)
+    ).error == "bad_request"
+
+    async def failing(*args: Any) -> list[Any]:
+        raise RuntimeError("Kalshi said no")
+
+    ctx.candles = failing
+    refused = await get(ctx, "/v1/markets/KXB/candles", c.ApiError, 503)
+    assert refused.error == "unavailable" and "said no" not in refused.detail
