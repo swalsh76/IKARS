@@ -1,13 +1,18 @@
 """Backups while the engine runs (PLAN D18): once a day, and at start when the last one is older.
 
-The copying runs in a worker thread (it opens its own SQLite connections), so the feed is never held
-up. The time of the last good backup is a bookmark in the state store; a failed or skipped backup is
-counted and shown in health (by type: a message could name the share). M1.6 adds the logon task, so
-backups run whenever the engine does.
+The copying runs in a daemon thread (it opens its own SQLite connections), so the feed is never
+held up, and a NAS that stops answering never holds up the engine's exit. The time of the last
+good backup is a bookmark in the state store; a failed or skipped backup is counted and shown in
+health (by type: a message could name the share). M1.6 adds the logon task, so backups run
+whenever the engine does.
 """
 
 import asyncio
+import contextlib
 import logging
+import threading
+from collections.abc import Callable
+from typing import Any
 
 from ikars_engine.clocks import EventClock
 from ikars_engine.ledger import iso_utc
@@ -18,6 +23,33 @@ from ikars_engine.store import StateStore
 log = logging.getLogger("ikars_engine.backup")
 LAST_OK = "backup.last_ok_ns"
 NS = 1_000_000_000
+
+
+async def in_daemon_thread[T](work: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    """Run ``work`` in a daemon thread and await it. Unlike ``asyncio.to_thread``, a call stuck on
+    a NAS that stopped answering never holds up the engine's exit (a copy cut short leaves only a
+    temporary name on the share)."""
+    loop = asyncio.get_running_loop()
+    done: asyncio.Future[T] = loop.create_future()
+
+    def settle(result: T | None, error: BaseException | None) -> None:
+        if done.cancelled():
+            return
+        if error is not None:
+            done.set_exception(error)
+        else:
+            done.set_result(result)  # type: ignore[arg-type]
+
+    def run() -> None:
+        try:
+            result, error = work(*args, **kwargs), None
+        except BaseException as exc:  # handed to the awaiting coroutine
+            result, error = None, exc
+        with contextlib.suppress(RuntimeError):  # the loop is gone: the engine exited meanwhile
+            loop.call_soon_threadsafe(settle, result, error)
+
+    threading.Thread(target=run, name="ikars-backup", daemon=True).start()
+    return await done
 
 
 class BackupService:
@@ -70,7 +102,7 @@ class BackupService:
         now = self._clock.now_ns()
         self.runs += 1
         try:
-            self.last = await asyncio.to_thread(
+            self.last = await in_daemon_thread(
                 back_up,
                 self._share,
                 ledger=self._paths.ledger / "ledger.sqlite",

@@ -15,7 +15,7 @@ import pytest
 from ikars_core.fees import FeeSchedule
 from ikars_engine.backup_service import LAST_OK, BackupService
 from ikars_engine.clocks import VirtualClock
-from ikars_engine.kalshi.runner import migration_copier, portfolio_counts
+from ikars_engine.kalshi.runner import PortfolioHealth
 from ikars_engine.ledger import Entry, Ledger
 from ikars_engine.ledger_import import fill_cash, replay
 from ikars_engine.paths import Paths
@@ -26,6 +26,7 @@ from ikars_engine.share import (
     Share,
     ShareError,
     back_up,
+    migration_copier,
     restore_drill,
     sha256,
 )
@@ -129,10 +130,11 @@ def test_a_backup_writes_the_tree_and_nothing_else(nas: Path, tmp_path: Path) ->
     assert (root / "ledger" / "checkpoints" / "2026" / "2026-01-01.json").is_file()
     assert share.check_folder(root / "state" / "daily" / "2026" / "2026-01-01")
     assert (root / "config" / "settings.toml").read_text(encoding="utf-8") == "version = 3\n"
-    assert not list(root.rglob("*.tmp")) and not (paths.data / "backup-staging").exists()
+    assert not list(root.rglob("*.tmp"))
+    assert not any((paths.data / "backup-staging").iterdir())  # each run removes its own
     assert kaps_untouched(nas) == before
     again = run_backup(share, paths)  # the same day again: replaced, nothing new sent
-    assert again.checkpoints == 0 and share.check_folder(daily)
+    assert again.checkpoints == 1 and share.check_folder(daily)  # the newest is always resent
 
 
 def test_without_the_marker_nothing_is_written(nas: Path, tmp_path: Path) -> None:
@@ -299,9 +301,14 @@ def made_up_book(tmp_path: Path) -> Ledger:
     return ledger
 
 
+def portfolio_of(ledger: Ledger, quotes: Any, fees: Any, categories: Any) -> Any:
+    return portfolio(quotes, fees, categories, holdings(ledger))
+
+
 def test_fifo_lots_keep_every_millionth(tmp_path: Path) -> None:
     ledger = made_up_book(tmp_path)
-    held, cash = holdings(ledger)
+    found = holdings(ledger)
+    held, cash = found.lots, found.cash_e6
     assert sorted(held) == ["KXS-26-T", "KXS-26-U", "KXW-26-W"]
     t = held["KXS-26-T"]
     # lot 1 (4.07) closed whole; 2 of lot 2's 5 closed: 2.53 x 3/5 = 1.518 left
@@ -317,7 +324,7 @@ def test_positions_are_marked_at_the_bid_after_the_exit_fee(tmp_path: Path) -> N
     ledger = made_up_book(tmp_path)
     terms = FeeSchedule(1_000_000, 25)
     quotes = {"KXS-26-T": (550_000, 570_000), "KXW-26-W": (580_000, 620_000)}
-    held = portfolio(ledger, quotes, lambda s: terms, {"KXS": "Sports", "KXW": "Weather"}.get)
+    held = portfolio_of(ledger, quotes, lambda s: terms, {"KXS": "Sports", "KXW": "Weather"}.get)
     by = {p.ticker: p for p in held.positions}
     t = by["KXS-26-T"]
     # 3 YES at the 55c bid: 1.65; fee 0.07 x 3 x .55 x .45 = 0.051975 -> 0.06; less cost 1.518
@@ -330,14 +337,13 @@ def test_positions_are_marked_at_the_bid_after_the_exit_fee(tmp_path: Path) -> N
     assert held.exposure("category") == {"Sports": 1_518_000 + 770_000, "Weather": 800_000}
     assert held.exposure("event_ticker")["KXW-26"] == 800_000
     assert t.title == "Made up KXS-26-T" and held.cost_e6 == 3_088_000
-    unmodelled = portfolio(ledger, quotes, lambda s: None, lambda s: None)
+    unmodelled = portfolio_of(ledger, quotes, lambda s: None, lambda s: None)
     assert all(p.unrealised_e6 is None for p in unmodelled.positions)
-    no_bid = portfolio(ledger, {"KXS-26-T": (0, 10_000)}, lambda s: terms, lambda s: None)
+    no_bid = portfolio_of(ledger, {"KXS-26-T": (0, 10_000)}, lambda s: terms, lambda s: None)
     zero = next(p for p in no_bid.positions if p.ticker == "KXS-26-T")
     assert (zero.exit_fee_e6, zero.unrealised_e6) == (0, -1_518_000)
-    assert portfolio_counts(ledger, quotes, lambda s: terms, lambda s: None) == {
-        "positions": 3, "priced": 2,
-    }  # fmt: skip
+    health = PortfolioHealth(ledger, quotes, lambda s: terms, lambda s: None)
+    assert health() == {"positions": 3, "priced": 2} and health() == health()
     ledger.close()
 
 
@@ -390,7 +396,9 @@ def test_the_portfolio_command_shapes_dollars_and_counts(tmp_path: Path) -> None
 
     ledger = made_up_book(tmp_path)
     terms = FeeSchedule(1_000_000, 25)
-    held = portfolio(ledger, {"KXS-26-T": (550_000, 570_000)}, lambda s: terms, lambda s: "Sports")
+    held = portfolio_of(
+        ledger, {"KXS-26-T": (550_000, 570_000)}, lambda s: terms, lambda s: "Sports"
+    )
     shown = _dollars(held)
     first = shown["positions"][0]  # type: ignore[index]
     assert first["ticker"] == "KXS-26-T" and first["contracts"] == "3.00"
@@ -433,3 +441,124 @@ def test_the_commands_refuse_cleanly_without_a_usable_share(
     assert main([*base, "init", "--share", gone]) == 1
     assert json.loads(capsys.readouterr().out)["problem"] == "the share is not reachable"
     assert load(root / "settings.toml").backup.share == ""  # nothing saved
+
+
+# --- the M1.5b merge review's findings ----------------------------------------------------------
+
+
+def test_two_backups_at_once_never_tear_a_copy(nas: Path, tmp_path: Path) -> None:
+    """Review 1: the engine's and the command's backups shared a staging folder and temp names."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    share = Share(str(nas))
+    share.init(T0)
+    paths = make_data(tmp_path / "ikars-data")
+    with ThreadPoolExecutor(2) as pool:
+        runs = [pool.submit(run_backup, share, paths) for _ in range(2)]
+    outcomes = []
+    for run in runs:
+        try:
+            outcomes.append(run.result().ledger_head.seq)
+        except (OSError, ShareError):  # at worst one says it failed; nothing is torn
+            outcomes.append(None)
+    assert 3 in outcomes
+    daily = nas / "ikars" / "ledger" / "daily" / "2026" / "2026-01-01"
+    assert share.check_folder(daily)
+    assert not list((nas / "ikars").rglob("*.tmp"))
+
+
+def test_a_half_replaced_day_is_ignored_and_swept_later(nas: Path, tmp_path: Path) -> None:
+    """Review 2: a day folder is swapped in whole; what a dead run left is swept after an hour."""
+    share = Share(str(nas))
+    share.init(T0)
+    paths = make_data(tmp_path / "ikars-data")
+    year = nas / "ikars" / "ledger" / "daily" / "2026"
+    year.mkdir(parents=True)
+    stale = year / "2026-01-01.dead.old"
+    stale.mkdir()
+    os.utime(stale, (1, 1))  # long ago
+    fresh = year / "2026-01-01.other.new"  # another run's work in progress
+    fresh.mkdir()
+    assert share.newest_daily() is None  # neither counts as a day
+    run_backup(share, paths)
+    assert not stale.exists() and fresh.exists()
+    assert share.newest_daily() == year / "2026-01-01"
+
+
+def test_only_missing_and_the_newest_checkpoints_are_sent(nas: Path, tmp_path: Path) -> None:
+    """Review 8: every run re-read every checkpoint on the share, a list that only grows."""
+    share = Share(str(nas))
+    share.init(T0)
+    paths = make_data(tmp_path / "ikars-data")
+    ledger = Ledger(paths.ledger / "ledger.sqlite", UTC)
+    for day in (1, 2):
+        ledger.checkpoint(paths.ledger / "checkpoints", T0 + day * DAY_NS)
+    ledger.close()
+    assert run_backup(share, paths).checkpoints == 3
+    assert run_backup(share, paths).checkpoints == 2  # the newest two; the oldest stays
+
+
+def test_the_drill_says_when_the_share_is_away(
+    nas: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review 7: an unreachable share read as "no backup", and a read error was a traceback."""
+    paths = make_data(tmp_path / "ikars-data")
+    local = Ledger(paths.ledger / "ledger.sqlite", UTC)
+    away = restore_drill(Share(str(tmp_path / "unmounted")), local, tmp_path / "d1")
+    assert away.problem == "the share is not reachable"
+    share = Share(str(nas))
+    share.init(T0)
+    run_backup(share, paths)
+
+    def dropped(*args: Any) -> None:
+        raise OSError("the network name is no longer available")
+
+    monkeypatch.setattr("ikars_engine.share.shutil.copyfile", dropped)
+    cut = restore_drill(share, local, tmp_path / "d2")
+    assert cut.problem == "the share could not be read (OSError)"
+    local.close()
+
+
+def test_portfolio_health_rebuilds_lots_only_when_the_ledger_moves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review 4: every health call replayed the whole ledger on the event loop."""
+    ledger = made_up_book(tmp_path)
+    calls: list[int] = []
+
+    def counted(led: Ledger) -> Any:
+        calls.append(1)
+        return holdings(led)
+
+    monkeypatch.setattr("ikars_engine.kalshi.runner.holdings", counted)
+    health = PortfolioHealth(ledger, {}, lambda s: None, lambda s: None)
+    health()
+    health()
+    assert len(calls) == 1
+    ledger.append(Entry("deposit", T0 + 9, "deposit", "more", cash_e6=1))
+    health()
+    assert len(calls) == 2
+    ledger.close()
+
+
+def test_a_no_position_without_yes_offers_has_no_bid() -> None:
+    """Review 5: a YES ask of 0 (nothing offered) made the NO bid a full dollar."""
+    from ikars_engine.portfolio import exit_price
+
+    assert exit_price("no", (None, 0)) == 0
+    assert exit_price("no", (None, None)) is None
+    assert exit_price("no", (480_000, 520_000)) == 480_000
+    assert exit_price("yes", (480_000, 520_000)) == 480_000
+
+
+async def test_a_daemon_thread_returns_and_raises() -> None:
+    """Review 6: a stuck NAS copy must never hold up the engine's exit (a daemon thread)."""
+    from ikars_engine.backup_service import in_daemon_thread
+
+    assert await in_daemon_thread(lambda a, b=0: a + b, 2, b=3) == 5
+
+    def fails() -> None:
+        raise ShareError("refused")
+
+    with pytest.raises(ShareError, match="refused"):
+        await in_daemon_thread(fails)

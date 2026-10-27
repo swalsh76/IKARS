@@ -43,7 +43,15 @@ from ikars_engine.ledger_service import ANNOTATION_KINDS, annotate
 from ikars_engine.paths import Paths
 from ikars_engine.portfolio import Portfolio, holdings, portfolio
 from ikars_engine.settings import Settings, save
-from ikars_engine.share import Drill, Share, ShareError, back_up, restore_drill
+from ikars_engine.share import (
+    Drill,
+    Share,
+    ShareError,
+    back_up,
+    configured,
+    migration_copier,
+    restore_drill,
+)
 
 
 def add_parser(commands: Any) -> None:
@@ -75,7 +83,10 @@ def add_parser(commands: Any) -> None:
 
 def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
     zone = taxzone.resolve(settings.tax_time_zone)
-    ledger = Ledger(paths.ledger / "ledger.sqlite", zone.zone)
+    # a command may be the first to open the ledger after an upgrade: its pre-migration copy goes
+    # to the share as the engine's would
+    copier = migration_copier(configured(settings.backup.share))
+    ledger = Ledger(paths.ledger / "ledger.sqlite", zone.zone, copier)
     try:
         checkpoints = paths.ledger / "checkpoints"
         if args.action == "verify":
@@ -171,13 +182,13 @@ async def _priced(ledger: Ledger, settings: Settings) -> Portfolio:
     config = KalshiConfig(environment=Environment(settings.kalshi.environment))
     signer = AccountSigner.from_environment()
     bucket, _ = await request_bucket(config, settings.feed.read_share_percent, signer)
-    held, _ = holdings(ledger)
+    held = holdings(ledger)
     quotes: dict[str, tuple[int | None, int | None]] = {}
     fees: dict[str, FeeSchedule | None] = {}
     categories: dict[str, str | None] = {}
     async with KalshiPublicClient(config, bucket=bucket) as public:
         data = MarketData(public)
-        for ticker, holding in held.items():
+        for ticker, holding in held.lots.items():
             market = await AccountImporter.market_of(data, ticker)
             if market is not None:
                 quotes[ticker] = (market.yes_bid_e6, market.yes_ask_e6)
@@ -190,7 +201,7 @@ async def _priced(ledger: Ledger, settings: Settings) -> Portfolio:
                     continue
                 fees[series] = fee_schedule(found.fee_type, found.fee_multiplier_e6)
                 categories[series] = found.category
-    return portfolio(ledger, quotes, fees.get, categories.get)
+    return portfolio(quotes, fees.get, categories.get, held)
 
 
 def _summary(held: Portfolio) -> dict[str, object]:

@@ -5,15 +5,19 @@ opens contracts adds a lot costing what was paid plus its share of the fill's fe
 between the closed and the opened contracts in proportion, the remainder to the opened part, so no
 millionth is lost); a fill that closes contracts takes them from the oldest lots, each lot's cost
 reduced in proportion (exactly: the remainder stays with the lot). A settlement empties the market.
+The same pass feeds the import's :class:`~ikars_engine.ledger_import.Book`, so the portfolio's cash
+is the reconciliation's.
 
 **Marked to market** at the price a position could be sold for now: a YES position at the YES bid, a
-NO position at the NO bid (one dollar less the YES ask). The exit fee is the taker fee at that
-price, rounded up to the cent as Kalshi charges it. **Unrealised P&L** is that exit value less the
+NO position at the NO bid (one dollar less the YES ask). No bid (a YES bid of 0, or a YES ask of 0:
+nothing offered) means nothing to sell into: worth nothing, no fee. The exit fee is the taker fee at
+the bid, rounded up to the cent as Kalshi charges it. **Unrealised P&L** is that exit value less the
 fee less the lots' cost. A market with no quote, or whose fee cannot be modelled, is left unpriced,
 never guessed.
 
 **Exposure** is the cost of the open lots (what is at risk), by event, series and category. All
-money is in dollar millionths."""
+money is in dollar millionths.
+"""
 
 from collections import defaultdict
 from collections.abc import Callable, Mapping
@@ -24,7 +28,7 @@ from ikars_core.fees import FeeSchedule, round_up
 from ikars_core.fixedpoint import CountE2, DollarsE6
 
 from ikars_engine.ledger import Ledger
-from ikars_engine.ledger_import import value_e6
+from ikars_engine.ledger_import import Book, value_e6
 
 CENT_E6 = 10_000
 DOLLAR_E6 = 1_000_000
@@ -51,6 +55,14 @@ class Holding:
     @property
     def cost_e6(self) -> int:
         return sum(lot.cost_e6 for lot in self.lots)
+
+
+@dataclass(frozen=True, slots=True)
+class Held:
+    """The open markets' lots and the cash, from one pass over the ledger."""
+
+    lots: dict[str, Holding]
+    cash_e6: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,21 +103,20 @@ class Portfolio:
         return dict(sorted(totals.items()))
 
 
-def holdings(ledger: Ledger) -> tuple[dict[str, Holding], int]:
-    """FIFO lots of every open market, and the cash the ledger explains."""
+def holdings(ledger: Ledger) -> Held:
+    """FIFO lots of every open market, and the cash the ledger explains (one pass)."""
     held: dict[str, Holding] = {}
-    cash = 0
+    book = Book()
     for body in ledger.records():
-        if body.get("cash_e6") is not None:
-            cash += int(body["cash_e6"])
-        ticker = body.get("ticker")
+        ticker, fields = body.get("ticker"), body.get("fields", {})
+        book.apply(body["kind"], ticker, fields, body.get("cash_e6"))
         if not ticker:
             continue
         if body["kind"] == "settlement":
             held.pop(ticker, None)
         elif body["kind"] == "fill":
-            _fill(held, ticker, body["fields"], body.get("context") or {})
-    return {t: h for t, h in held.items() if h.count_e2}, cash
+            _fill(held, ticker, fields, body.get("context") or {})
+    return Held({t: h for t, h in held.items() if h.count_e2}, book.cash_e6)
 
 
 def _fill(
@@ -139,27 +150,35 @@ def _take(holding: Holding, count_e2: int) -> None:
             holding.lots.pop(0)
 
 
+def exit_price(side: str, quote: Quote) -> int | None:
+    """The bid a position would sell at: 0 when nothing is bid, None when unknown."""
+    bid, ask = quote
+    if side == "yes":
+        return bid
+    if ask is None:
+        return None
+    return 0 if ask == 0 else DOLLAR_E6 - ask  # no YES offered: no NO bid
+
+
 def portfolio(
-    ledger: Ledger,
     quotes: Mapping[str, Quote],
     fees: Callable[[str], FeeSchedule | None],
     category: Callable[[str], str | None],
+    held: Held,
 ) -> Portfolio:
-    """The portfolio now: ``fees`` and ``category`` take a series ticker."""
-    held, cash = holdings(ledger)
+    """The portfolio now, priced from ``quotes``: ``fees`` and ``category`` take a series."""
     positions = []
-    for ticker, holding in sorted(held.items()):
+    for ticker, holding in sorted(held.lots.items()):
         series = holding.context.get("series_ticker", "")
-        bid, ask = quotes.get(ticker, (None, None))
-        exit_price = bid if holding.side == "yes" else (None if ask is None else DOLLAR_E6 - ask)
+        price = exit_price(holding.side, quotes.get(ticker, (None, None)))
         schedule = fees(series)
         count, cost = holding.count_e2, holding.cost_e6
         fee = unrealised = None
-        if exit_price == 0:  # nothing to sell into: worth nothing, no fee
+        if price == 0:  # nothing to sell into: worth nothing, no fee
             fee, unrealised = 0, -cost
-        elif exit_price is not None and schedule is not None:
-            fee = round_up(schedule.taker_fee_e6(CountE2(count), DollarsE6(exit_price)), CENT_E6)
-            unrealised = value_e6(exit_price, count) - fee - cost
+        elif price is not None and schedule is not None:
+            fee = round_up(schedule.taker_fee_e6(CountE2(count), DollarsE6(price)), CENT_E6)
+            unrealised = value_e6(price, count) - fee - cost
         positions.append(
             Position(
                 ticker=ticker,
@@ -170,9 +189,9 @@ def portfolio(
                 series_ticker=series,
                 category=category(series) or "",
                 title=holding.context.get("title", ""),
-                exit_price_e6=exit_price,
+                exit_price_e6=price,
                 exit_fee_e6=fee,
                 unrealised_e6=unrealised,
             )
         )
-    return Portfolio(cash, positions)
+    return Portfolio(held.cash_e6, positions)

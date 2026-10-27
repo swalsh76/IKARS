@@ -9,9 +9,12 @@ nothing of KAPS's (its marker, pgBackRest's repository) can be read, listed or w
 written unless ``ikars\.ikars-backup-marker`` exists: an unmounted, wrong or empty share is refused.
 ``init`` creates ``ikars\`` and the marker (owner's go-ahead, 2026-10-27), and nothing else.
 
-**A copy** is made of a consistent snapshot (SQLite's online backup, into a local staging folder),
-written to the share under a temporary name, read back and hash-checked, then renamed, so a copy on
-the share is either whole or absent. Each folder gets a ``SHA256SUMS``.
+**A copy** is made of a consistent snapshot (SQLite's online backup, into a staging folder of the
+run's own), written to the share under a temporary name of its own, read back and hash-checked, then
+renamed, so a copy on the share is either whole or absent. A dated folder (its files and its
+``SHA256SUMS``) is built whole beside the old one and then swapped in, so a reader sees the old day
+or the new one, never a mix. Two backups at once (the engine's and the command's) never share a
+name; at worst one of them fails and says so.
 
 **The tree** (dates are UTC)::
 
@@ -31,15 +34,21 @@ hashes, verifies its chain, and checks that its head is in the local ledger with
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import sqlite3
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from ikars_engine.ledger import Head, Ledger
+
+log = logging.getLogger("ikars_engine.backup")
 
 MARKER = ".ikars-backup-marker"
 SUBTREE = "ikars"
@@ -132,22 +141,32 @@ class Share:
         self._ready()
         target = self.path(*parts)
         target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(target.name + ".tmp")
-        expected = sha256(local)
-        shutil.copyfile(local, temporary)
-        if sha256(temporary) != expected:
-            temporary.unlink(missing_ok=True)
-            raise ShareError("a copy on the share does not match its source")
+        temporary = target.with_name(f"{target.name}.{uuid4().hex}.tmp")
+        digest = _checked_copy(local, temporary)
         temporary.replace(target)
-        return expected
+        return digest
 
     def put_folder(self, files: dict[str, Path], *parts: str) -> None:
-        """Copy ``files`` (name -> local path) into one folder, with a ``SHA256SUMS``."""
-        sums = [f"{self.put(local, *parts, name)}  {name}" for name, local in sorted(files.items())]
-        listing = self.path(*parts, SUMS)
-        temporary = listing.with_name(SUMS + ".tmp")
-        temporary.write_text("\n".join(sums) + "\n", encoding="utf-8", newline="\n")
-        temporary.replace(listing)
+        """Copy ``files`` (name -> local path) into one folder with a ``SHA256SUMS``: built whole
+        under a temporary name, then swapped in for the old folder."""
+        self._ready()
+        final = self.path(*parts)
+        final.parent.mkdir(parents=True, exist_ok=True)
+        _sweep(final)
+        building = final.with_name(f"{final.name}.{uuid4().hex}.new")
+        building.mkdir()
+        sums = [
+            f"{_checked_copy(local, building / name)}  {name}"
+            for name, local in sorted(files.items())
+        ]
+        (building / SUMS).write_text("\n".join(sums) + "\n", encoding="utf-8", newline="\n")
+        old = None
+        if final.exists():
+            old = final.with_name(f"{final.name}.{uuid4().hex}.old")
+            final.rename(old)
+        building.rename(final)
+        if old is not None:
+            shutil.rmtree(old, ignore_errors=True)
 
     def check_folder(self, folder: Path) -> bool:
         """Every file in ``SHA256SUMS`` is present with its hash."""
@@ -186,6 +205,27 @@ class Share:
         return max(days, key=lambda d: d.name) if days else None
 
 
+def _checked_copy(local: Path, target: Path) -> str:
+    """Copy and read back: the SHA-256, or ShareError when the copy differs from its source."""
+    expected = sha256(local)
+    shutil.copyfile(local, target)
+    if sha256(target) != expected:
+        target.unlink(missing_ok=True)
+        raise ShareError("a copy on the share does not match its source")
+    return expected
+
+
+STRAY_S = 3_600  # a half-built or half-replaced folder this old was left by a run that died
+
+
+def _sweep(final: Path) -> None:
+    """Remove what a run that died left beside ``final`` (never another run's work in progress)."""
+    now = time.time()
+    for stray in final.parent.glob(f"{final.name}.*"):
+        if stray.suffix in (".new", ".old") and now - stray.stat().st_mtime > STRAY_S:
+            shutil.rmtree(stray, ignore_errors=True)
+
+
 def _is_date(name: str) -> bool:
     try:
         date.fromisoformat(name)
@@ -215,6 +255,7 @@ def back_up(
     """One backup of everything (safe to repeat the same day: the day's copies are replaced).
     Runs in a worker thread: it opens its own SQLite connections."""
     share._ready()
+    staging = staging / uuid4().hex  # the run's own: another run's files are never touched
     moment = datetime.fromtimestamp(now_ns // 1_000_000_000, UTC)
     day, month, year = moment.strftime("%Y-%m-%d"), moment.strftime("%Y-%m"), moment.strftime("%Y")
     try:
@@ -229,9 +270,11 @@ def back_up(
         share.put_folder(files, "ledger", "daily", year, day)
         share.put_folder(files, "ledger", "monthly", year, month)
         sent = 0
-        for local in sorted(checkpoints.glob("*/*.json")):
+        points = sorted(checkpoints.glob("*/*.json"))
+        recent = set(points[-2:])  # yesterday's may have changed after the last backup
+        for local in points:
             target = share.path("ledger", "checkpoints", local.parent.name, local.name)
-            if not target.is_file() or sha256(target) != sha256(local):
+            if local in recent or not target.is_file():
                 share.put(local, "ledger", "checkpoints", local.parent.name, local.name)
                 sent += 1
         if state.is_file():
@@ -253,6 +296,27 @@ def pre_migration(share: Share, copy: Path) -> None:
     share.put(copy, "ledger", "pre-migration", copy.name)
 
 
+def migration_copier(share: Share | None) -> Callable[[Path], None] | None:
+    """For ``Ledger(on_backup=...)``: before a ledger migration, its local copy goes to the share
+    too (G). A share that cannot be reached is logged; the local copy still stands."""
+    if share is None:
+        return None
+
+    def copy(path: Path) -> None:
+        try:
+            pre_migration(share, path)
+        except (OSError, ShareError) as exc:
+            problem = {"error": type(exc).__name__}
+            log.warning("pre-migration copy not sent to the share", extra=problem)
+
+    return copy
+
+
+def configured(share: str) -> Share | None:
+    """The share the settings name, or None when none is set."""
+    return Share(share) if share.strip() else None
+
+
 @dataclass(frozen=True, slots=True)
 class Drill:
     ok: bool
@@ -263,6 +327,16 @@ class Drill:
 
 def restore_drill(share: Share, local: Ledger, scratch: Path) -> Drill:
     """Restore the newest daily ledger copy into ``scratch`` and prove it (G14)."""
+    problem = share.problem()
+    if problem is not None:
+        return Drill(False, None, 0, problem)
+    try:
+        return _drill(share, local, scratch)
+    except OSError as exc:  # the share went away part-way
+        return Drill(False, None, 0, f"the share could not be read ({type(exc).__name__})")
+
+
+def _drill(share: Share, local: Ledger, scratch: Path) -> Drill:
     folder = share.newest_daily("ledger")
     if folder is None:
         return Drill(False, None, 0, "no ledger backup on the share")
