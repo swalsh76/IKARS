@@ -187,6 +187,7 @@ def snapshot_of(health: dict[str, Any], now_ns: int) -> dict[str, Any]:
             "last_error": at(health, "backup", "last_error"),
         },
         "gpu": at(health, "gpu", "device"),
+        "port_fallback": at(health, "api", "port_fallback"),
     }
 
 

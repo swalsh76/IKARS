@@ -1,0 +1,8 @@
+{
+  "books_ready": 100,
+  "connected": true,
+  "open_gaps": 0,
+  "seconds_since_last_frame": 0.2,
+  "trading_active": true,
+  "watched_markets": 100
+}

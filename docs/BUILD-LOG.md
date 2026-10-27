@@ -1769,7 +1769,7 @@ approved as "read with GET only"); the key still signs GETs only, and other orde
   | Ledger | chain verified, **reconciles exactly**, no import errors |
   | Stop | **3.5 s**; recorded as a clean stop (the next start's gaps say "stopped") |
   | A torn real recording hour (a scratch copy, deleted after) | the start went on; the hour set aside as `07.parquet.damaged`; the open file's rows kept |
-  | Resting orders (item 8) | **pending:** needs a resting order of the owner's; IKARS reads it with GET only |
+  | Resting orders (item 8) | **Checked (2026-10-27).** Both resting orders are read correctly: a **sell** closing part of a held YES position (Kalshi labels it `side` yes, `action` sell, `outcome_side` no, as the model maps it) and a **buy** of YES. **Kalshi's `balance` does not hold back a resting buy's cost:** with the buy open, the balance equals the ledger's cash exactly, so every reconciliation stayed exact with a zero difference, and the resting-cost allowance was not needed. It is kept (it is read only when the balance falls short) |
 
 **Live finding, fixed (`66fcec0`).** The minute import re-reads a day of fills; each already-recorded fill older
 than a later one was flagged and warned about before being skipped as already recorded (4 warnings). The real
@@ -1814,4 +1814,167 @@ key, GET-only rule and Python checks are unchanged: the engine alone talks to Ka
 - **CodeQL added now** (`.github/workflows/codeql.yml`): `security-extended` queries for Python and the CI workflows
   on every pull request, on `main` and weekly; TypeScript joins with the first terminal code (CodeQL fails a
   language with no source). Pinned to v4.39.0 (12 days old) rather than v4.39.1 (6 days), by the new waiting rule.
-  It is not a required check; whether to require it is the owner's ruleset decision.
+  It is not a required check; whether to require it is the owner's ruleset decision. *Later the same day:*
+  merged as PR #15 (`179dd8c`); at the owner's request the aggregate `CodeQL` check (GitHub's code-scanning app)
+  is now **required** on `main` beside `python` and `hygiene`, so a new language needs no ruleset change.
+
+#### 1.R2 Platform review for the new direction (owner, 2026-10-27)
+
+**Asked:** "one more full milestone review, keeping in mind the new direction, with an eye towards reusability and
+overall platform stability". M1.R had just reviewed every module for correctness, so this pass read the API,
+contracts, engine core, plugins, sources, runner, recorder and services for three questions: is the engine ready for
+the web terminal, can M1.12 and M2 plug in, and does it stay up for weeks. **Placement approved by the owner.**
+
+| # | Finding | Placed |
+|---|---|---|
+| 1 | High: every engine start picks a new port and token; a browser page cannot rediscover them, so each watchdog restart, update or reboot leaves a dead terminal window | M1.8a-web: a stable port in settings (fallback when taken, `ikars open` relaunches) and a session secret that survives restarts (DPAPI, D8) |
+| 2 | `HealthView.parts` is `dict[str, Any]`: the generated TypeScript type would be `any`, unchecked at runtime | M1.8a-web: a typed health contract |
+| 3 | Nanosecond integers (`received_ns`, health times) exceed 2^53 and are rounded by JavaScript (by about 0.25 µs); no test guards the rule | M1.8a-web: a contract test; `_ns` documented as approximate in the browser |
+| 4 | Mixed time formats on the wire (seconds and nanoseconds; `AlertView.at` is local time) | M1.8a-web: one format, settled before a client exists |
+| 5 | Market search filters and lowercases the whole index per request on the event loop; type-ahead could stall the feed | M1.8a-web: a precomputed search key, a debounced search, measured at the real index size |
+| 6 | High for back-tests: the recorder writes Kalshi channel schemas, but `ReplaySource` reads only the generic item schema (only the synthetic demo uses it), so G3 does not hold for real data | New slice **M1.13**, before M3's back-tests; G3 marked partly done |
+| 7 | `ReplaySource` loads every recording into memory (about 2.1 GB a day) | M1.13: a streaming merge |
+| 8 | The live runner never loads plugins (`discover`) or registers listeners: a signal or source plugin has no path in, its items are not recorded (D20 A) and never reach the API | M1.12 |
+| 9 | A plugin's emitted item keeps the `received_ns` the plugin chose; a buggy source could let a replay see the future | M1.12: the host stamps it |
+| 10 | Duplicated time helpers (`api.utc_text`/`ledger.iso_utc`, `alerts._ns`/`ledger_import.ns_of`) | PLAN §9: with the next slice touching them |
+
+**Checked, no change needed.** Off the event loop: hourly compaction, the storage governor, share backups, ledger
+checks, GPU detection. Bounded: metric names (per channel and plugin, never per market), the plugin gap list. Slow
+growth only: the alert log and the gap and exchange-status tables (a few rows a day). Shutdown, restart, damaged
+files and the feed were covered by M1.R.
+
+### 1.8a-web The TypeScript terminal, first part (plan APPROVED 2026-10-27; four slices)
+
+**Builds.**
+- **Engine (Python):**
+  1. Serves the built terminal at `/` (one loopback origin) with a strict Content Security Policy (scripts only from
+     the engine, no inline script or `eval`, no frames; AG Grid's inline styles, if needed, by a per-page nonce),
+     `nosniff`, no referrer and `no-store` on API replies; a plain page when the terminal is not built.
+  2. Sign-in that survives restarts (review 1.R2 item 1): a **fixed port** in settings (owner-changeable; when taken,
+     a random port and a Windows alert); an `HttpOnly`, `SameSite=Strict` cookie for **30 days, sliding**, signed with
+     a DPAPI-protected key in the data folder (D8); a **one-time code** (single use, 30 s) in the launch link's `#`
+     fragment, exchanged by the page and removed from the address bar; changing requests need the engine's own
+     `Origin` and `Sec-Fetch-Site: same-origin`. The per-start bearer token in `api.json` stays for the CLI.
+  3. `ikars open`: a code from the running engine, then Edge as an app window with its own profile under
+     `%LOCALAPPDATA%\IKARS\browser`, extensions off.
+  4. Contracts (review items 2 to 5; API 2.0): typed health fields (plus a free-form detail part); one time format
+     (`*_utc`, `*_local`; `AlertView.at` becomes `at_local`); a test that wire money, counts and ids fit 2^53 (`_ns`
+     documented as approximate in the browser); a lowercase search key per market; a made-up-data API mode for
+     Playwright and the load test.
+- **Web (`web/`, React, strict TypeScript):**
+  5. Types generated from `contracts/` (CI checks the committed copy); every reply and stream event validated with
+     unknown fields refused, by validators compiled at build time (no `eval`, so the CSP holds).
+  6. The client: request timeouts, the `fetch` stream reader, the four stream rules (behaviour 4), and the update
+     hub (10 Hz, subscription changes only on a change of the union; behaviour 3).
+  7. Money: a distinct type for money and counts, integer-only formatting, no arithmetic; 100% tested.
+  8. A small own URL navigator (`/overview`, `/markets?q=`, `/market/<ticker>`, `/health`, `/ledger`, `/alerts`),
+     breadcrumbs, the browser's back and forward; a screen left cancels its requests and subscriptions (behaviours
+     1 and 2).
+  9. Screens from the approved mock-ups (their CSS reused): Overview (later panels with "arrives in" notes),
+     Markets (AG Grid, debounced search, open first), Market (live quote, Lightweight Charts from the candles route,
+     the book, linked items), Health with the gap log, Ledger (paged), Alerts by priority.
+  10. The update-to-screen meter (D20 J; behaviour 6) in Health, and the load test (100 made-up markets at 10 Hz).
+- **CI and repository:**
+  11. A `web` job on Windows: frozen install, ESLint (with the injection bans), type checks, the generated-types
+      check, Vitest at 90% (thin screen components left to Playwright, as decided for WPF), build, Playwright on the
+      installed Edge, `pnpm audit`.
+  12. pnpm's `minimumReleaseAge` (7 days) and install-script allow-list; Dependabot's `npm` entry with a 7-day
+      cooldown; CodeQL adds `javascript-typescript`.
+  13. Playwright output and `.env*` ignored and refused by the data guard.
+  14. Docs: DEPENDENCIES, README, PLAN, this log, CLAUDE.md's dev commands.
+  15. A `/security-review` before the merges that carry the sign-in and the page.
+
+**Changes on this machine:** Node.js 24 LTS (`winget install OpenJS.NodeJS.LTS`, per user) and pnpm through
+Corepack (development only); no Playwright browser download (the installed Edge); the IKARS Edge profile folder; the
+DPAPI-protected session key; a settings migration adding the port (backup first); the engine restarted on new code.
+
+**New packages** (each at least 7 days old): react and react-dom 19.3.1, ag-grid-community and ag-grid-react 36.2.0,
+lightweight-charts 5.2.1 (TradingView's attribution logo kept) (MIT, MIT, Apache-2.0; these ship); vite 8.3.4,
+@vitejs/plugin-react 6.1.2, typescript **6.0.3** (typescript-eslint does not support 7 yet), vitest and
+@vitest/coverage-v8 5.0.5, @playwright/test 1.64.1, eslint 10.13.0, typescript-eslint 8.72.0,
+eslint-plugin-react-hooks 7.1.1, json-schema-to-typescript 16.0.0, ajv 8.20.0, pnpm 12.14.0 (build and test only).
+
+**Live checks:** `ikars open` shows the real Overview; a live market's quote, book and chart update; after a watchdog
+restart the window reconnects with no new sign-in; the ledger pages; a request from another origin is refused and an
+ordinary browser tab cannot read the API; no CSP violations; update to screen p99 <= 33 ms with 100 markets (the
+owner, at the console).
+
+**Owner's answers (2026-10-27):**
+1. **Split: four slices**, each merged on its own (the owner split each proposed half again):
+   | Slice | Builds | Gate |
+   |---|---|---|
+   | **M1.8a-web-1a** engine side | items 1 to 4, the made-up-data mode, a placeholder page | Python tests; `/security-review` |
+   | **M1.8a-web-1b** web foundation | items 5 to 8 and 11 to 13; Overview and Health | the `web` job (the owner adds it to the ruleset); `/security-review` |
+   | **M1.8a-web-2a** markets | Markets and Market | merge review |
+   | **M1.8a-web-2b** the rest | Ledger, Alerts, the meter and the load test | merge review; the console check |
+2. Port: a fixed default in settings, the owner can change it; a random fallback with an alert.
+3. Session: 30 days, sliding.
+4. Development: `vite build --watch`, served by the engine (one origin, production's CSP).
+5. Every reply and stream event validated in production.
+
+#### 1.8a-web-1a built (2026-10-27)
+
+**Built** on `m1/8a-web-1a`: `5ce96fb` (DPAPI helper, sessions, settings v4), `c08f9af` (two pre-existing fixes
+from the per-commit review), `8ce2538` (serving, hardening, sign-in, fixed port), `6f9b82f` (contracts 2.0),
+`22547ce` (`ikars open`, `demo-api`, the watchdog's port rule), `ab83c07` (the security-review fix), `efc8824` (the
+merge-review fixes). **No new packages.**
+
+- **`ikars_core.dpapi`**: DPAPI for the current user through `ctypes` (D8).
+- **`session`**: one-time codes (single use, 30 s, at most 16 waiting) and HMAC-SHA256-signed cookies, 30 days and
+  renewed once a day old; the signing key in `data\session.key`, DPAPI-protected, so a restart keeps the terminal
+  signed in. Without DPAPI the key lives in memory; an undecryptable key is set aside under a free name and
+  replaced; a key that cannot be read right now fails the start (the watchdog retries) rather than signing every
+  terminal out.
+- **`webserve`** and the guard: the terminal's files (the placeholder page until `web/dist` exists), a fixed
+  content-type table, screen addresses answered by `index.html`; on every response a strict CSP, `nosniff`, no
+  referrer, `DENY` framing, same-origin opener and resource policies, `no-store` on the API and `no-cache` on
+  files. The API takes the bearer token or the cookie; any `Origin` but the engine's own is refused; a change on a
+  cookie needs the engine's own page (`Origin` and `Sec-Fetch-Site: same-origin`). `POST /v1/session/code` (bearer
+  only) and `POST /v1/session`.
+- **The port**: `[terminal] port = 47821` (settings version 4, migrated with a backup), bound exclusively, retried
+  for 5 s, then a free one reported as `port_fallback` (the watchdog alerts).
+- **Contracts 2.0** (review 1.R2 items 2 to 5): typed health (`FeedHealth`, `LedgerHealth`, `BackupHealth`, the
+  clock, GPU, API and plugins; the whole report in `detail`); `AlertView.at_local`; the time rule written down; a
+  test holding every wire integer to `_ns`, `_e6`, `_e2` or `SMALL_INTEGERS`; `SessionCode`, `SessionCodeIssued`;
+  a lowercase search key made once per market.
+- **`ikars open`** (`python -m ikars_engine open`): starts the engine if needed, gets a code with the bearer token,
+  opens Edge as an app window with `<data root>\browser` as its profile and extensions off.
+- **`demo-api`**: the real API server on made-up markets, books, ledger and alerts in a temporary folder.
+
+**Verified.** 1,377 Python tests pass (94%); ruff, mypy, the data guard and gitleaks are clean. **Live**, on the
+background engine:
+
+| Check | Result |
+|---|---|
+| Restart on the new code | settings migrated to version 4 (one backup); port 47821, no fallback; session key kept |
+| Sign in as the page does, restart the engine (new token), use the same cookie | **200 on the same port** (review 1.R2 item 1) |
+| The same with a stream open during the restart | same port, no fallback, the cookie still works |
+| A spent code; another origin; a change without the own page | 401; 403; 403 |
+| A UNC path and a drive path at the file route (after the fix) | 404, nothing outside the folder touched |
+| `ikars open` (the owner, at the console) | the IKARS Edge window opened and showed "Connected to the engine", API 2.0 |
+| After the restarts | feed connected, the ledger verified and reconciled exactly, restart gaps backfilled |
+
+**Review.**
+- **Per commit:** `5ce96fb` 2 pre-existing findings, fixed in `c08f9af` (a removed long-settled market did not move
+  the index version; a file gone mid-prune was counted as pruned); `8ce2538` none; `6f9b82f` 1 fixed (a non-ASCII
+  cookie raised in `compare_digest`, a 500, now refused); `22547ce` none; `ab83c07` none; `efc8824` none.
+- **Security review** (`/security-review`), 1 finding:
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | Medium: the public file route resolved the request path before checking it, so a UNC path (`\\host\share`) from any web page (an `<img>` at `127.0.0.1:47821`) made Windows contact that host and send the owner's NTLM credentials | Fixed in `ab83c07`: only plain names pass (no backslash, colon, empty part, `.` or `..`), checked on the text before any filesystem call; tested, and probed live |
+
+- **Merge review (medium), 8 findings:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | Overlapping gaps could store a trade twice: an earlier backfill's rows carry their fetch time, which M1.R's per-slice change stopped reading | Fixed in `efc8824`: the recent two hours read once per backfill; tested |
+  | 2 | The exclusive port bind might fail after a restart while old connections linger, so the terminal would lose its port | No change to the bind: tested on this Windows (rebinding works with TIME_WAIT, exclusive or not) and live with a stream open (same port). The fallback socket is now exclusive too |
+  | 3 | A second damaged copy (`.damaged.1`) escaped the storage budget; the recorder's docstring said damaged files are never deleted | Fixed in `efc8824`: the governor counts and prunes any `.damaged` name; docstring corrected; tested |
+  | 4 | An unreadable session key overwrote an earlier set-aside copy, and a passing read failure signed every terminal out | Fixed in `efc8824`: free names; only an undecryptable key is replaced, a read failure fails the start; tested |
+  | 5 | A wrong method on an API route was a plain-text 405, not the contract's JSON | Fixed in `efc8824`: a JSON error; tested |
+  | 6 | Each stream rebuilt the whole health report every 5 s | Fixed in `efc8824`: one view per half interval for all streams; tested |
+  | 7 | `ikars open` crashed on an `api.json` with a null port | Fixed in `efc8824`: waited past, then a plain refusal; tested |
+  | 8 | `demo-api --hz 0` crashed after starting | Fixed in `efc8824`: refused by the command line; tested |
+
+**M1.8a-web-1a built**, subject to the owner's merge.

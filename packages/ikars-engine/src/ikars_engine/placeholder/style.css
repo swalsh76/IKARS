@@ -1,0 +1,6 @@
+:root { color-scheme: light dark; --fg: #1d1d1f; --bg: #f5f5f7; --muted: #6e6e73; }
+@media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --bg: #1d1d1f; --muted: #a1a1a6; } }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+main { max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }
+dt { color: var(--muted); }
+dd { margin: 0 0 0.5rem; font-variant-numeric: tabular-nums; }

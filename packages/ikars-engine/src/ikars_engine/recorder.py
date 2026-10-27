@@ -17,8 +17,9 @@ crash left open (a torn last batch is read up to the last complete one). A compa
 (a file held by another program) is logged and left for later; it never stops the recording or a
 start. An hour whose earlier file could not be folded in is never overwritten: new rows go to a part
 file beside it (``<HH>.1.arrow``, compacted to ``<HH>.1.parquet``), and readers take every part. A
-compacted file that cannot be read (a crash or a bad disk) is moved aside as ``.damaged``, never
-deleted, and logged; the hour's other rows are kept (M1.R 3 and 5).
+compacted file that cannot be read (a crash or a bad disk) is moved aside as ``.damaged`` (or
+``.damaged.1`` and on) and logged, never overwritten; the hour's other rows are kept (M1.R 3 and 5).
+Like any hour it counts against the storage budget, and the governor prunes it oldest first.
 
 Money and counts are stored as the fixed-point integers the models give (dollar millionths,
 contract hundredths), never floats; times as integers (nanoseconds received, Kalshi's milliseconds).

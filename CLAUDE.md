@@ -107,14 +107,23 @@ slice still needs its own approved plan before code.
   p99 <= 33 ms**. **Direction change (owner, 2026-10-27):** the terminal becomes a **TypeScript web app** (D1, D3,
   D11, D12 amended; BUILD-LOG 1.8w; all recommended answers approved: engine-served Edge app window, one-time code to
   an HttpOnly cookie, React with Vite and pnpm). PR #12 merged (`d73921b`); tag `wpf-terminal-final` pushed. **WPF
-  pruned:** PR #13 merged as `1b92d49`. The `main protection` ruleset requires `python` and `hygiene`
-  (strict); the owner adds `web` once that job exists (Claude is not permitted to change it).
+  pruned:** PR #13 merged as `1b92d49`. The `main protection` ruleset requires `python`, `hygiene` and
+  `CodeQL` (strict; CodeQL added at the owner's request 2026-10-27); `web` joins once that job exists.
   **M1.R Base hardening** (owner 2026-10-27: a whole-code-base review before the web terminal; items 1 to 26
-  approved): **done** (PR #14 merged as `fca7941`, CI green on `main`; BUILD-LOG 1.R). Pending from the owner: a
-  resting order to confirm the reconciliation rule live (GET only), and the M1.6 auto-start sign-out check.
+  approved): **done** (PR #14 merged as `fca7941`, CI green on `main`; BUILD-LOG 1.R). Resting orders checked live 2026-10-27 (Kalshi's
+  balance does not hold back a resting buy; reconciliation exact). Pending from the owner: the M1.6 auto-start sign-out check.
   **Web review and security posture decided** (owner 2026-10-27; BUILD-LOG 1.8w-sec): browser hardening and npm
-  rules fold into M1.8a-web; **CodeQL** added (`codeql.yml`, PR pending, not a required check).
-  **Next:** the **M1.8a-web** plan for approval, on branch `m1/8a-web`; then M1.8b. The owner allows `gh pr merge`
+  rules fold into M1.8a-web; **CodeQL** added (PR #15 merged as `179dd8c`; green on `main`; required since 2026-10-27).
+  **Platform review 1.R2 done** (owner approved placement 2026-10-27): items 1 to 5 go into M1.8a-web (stable
+  port and session across restarts, typed health, 2^53 test, one time format, search key), 8 and 9 into M1.12,
+  6 and 7 into the new **M1.13** replay slice, 10 parked.
+  **M1.8a-web plan APPROVED** (owner 2026-10-27; BUILD-LOG 1.8a-web): four slices, **1a** engine side (serving,
+  sign-in with a fixed port and a 30-day sliding DPAPI-signed cookie, `ikars open`, contracts 2.0, made-up-data
+  mode), **1b** web foundation (Node 24, `web/`, types, client, hub, money, navigator, CI `web` job, Overview and
+  Health), **2a** Markets and Market, **2b** Ledger, Alerts, meter and load test. Answers: fixed port in settings,
+  30-day session, `vite build --watch`, validate every reply. **M1.8a-web-1a built** on branch `m1/8a-web-1a`
+  (BUILD-LOG 1.8a-web-1a; security review and merge review itemized; the owner saw `ikars open` connect): PR
+  open, waiting for the owner's merge. Then 1b, 2a, 2b, then M1.8b. The owner allows `gh pr merge`
   by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

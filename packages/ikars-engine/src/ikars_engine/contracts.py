@@ -8,9 +8,16 @@ test reads every example with unknown fields refused (D3 as amended 2026-10-27),
 drift without a test failing; until then only this engine-side test guards the contracts.
 
 Money is in dollar millionths (``_e6``) and counts in contract hundredths (``_e2``), integers as
-everywhere in IKARS; times are UTC ISO text or integer nanoseconds (``_ns``). Field names are
-snake_case on the wire. ``API_VERSION``'s major number changes only when a change would break a
-terminal built for the old one; the terminal refuses a major it does not know.
+everywhere in IKARS. **Every integer on the wire is exact in JavaScript (at most 2^53)** except the
+``_ns`` times: money to about $9 billion, counts to about 90 trillion contracts, and the small
+numbers in ``SMALL_INTEGERS``; a test holds every integer field to one of these. A browser reads an
+``_ns`` time to about a quarter of a microsecond, which no screen needs more finely.
+
+**Times** (review 1.R2 item 4): ``*_utc`` is ISO 8601 UTC ending in ``Z`` (to the second, or to the
+nanosecond where the record keeps it: the ledger); ``*_local`` is ISO 8601 with its offset (the
+workstation's zone); ``*_ns`` is integer nanoseconds since the epoch. Field names are snake_case on
+the wire. ``API_VERSION``'s major number changes only when a change would break a terminal built
+for the old one; the engine serves its own terminal, so the two always match.
 """
 
 import hashlib
@@ -20,7 +27,7 @@ from typing import Any
 
 import msgspec
 
-API_VERSION = "1.0"
+API_VERSION = "2.0"  # 2.0: typed health, AlertView.at_local, sign-in
 
 
 class Hello(msgspec.Struct, kw_only=True):
@@ -31,11 +38,45 @@ class Hello(msgspec.Struct, kw_only=True):
     schema_sha256: str  # of the exported JSON Schema: the terminal can tell it is the same contract
 
 
+class FeedHealth(msgspec.Struct, kw_only=True):
+    connected: bool | None
+    seconds_since_last_frame: float | None
+    open_gaps: int | None
+    books_ready: int | None
+    watched_markets: int | None
+    trading_active: bool | None  # the exchange says trading is open
+
+
+class LedgerHealth(msgspec.Struct, kw_only=True):
+    verified: bool | None
+    reconciled_exact: bool | None
+    records: int | None
+    errors: int | None
+
+
+class BackupHealth(msgspec.Struct, kw_only=True):
+    configured: bool | None
+    hours_since: int | None
+    last_error: str | None
+
+
 class HealthView(msgspec.Struct, kw_only=True):
-    """``GET /v1/health``: the engine's health as it reports it (counts and states only)."""
+    """``GET /v1/health`` and the stream's ``health`` event: what the terminal shows, typed (None
+    where the engine has not measured it yet), and the engine's whole report in ``detail`` for the
+    Health screen's details (counts and states only)."""
 
     at_utc: str
-    parts: dict[str, Any]
+    feed: FeedHealth
+    storage_state: str | None
+    ledger: LedgerHealth
+    backup: BackupHealth
+    clock_status: str | None
+    clock_offset_ms: float | None
+    gpu: str | None
+    api_streams: int | None
+    port_fallback: bool | None  # the fixed port was taken: a terminal cannot reconnect by itself
+    plugins: dict[str, str]
+    detail: dict[str, Any]
 
 
 class MarketView(msgspec.Struct, kw_only=True):
@@ -129,7 +170,7 @@ class AlertView(msgspec.Struct, kw_only=True):
     priority: str
     title: str
     text: str
-    at: str
+    at_local: str
     outcome: str
 
 
@@ -214,17 +255,41 @@ class QuoteUpdate(msgspec.Struct, kw_only=True):
     received_ns: int | None  # when the engine received what changed it
 
 
+class SessionCode(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
+    """``POST /v1/session``: the terminal trades its one-time code for the session cookie."""
+
+    code: str
+
+
+class SessionCodeIssued(msgspec.Struct, kw_only=True):
+    """``POST /v1/session/code`` (the bearer token only, for ``ikars open``): a one-time code, and
+    the address that opens the terminal with it."""
+
+    code: str
+    url: str
+
+
 class ApiError(msgspec.Struct, kw_only=True):
     error: str  # a short code: unauthorised, not_found, bad_request, unavailable
     detail: str
 
 
+# Integer fields that are neither money (_e6), counts (_e2) nor times (_ns): small by nature, so
+# exact in JavaScript. A new integer field must be one of these four (a test checks).
+SMALL_INTEGERS = frozenset({
+    "api_streams", "before", "books_ready", "coalesce_ms", "errors", "head_seq", "hours_since",
+    "id", "interval_minutes", "line", "offset", "open_gaps", "records", "seq", "total",
+    "watched_markets",
+})  # fmt: skip
+
 CONTRACTS: tuple[type[msgspec.Struct], ...] = (
-    Hello, HealthView, MarketView, MarketPage, Level, BookView, PositionView, PortfolioView,
+    Hello, FeedHealth, LedgerHealth, BackupHealth, HealthView, MarketView, MarketPage, Level,
+    BookView, PositionView, PortfolioView,
     LedgerStatusView, LedgerRecordView, LedgerPage, AlertView, AlertPage, Candle, CandlePage,
     GapView, GapPage,
     RecommendationView,
-    RecommendationPage, Subscriptions, StreamOpened, QuoteUpdate, ApiError,
+    RecommendationPage, Subscriptions, StreamOpened, QuoteUpdate, SessionCode, SessionCodeIssued,
+    ApiError,
 )  # fmt: skip
 
 # The stream's event names and the payload each carries.
@@ -304,13 +369,19 @@ def examples() -> dict[str, Any]:
         priority="urgent",
         title="problem",
         text="the engine is not running",
-        at="2026-01-01T12:00:00-07:00",
+        at_local="2026-01-01T12:00:00-07:00",
         outcome="shown",
     )
     candle = Candle(
         end_utc="2026-01-01T12:01:00Z", open_e6=410_000, high_e6=430_000, low_e6=400_000,
         close_e6=420_000, bid_close_e6=410_000, ask_close_e6=430_000, volume_e2=2_500,
     )  # fmt: skip
+    feed = FeedHealth(
+        connected=True, seconds_since_last_frame=0.2, open_gaps=0, books_ready=100,
+        watched_markets=100, trading_active=True,
+    )  # fmt: skip
+    ledger = LedgerHealth(verified=True, reconciled_exact=True, records=183, errors=0)
+    backup = BackupHealth(configured=True, hours_since=3, last_error=None)
     gap = GapView(
         id=1, channel="trade", reason="reconnect (connection_lost)",
         start_utc="2026-01-01T00:00:00Z", end_utc="2026-01-01T00:00:03Z", recovery="backfill",
@@ -318,7 +389,23 @@ def examples() -> dict[str, Any]:
     )  # fmt: skip
     found: dict[str, Any] = {
         "Hello": Hello(api_version=API_VERSION, engine_version="0.0.0", schema_sha256="0" * 64),
-        "HealthView": HealthView(at_utc="2026-01-01T00:00:00Z", parts={"ledger": {"records": 1}}),
+        "FeedHealth": feed,
+        "LedgerHealth": ledger,
+        "BackupHealth": backup,
+        "HealthView": HealthView(
+            at_utc="2026-01-01T00:00:00Z",
+            feed=feed,
+            storage_state="ok",
+            ledger=ledger,
+            backup=backup,
+            clock_status="ok",
+            clock_offset_ms=-3.5,
+            gpu="Made-up GPU",
+            api_streams=1,
+            port_fallback=False,
+            plugins={"demo": "running"},
+            detail={"kalshi": {"frames": {"ticker": 10}}},
+        ),  # fmt: skip
         "MarketView": market,
         "MarketPage": MarketPage(items=[market], total=1, offset=0),
         "Level": level,
@@ -363,6 +450,10 @@ def examples() -> dict[str, Any]:
             yes_ask_e6=430_000,
             last_price_e6=420_000,
             received_ns=1_767_225_600_000_000_000,
+        ),
+        "SessionCode": SessionCode(code="made-up-code"),
+        "SessionCodeIssued": SessionCodeIssued(
+            code="made-up-code", url="http://127.0.0.1:47821/#code=made-up-code"
         ),
         "ApiError": ApiError(error="not_found", detail="no such market"),
     }

@@ -129,9 +129,13 @@ and approved in M1 before any screen is built:
   - The engine also serves the terminal's static files, so the page and the API share one loopback origin (no
     cross-origin rules).
   - **Sign-in:** the launch link carries a **one-time code**; the engine exchanges it for an `HttpOnly`,
-    `SameSite=Strict` cookie for this port only, so the session token is never readable by page scripts. The guard
+    `SameSite=Strict` cookie, so the session token is never readable by page scripts. The guard
     accepts that cookie or the bearer token, and a browser `Origin` only when it is the engine's own loopback
-    origin. Loopback only, as before.
+    origin. Loopback only, as before. *Corrected 2026-10-27 (M1.8a-web-1a):* browsers scope cookies by host, not
+    port, so another server on 127.0.0.1 visited in the same browser profile would receive the cookie; the
+    terminal's own Edge profile, which visits nothing else, is what confines it. The port is fixed in the
+    settings (47821) and the cookie is signed with a DPAPI-protected key, so a restart keeps the terminal signed
+    in.
   - The stream is read with `fetch` (not `EventSource`), so reconnects and the alert resume work as in M1.8a.
   - **Browser hardening (owner, 2026-10-27).** Text from outside (market titles, and from M2 news and LLM output)
     is drawn in a page holding the API session, so script injection is the main threat:
@@ -569,7 +573,8 @@ shown.
 |---|---|---|
 | G1 | **Portfolio and exposure:** open positions from the ledger import, marked to market; unrealised P&L after exit costs; exposure by event and category; balance. On the Overview. Recommendations take existing positions and correlations into account. | M1.5 (model), M1.8 (view), M4 (in recommendations) |
 | G2 | **Sizing and risk limits while recommend-only:** suggested size (fractional Kelly, capped by depth at the price); limits per market, event, category and day; a daily loss stop that mutes recommendations. **One risk layer**, reused by M7. | M4 |
-| G3 | **Replay harness at the core:** the engine's input is an interface with a live source and a replay source (recorded Parquet, deterministic clock), so back-tests, bug reproduction and tuning run the same code as live. | M1.4 |
+| G3 | **Replay harness at the core:** the engine's input is an interface with a live source and a replay source (recorded Parquet, deterministic clock), so back-tests, bug reproduction and tuning run the same code as live. *Partly done (2026-10-27 review):* M1.4 built
+the interface and the generic replay; real Kalshi recordings replay from M1.13. | M1.4, M1.13 |
 | G4 | **Pre-registration (SPARQ practice):** a rule's settings are locked by hash before it is scored on held-out or forward data; a registry records every rule, its hash and its scoring windows. | M3 |
 | G5 | **Uptime on a desktop:** the engine runs as a background process that does not need the terminal; it auto-starts at login, keeps the machine awake while running, logs gaps, and a scheduled watchdog restarts it. (Pulled forward from M7.) | M1.6 |
 | G6 | **Workstation alerts** (owner, 2026-10-27: no phone pushes; amended from "phone alerts" with ntfy): Windows notifications on the workstation for engine down, feed stale and backup failed (M1.6), then top recommendations (M4), and in the terminal from M1.8. | M1.6, M4 |
@@ -656,15 +661,28 @@ only through a milestone proposal approved by the owner.
 | **M1.5 Audit and tax ledger, portfolio** | D18's store, hash chain, checkpoints, `verify`. Account import (fills, settlements, fees, transfers, funding, interest) with reconciliation. Positions and exposure marked to market (G1). The paper stream kept apart. **Versioned schema migrations with a backup before each one** (G). Nightly backup to the share's `ikars\` subtree; `ledger restore-drill` (G14). | Reads the owner's account (GET only). **Creates `ikars\` and its marker on the NAS share** (owner's go-ahead at the slice plan). |
 | **M1.6 Run mode and alerts** | The engine as a background process independent of the terminal; auto-start at login; keep-awake while running; a scheduled watchdog that restarts it (G5). The **alert framework**: priority levels, de-duplication, throttling, quiet hours, digest (H). **Windows notifications on the workstation** for engine down, feed stale and backup failed (G6; no phone pushes, owner 2026-10-27). **GPU detection** (D15): the device, driver and CUDA version in health, CPU paths when there is none (moved from M1.4b, owner 2026-10-27). | Adds a per-user logon task and a scheduled watchdog task (no admin); shows test notifications on the workstation. |
 | **M1.7 Loopback API and contracts** | Starlette/uvicorn on `127.0.0.1` with a per-session token and a **version handshake** (G). Snapshots over HTTP, deltas over one WebSocket (markets, books, portfolio, ledger, alerts, health). `msgspec` contracts exported as JSON Schema; the C# contract test (retired 2026-10-27 with the D1 amendment; the TypeScript golden test replaces it in M1.8a-web). | None. |
-| **M1.8 Terminal shell** | *Replanned 2026-10-27 (D1 amended):* **M1.8a-web** (the engine serves the app with the one-time-code sign-in and an `open` command; generated types and golden tests; the stream reader, update hub and URL navigator; the screens from the mock-ups with Lightweight Charts and AG Grid; the update-to-screen meter and its load test; the browser hardening of D3 and the web checks of D11, CodeQL for
-TypeScript, and a `/security-review` before merge) and **M1.8b** (hotkeys, layouts, themes, settings and wizard, support bundle). The original text: from KalTerm3, stripped of the SQL Server and multi-user parts. The navigation service, the Overview per the approved mock-ups (portfolio included), the linked-items panel, the health view, hotkeys, layouts, themes. Live markets and a ledger view. Versioned settings and the first-run wizard (G15, G). A redacted **support bundle** (I). Frame time measured (J). Connects to the running engine or starts it. | None. |
+| **M1.8 Terminal shell** | *Replanned 2026-10-27 (D1 amended):* **M1.8a-web** (plan approved 2026-10-27 as four slices, 1a engine side, 1b web foundation with Overview and
+Health, 2a Markets and Market, 2b Ledger, Alerts and the meter; BUILD-LOG 1.8a-web) (the engine serves the app with the one-time-code sign-in and an `open` command; generated types and golden tests; the stream reader, update hub and URL navigator; the screens from the mock-ups with Lightweight Charts and AG Grid; the update-to-screen meter and its load test; the browser hardening of D3 and the web checks of D11, CodeQL for
+TypeScript, and a `/security-review` before merge; *from the 2026-10-27 platform review (BUILD-LOG 1.R2), items
+1 to 5:* a **stable port and a session that survive an engine restart** (the port saved in settings, falling back
+only when taken, with `ikars open` relaunching; the session secret kept DPAPI-protected, D8), a **typed health
+contract**, a contract test that wire integers fit 2^53 (`_ns` fields documented as approximate in the browser),
+**one time format** on the wire, and a precomputed market search key with a debounced search) and **M1.8b** (hotkeys, layouts, themes, settings and wizard, support bundle). The original text: from KalTerm3, stripped of the SQL Server and multi-user parts. The navigation service, the Overview per the approved mock-ups (portfolio included), the linked-items panel, the health view, hotkeys, layouts, themes. Live markets and a ledger view. Versioned settings and the first-run wizard (G15, G). A redacted **support bundle** (I). Frame time measured (J). Connects to the running engine or starts it. | None. |
 | **M1.9 Packaging** | Velopack `Setup.exe` and the portable zip with the standalone Python engine and the terminal. Per-user install on a clean Windows 11 account. The first-run wizard on a fresh install. An auto-update from one release to the next **with migrations**, and a tested **rollback** (G). Signing decided (G12). | A test pre-release on GitHub. |
 | **M1.10 Perp research** | Read-only: perp endpoints, fees, funding schedule, margin and liquidation rules; `docs/research/perps.md`. | Live GET requests. |
-| **M1.12 End-to-end momentum** | The thin vertical slice (D21-2): a minimal momentum signal on Kalshi's feed, **registered by hash** (G4); a minimal P&L after fees (D7's entry and exit costs, `ikars-core` fees); the recommendation on the Overview with a drill-down and provenance (F); a priority-tiered alert (H); journalled and scored forward from day one. No sizing beyond a fixed small size, and no news or LLM. | None (read-only). |
+| **M1.12 End-to-end momentum** | *From the 2026-10-27 platform review (BUILD-LOG 1.R2), items 8 and 9:* the live
+runner **loads the plugins** (`discover`), **records what they emit** (the generic recording schema, D20 A) and
+hands recommendations to the API through a listener; the host, not the plugin, **stamps `received_ns`** on emit.
+The thin vertical slice (D21-2): a minimal momentum signal on Kalshi's feed, **registered by hash** (G4); a minimal P&L after fees (D7's entry and exit costs, `ikars-core` fees); the recommendation on the Overview with a drill-down and provenance (F); a priority-tiered alert (H); journalled and scored forward from day one. No sizing beyond a fixed small size, and no news or LLM. | None (read-only). |
+| **M1.13 Replay of real recordings** | *From the 2026-10-27 platform review (BUILD-LOG 1.R2), items 6 and 7; owner
+approved its own slice, before M3's back-tests.* A reader that turns the recorder's Kalshi channel files (trade,
+ticker, lifecycle, book snapshot and delta) into the same items the live source emits, so a back-test runs the live
+code (completes G3); and a **streaming** merge in received-time order, file by file, instead of loading every
+recording into memory (about 2.1 GB a day). | None (local files). |
 | **M1.11 Close-out** | Gate evidence; the **"workstation lost" runbook** tested end to end (I): reinstall, restore the ledger and settings from the share, verify. Docs current; milestone review (short, thanks to R14); leftovers parked. | Restores from the share into a scratch location (read only on the share). |
 
 The order is M1.1 → M1.2 → M1.4a → M1.4b and M1.5 (with M1.3 alongside) → M1.6 → M1.7 → M1.8 → M1.9 → M1.12 →
-M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out because the close-out checks it.)
+M1.11. M1.10 can run any time after M1.2; M1.13 any time after M1.12 and before M3's back-tests. (M1.12 is listed before the close-out because the close-out checks it.)
 
 ### 4.2 Milestone gates (D21; each is confirmed or tightened in the milestone's own proposal)
 
@@ -697,6 +715,7 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 | M1.6 Run mode and alerts | **done** (BUILD-LOG 1.6; PR #9 merged as `2efc95f`); the owner's sign-out check of auto-start pending |
 | M1.7 Loopback API and contracts | **done** (BUILD-LOG 1.7; PR #10 merged as `0ba5d83`) |
 | M1.R Base hardening (owner, 2026-10-27) | **built** on `m1/r-hardening` (BUILD-LOG 1.R): a whole-code-base review's items 1 to 26 fixed, plus 10 merge-review findings; **done** (PR #14, `fca7941`) |
+| M1.8a-web-1a Engine side of the web terminal | **built** on `m1/8a-web-1a` (BUILD-LOG 1.8a-web-1a): file serving with the browser hardening, cookie sign-in that survives restarts, `ikars open`, contracts 2.0, `demo-api`; security review (1 finding, fixed) and merge review (8, fixed); PR pending |
 | M1.8 Terminal shell | M1.8a (WPF) done and merged as `77849e3`, then **retired by the D1 amendment** (2026-10-27; BUILD-LOG 1.8w; tag `wpf-terminal-final`). **WPF pruned** (PR #13 merged as `1b92d49`). Next: the **M1.8a-web** plan, for approval; then M1.8b |
 
 ## 9. Parking lot
@@ -709,5 +728,7 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 - An index on the ledger's `(stream, ticker, seq)` for the Market screen's "your ledger records" (M1.8a merge
   review). It needs a ledger migration (backup first); the scan is trivial at today's few hundred records. Revisit
   when the ledger reaches tens of thousands.
+- One `times` module for the duplicated time helpers (`api.utc_text` and `ledger.iso_utc`; `alerts._ns` and
+  `ledger_import.ns_of`): with the next slice that touches those files (2026-10-27 platform review, item 10).
 - Readable screen-reader names for list items: the terminal's lists expose each record's raw text to UI Automation
   (M1.8a live check). Natural with M1.8b's hotkeys and themes, or later.

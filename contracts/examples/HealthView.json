@@ -1,8 +1,38 @@
 {
+  "api_streams": 1,
   "at_utc": "2026-01-01T00:00:00Z",
-  "parts": {
-    "ledger": {
-      "records": 1
+  "backup": {
+    "configured": true,
+    "hours_since": 3,
+    "last_error": null
+  },
+  "clock_offset_ms": -3.5,
+  "clock_status": "ok",
+  "detail": {
+    "kalshi": {
+      "frames": {
+        "ticker": 10
+      }
     }
-  }
+  },
+  "feed": {
+    "books_ready": 100,
+    "connected": true,
+    "open_gaps": 0,
+    "seconds_since_last_frame": 0.2,
+    "trading_active": true,
+    "watched_markets": 100
+  },
+  "gpu": "Made-up GPU",
+  "ledger": {
+    "errors": 0,
+    "reconciled_exact": true,
+    "records": 183,
+    "verified": true
+  },
+  "plugins": {
+    "demo": "running"
+  },
+  "port_fallback": false,
+  "storage_state": "ok"
 }

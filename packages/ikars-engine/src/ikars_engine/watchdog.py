@@ -105,6 +105,9 @@ def evaluate(obs: Observation, rules: Rules) -> list[Problem]:
             problems.append(Problem("backup", f"the last backup is {hours} hours old", urgent=True))
     if at(snap, "storage_state") in ("warn", "pruned"):
         problems.append(Problem("storage", "recordings are near their storage budget"))
+    if at(snap, "port_fallback") is True:  # an open terminal cannot find the engine again
+        taken = "the terminal's port is taken: reopen it with ikars open, or change the port"
+        problems.append(Problem("terminal-port", taken))
     return problems
 
 

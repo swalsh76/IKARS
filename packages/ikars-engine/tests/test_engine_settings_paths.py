@@ -49,6 +49,16 @@ def test_an_old_file_is_migrated_and_backed_up(tmp_path: Path) -> None:
     assert "monthly_e6" in path.read_text(encoding="utf-8")
 
 
+def test_version_3_gains_the_terminal_section_with_its_defaults(tmp_path: Path) -> None:
+    path = tmp_path / "settings.toml"
+    path.write_text("version = 3\ntax_time_zone = 'America/Denver'\n", encoding="utf-8")
+    settings = load(path)
+    assert settings.terminal.port == 47821 and settings.terminal.session_days == 30
+    assert settings.tax_time_zone == "America/Denver"
+    assert "[terminal]" in path.read_text(encoding="utf-8")  # shown to the owner
+    assert len(list(tmp_path.glob("settings.*.bak.toml"))) == 1
+
+
 def test_a_newer_file_is_refused() -> None:
     with pytest.raises(SettingsError, match="newer IKARS"):
         migrate({"version": VERSION + 1})
