@@ -2035,3 +2035,56 @@ latest alerts); the status strip was cut off at the bottom of a short window, so
   | 10 | DEPENDENCIES.md still listed the web packages as to be chosen | Fixed: in use, with versions and licences |
 
 **M1.8a-web-1b built**, subject to the owner's merge (and then `web` added to the required checks).
+
+#### 1.8a-web-2a built (2026-10-27)
+
+**Built** on `m1/8a-web-2a`: `ec841bb` (the screens), `3d8d432` (the merge-review fixes). After 1b merged as PR #17
+(`0fe5415`); the owner then made `web` a required check.
+
+- **Markets** (`/markets?q=&category=`): AG Grid with the markets the engine finds (open first, up to 200, the
+  count shown), a search that waits for a pause in typing and keeps the address current, a category filter kept in
+  the address, live bid, ask and last prices from the stream (rows reused per market and quote, so only changed rows
+  redraw), and a row that opens the market.
+- **Market** (`/market/<ticker>`): the live quote, the YES price for the last 24 hours (Lightweight Charts from the
+  candles route; an empty chart says why), the order book (both sides' bids) or the note that the engine does not
+  watch the market, and the linked items: same-event markets and your ledger records (source items,
+  recommendations and perps arrive in M1.12, M2 and M3).
+- Both screens load their libraries only when first opened (the start bundle stays about 365 kB; AG Grid about
+  700 kB and the chart about 170 kB come on demand).
+- **Engine:** `demo-api` serves made-up candles in Kalshi's own shape (through the real `Candlestick` model) and a
+  favicon; the screen tests now fail on **any** console error, not only on CSP refusals.
+
+**The CSP and the libraries** (checked in Edge before building on them):
+- AG Grid's default theme injects about a dozen `<style>` blocks, all refused by `style-src 'self'`. Its **CSS-file
+  theme** (`theme: "legacy"` with `ag-grid.css` and `ag-theme-quartz.css`, coloured from the terminal's tokens) needs
+  none. Its icon font is embedded in that CSS as a `data:` URI, so the CSP's **one exception** is `font-src 'self'
+  data:` (a font runs no code; scripts and styles stay `'self'`; a test pins the whole policy).
+- Lightweight Charts' attribution logo injects an inline style, so it is **off**; the credit and link to TradingView
+  that its licence (Apache-2.0) asks for are drawn under the chart instead, opening outside the terminal.
+- AG Grid's modular build needs each feature's module registered: a missing one (row and cell classes) only logs to
+  the console and stopped the grid updating; caught by the screen tests, fixed, and why they now fail on any console
+  error.
+- The grid needs a definite height (`min-height` alone collapses it to 2 px and the rows hang outside it); found by
+  the screen tests.
+
+**Verified.** Vitest 144 tests (98% lines, 93% functions); Playwright 8 screen tests in Edge with no console error
+or CSP refusal; lint, types and audit clean; Python 1,383 tests.
+
+**Review.**
+- **Per commit:** `ec841bb` none; `3d8d432` none.
+- **Merge review (medium), 10 findings, all fixed in `3d8d432`:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | A streamed quote with an emptied side (null) fell back to the snapshot's older price | A received quote wins for every field; tested |
+  | 2 | When a screen's market list changed, a market in both lists was released first and lost its live quote | The new list is wanted before the old is let go; tested |
+  | 3 | A new search that failed kept the last search's results under it | A new address starts from "loading"; tested |
+  | 4 | Every quote update rebuilt all 200 grid rows | Rows reused per market and quote (a weak cache), so only changed rows redraw; tested |
+  | 5 | The chart re-fitted every minute, undoing the owner's zoom | It redraws only on new candles and fits only once |
+  | 6 | The category list showed only the current page's categories, and the category was not in the address | Every category seen is kept; the category is in the address; tested |
+  | 7 | Same-event markets were cut at 50 without saying so | Up to 200, and a note when there are more |
+  | 8 | The status badge was always green | Green only while trading; tested |
+  | 9 | Ledger times used a second format beside the closing times | The one time format; tested |
+  | 10 | Duplicated CSS; the chart kept its colours after a theme change | Removed; the chart follows the theme |
+
+**M1.8a-web-2a built**, subject to the owner's merge.

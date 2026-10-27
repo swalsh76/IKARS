@@ -44,14 +44,16 @@ least 7 days old when chosen (PLAN D11). The .NET WPF terminal and its packages 
 | Package | Version | Used for | Licence |
 |---|---|---|---|
 | `react`, `react-dom` | 19.3.1 | the screens (built into the static files; nothing for the user to install) | MIT |
+| `ag-grid-community`, `ag-grid-react` | 36.2.0 | the Markets grid (M1.8a-web-2a); its CSS-file theme, so no inline style | MIT |
+| `lightweight-charts` | 5.2.1 | the Market screen's price chart (M1.8a-web-2a); its logo is off (it needs an inline style) and the credit with a link to TradingView, which its licence asks for, is drawn below the chart | Apache-2.0 |
 
 Build and test only (not shipped): `vite` 8.3.4 and `@vitejs/plugin-react` 6.1.2 (MIT); `typescript` 6.0.3
 (Apache-2.0; typescript-eslint does not support 7 yet); `vitest` and `@vitest/coverage-v8` 5.0.5, `jsdom` 30.1.3 (MIT);
 `@playwright/test` 1.64.1 (Apache-2.0; runs the installed Edge, no browser download); `eslint` 10.13.0, `@eslint/js`
 10.0.1, `typescript-eslint` 8.72.0, `eslint-plugin-react-hooks` 7.1.1, `globals` 17.13.0 (MIT);
 `json-schema-to-typescript` 16.0.0 and `ajv` 8.20.0 (MIT: the generated types and the validators, compiled at build
-time); `@types/react`, `@types/react-dom` 19.3.0 and `@types/node` 24.19.2 (MIT). AG Grid and Lightweight Charts arrive
-with M1.8a-web-2a (below).
+time); `@types/react`, `@types/react-dom` 19.3.0 and `@types/node` 24.19.2 (MIT). AG Grid and Lightweight Charts are
+in use since M1.8a-web-2a (above).
 
 ### Outside services
 
@@ -79,8 +81,6 @@ with M1.8a-web-2a (below).
 | Local LLM runtime (llama.cpp server, Ollama or ONNX Runtime GenAI) and a 7 to 14B quantised model | M2 (D9) | optional extra | MIT (runtimes); model licences per model | Chosen by measured speed and quality in the slice; downloaded on demand. |
 | XGBoost (CUDA) or LightGBM; PyTorch (cu128) for sequence models; CuPy for sweeps | M3 to M5 (D15, D16) | optional extra | Apache-2.0; MIT; BSD-3; MIT | CUDA wheels run to gigabytes: optional, on demand. CPU fallbacks for each. |
 | Other-venue prices (exchange WebSockets, odds APIs) | later milestones (D19 G7) | plugin | per source | A paid odds API counts against the cost ceiling. |
-| **AG Grid Community** | M1.8a-web-2a | base | MIT | The live market tables. |
-| **TradingView Lightweight Charts** | M1.8a-web-2a | base | Apache-2.0, with TradingView's attribution notice | The price charts; the attribution's exact form confirmed in the slice. |
 | **Microsoft Edge** | in use since M1.8a-web-1a (`ikars open`) | base | built into Windows 11 | Shows the terminal as an app window with its own IKARS profile under `%LOCALAPPDATA%\IKARS\browser`. |
 | Velopack | M1.9 (D12) | build only | MIT | Builds `Setup.exe` and the portable zip; the user installs nothing extra. |
 | Code signing (SignPath free plan or Azure Trusted Signing) | M1.9 (D12) | build only | service | Removes SmartScreen warnings; chosen in the packaging slice. |

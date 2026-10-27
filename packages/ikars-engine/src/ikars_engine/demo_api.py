@@ -22,6 +22,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ikars_core.book import OrderBook
+from ikars_core.models import Candlestick
 from ikars_core.ws_models import parse_frame
 
 from ikars_engine.api import ApiContext, ApiServer
@@ -96,6 +97,23 @@ class Market:
                 self.book_changed[ticker] = now_ns
 
 
+def made_up_candles(start_s: int, end_s: int, minutes: int, seed: str) -> list[Candlestick]:
+    """A walk of made-up candles in Kalshi's own reply shape, so the chart path is the live one."""
+    walk = random.Random(seed)  # noqa: S311 (made-up prices, not security)
+    price = walk.randrange(20, 80)
+    rows = []
+    for end in range(start_s + minutes * 60, end_s + 1, minutes * 60):
+        price = min(97, max(2, price + walk.choice((-1, 0, 0, 1))))
+        p = f"0.{price:02d}00"
+        rows.append(Candlestick.model_validate({
+            "end_period_ts": end, "volume_fp": f"{walk.randrange(0, 500)}.00",
+            "price": {"open_dollars": p, "high_dollars": p, "low_dollars": p, "close_dollars": p},
+            "yes_bid": {"close_dollars": f"0.{price - 1:02d}00"},
+            "yes_ask": {"close_dollars": f"0.{price + 1:02d}00"},
+        }))  # fmt: skip
+    return rows
+
+
 def demo_health(market: Market) -> dict[str, Any]:
     return {
         "kalshi": {"feed": {"connected": True, "seconds_since_last_frame": 0.1},
@@ -122,6 +140,12 @@ async def serve(
                                   "text": "a made-up alert", "at": "2026-01-01T05:00:00-07:00",
                                   "outcome": "shown"}) + "\n", encoding="utf-8")  # fmt: skip
     sessions = Sessions(folder / "session", 1)
+
+    async def candles(
+        series: str, ticker: str, start: int, end: int, minutes: int
+    ) -> list[Candlestick]:
+        return made_up_candles(start, end, minutes, ticker)
+
     held = Held({}, 300_000_000)
 
     def context_for(token: str) -> ApiContext:
@@ -133,7 +157,7 @@ async def serve(
             ledger_health=lambda: {"verified": True, "reconciled_exact": True},
             portfolio=lambda: portfolio(market.quotes, lambda s: None, lambda s: None, held),
             alert_log=alerts, metrics=Metrics(), now_ns=time.time_ns, sessions=sessions,
-            web_root=terminal_root(),
+            web_root=terminal_root(), candles=candles,
         )  # fmt: skip
         return api
 
