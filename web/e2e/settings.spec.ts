@@ -1,8 +1,18 @@
 // Settings and the first-run wizard (M1.8b-1), against the made-up-data server.
 
 import { expect, test, type Page } from "@playwright/test";
-import { base, signInUrl } from "./demo";
 import { startDemo, type Demo } from "./demo-server";
+
+// Each group runs against a demo server of its own: the settings it saves (a skin, a port) must
+// never meet another spec's (the hotkeys test switches the skin), which CI's parallel run showed.
+async function signInTo(demo: Demo): Promise<string> {
+  const answer = await fetch(`http://127.0.0.1:${demo.port}/v1/session/code`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${demo.token}` },
+  });
+  if (!answer.ok) throw new Error(`the demo server refused a sign-in code: ${answer.status}`);
+  return ((await answer.json()) as { url: string }).url;
+}
 
 function watchPolicy(page: Page): string[] {
   const refused: string[] = [];
@@ -13,9 +23,16 @@ function watchPolicy(page: Page): string[] {
   return refused;
 }
 
-test("settings: a skin is applied, saved and kept across a reload; a change notes its restart", async ({ page }) => {
+test.describe("settings", () => {
+  let demo: Demo;
+  test.beforeAll(async () => {
+    demo = await startDemo();
+  });
+  test.afterAll(() => demo.stop());
+
+test("a skin is applied, saved and kept across a reload; a change notes its restart", async ({ page }) => {
   const refused = watchPolicy(page);
-  await page.goto(await signInUrl());
+  await page.goto(await signInTo(demo));
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" }).click();
   await expect(page.getByRole("region", { name: "Kalshi key" })).toContainText("IKARS_KALSHI_KEY_ID");
   await page.locator("#setting-skin").selectOption("midnight");
@@ -33,8 +50,14 @@ test("settings: a skin is applied, saved and kept across a reload; a change note
   await page.locator("#setting-session_days").fill("3.5");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByTestId("settings-note")).toContainText("session days must be a whole number");
-  await page.locator("#setting-skin").selectOption("system"); // leave the demo as it was found
   expect(refused).toEqual([]);
+});
+
+test("the settings screen exists at its address", async ({ page }) => {
+  await page.goto(await signInTo(demo));
+  await page.goto(`http://127.0.0.1:${demo.port}/settings`);
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+});
 });
 
 test.describe("the first-run wizard", () => {
@@ -46,11 +69,7 @@ test.describe("the first-run wizard", () => {
 
   test("opens when there are no settings, saves the zone and quiet hours, and ends on the Overview", async ({ page }) => {
     const refused = watchPolicy(page);
-    const answer = await fetch(`http://127.0.0.1:${demo.port}/v1/session/code`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${demo.token}` },
-    });
-    await page.goto(((await answer.json()) as { url: string }).url);
+    await page.goto(await signInTo(demo));
     await expect(page).toHaveURL(/\/welcome$/);
     await expect(page.getByRole("region", { name: "Kalshi key" })).toContainText("IKARS_KALSHI_KEY_ID");
     await page.getByRole("button", { name: "Continue" }).click();
@@ -68,10 +87,4 @@ test.describe("the first-run wizard", () => {
     await expect(page).toHaveURL(/\/overview$/);
     expect(refused).toEqual([]);
   });
-});
-
-test("the settings screen exists at its address", async ({ page }) => {
-  await page.goto(await signInUrl());
-  await page.goto(`${base()}/settings`);
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
 });

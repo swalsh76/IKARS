@@ -261,3 +261,15 @@ def test_a_start_spends_a_stale_restart_request(tmp_path: Path) -> None:
     cfg.restart()
     runmode.clear_stop(cfg.paths.data)  # what serve does when it starts
     assert not (cfg.paths.data / RESTART).exists() and not restart_wanted(cfg.paths.data)
+
+
+def test_changes_at_once_take_turns_and_all_land(tmp_path: Path) -> None:
+    """CI on main: two changes at once collided on the settings file's temporary copy."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    cfg = config(tmp_path)
+    changes = [c.SettingsChange(throttle_minutes=n) for n in range(1, 41)]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(cfg.change, changes))
+        list(pool.map(lambda _: cfg.view(), range(40)))
+    assert 1 <= load(cfg.paths.settings).alerts.throttle_minutes <= 40  # never a failed write
