@@ -640,6 +640,8 @@ M1.11. M1.10 can run any time after M1.2. (M1.12 is listed before the close-out 
 | M1.3 UI mock-ups | **approved for now** 2026-10-27 (BUILD-LOG 1.3; source in `docs/design/mockups/`; revisable before M1.8) |
 | M1.4a engine core | **done** (BUILD-LOG 1.4a; PR #4 merged as `b29a86e`) |
 | M1.4b Kalshi feeds and recording | **done** (BUILD-LOG 1.4b; PR #5 merged as `58abbe5`); recording volume of about 2.1 GB a day accepted as is |
+| M1.5a Audit ledger | **built and verified live** (BUILD-LOG 1.5a): reconciles exactly with Kalshi; PR waiting for the owner's merge |
+| M1.5b Share backups, restore drill, portfolio | plan approved 2026-10-27; next |
 
 ## 9. Parking lot
 
