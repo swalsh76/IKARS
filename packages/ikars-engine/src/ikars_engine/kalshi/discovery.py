@@ -14,6 +14,8 @@ the engine needs it for the watched set, the drill-down tree and tradability, no
 """
 
 import logging
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -31,7 +33,8 @@ from ikars_engine.store import StateStore
 BOOKMARK = "discovery.updated_s"
 OVERLAP_SECONDS = 120
 OPEN_STATUSES = frozenset({"active", "open"})  # Kalshi's REST and WebSocket names for trading
-CLOSED_KEPT_NS = 3 * 86_400 * 1_000_000_000  # a closed market stays in the index this long
+CLOSED_KEPT_NS = 3 * 86_400 * 1_000_000_000  # a settled market stays in the index this long
+SETTLED_STATUSES = frozenset({"settled", "finalized"})  # paid out: nobody holds it any more
 log = logging.getLogger("ikars_engine.kalshi.discovery")
 
 
@@ -48,8 +51,21 @@ class MarketInfo:
     volume_24h_e2: int  # contracts traded in the last day, in hundredths
 
 
+def _long_settled(
+    status: str, close_time: datetime | None, now_ns: int, keep_ns: int = CLOSED_KEPT_NS
+) -> bool:
+    """Settled (paid out, so held by nobody) and closed more than ``keep_ns`` ago. A closed market
+    waiting for its result stays: the owner may hold it."""
+    return (
+        status in SETTLED_STATUSES
+        and close_time is not None
+        and now_ns - int(close_time.timestamp()) * 1_000_000_000 > keep_ns
+    )
+
+
 class MarketIndex:
-    def __init__(self) -> None:
+    def __init__(self, now_ns: Callable[[], int] = time.time_ns) -> None:
+        self.now_ns = now_ns
         self.markets: dict[str, MarketInfo] = {}
         self.categories: dict[str, str] = {}  # series -> category
         self.fees: dict[str, FeeSchedule | None] = {}  # series -> fee terms (None: not modelled)
@@ -61,6 +77,9 @@ class MarketIndex:
     def put(self, market: Market) -> None:
         if is_combo(market.ticker):
             self.combos_skipped += 1
+            return
+        if _long_settled(market.status or "", market.close_time, self.now_ns()):
+            self.markets.pop(market.ticker, None)  # an update to a long-settled market: not kept
             return
         self.version += 1
         event = market.event_ticker or ""
@@ -83,10 +102,7 @@ class MarketIndex:
         gone = [
             m.ticker
             for m in self.markets.values()
-            if m.status not in OPEN_STATUSES
-            and m.status != "unopened"
-            and m.close_time is not None
-            and now_ns - int(m.close_time.timestamp()) * 1_000_000_000 > keep_ns
+            if _long_settled(m.status, m.close_time, now_ns, keep_ns)
         ]
         for ticker in gone:
             del self.markets[ticker]
@@ -125,6 +141,7 @@ class Discovery:
     ) -> None:
         self._data = data
         self.index = index
+        index.now_ns = clock.now_ns  # the engine's clock decides what is long settled
         self._state = state
         self._clock = clock
         self.cycles = 0

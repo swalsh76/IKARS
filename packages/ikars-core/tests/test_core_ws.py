@@ -256,6 +256,15 @@ async def test_added_markets_are_remembered_for_the_next_reconnect() -> None:
 # --- sequence numbers ---------------------------------------------------------------------------
 
 
+async def test_a_resubscribe_of_a_restored_subscription_sends_nothing() -> None:
+    """M1.R merge review 6: a retry waking after a reconnect restored the channel opened a second
+    subscription beside it."""
+    async with FakeKalshi(subscribe_then()) as srv, feed_for(srv) as feed:
+        sid = await feed.subscribe("trade")
+        assert await feed.resubscribe("trade") == sid
+    assert [c["cmd"] for c in srv.commands[0]] == ["subscribe"]  # one, not two
+
+
 async def test_a_jump_in_seq_is_reported_before_the_message_that_shows_it() -> None:
     frames = [trade(1, seq=1), trade(2, seq=2), trade(4, seq=4), trade(5, seq=5)]
     async with FakeKalshi(subscribe_then(*frames)) as srv, feed_for(srv) as feed:

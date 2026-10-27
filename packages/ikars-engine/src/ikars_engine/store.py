@@ -192,6 +192,9 @@ class StateStore:
             (name, value),
         )
 
+    def delete_bookmarks(self, *names: str) -> None:
+        self._db.executemany("DELETE FROM bookmark WHERE name = ?", [(n,) for n in names])
+
     def beat(self, beats: dict[str, int]) -> None:
         self._db.execute("BEGIN")
         self._db.executemany(

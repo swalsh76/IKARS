@@ -36,6 +36,7 @@ from typing import Any, Protocol
 from ikars_core.auth import DataSigner
 from ikars_core.book import Applied, OrderBook
 from ikars_core.endpoints import MarketData
+from ikars_core.markets import is_combo
 from ikars_core.models import Trade
 from ikars_core.ws import Data, Reconnected, ResubscribeFailed, SequenceGap
 from ikars_core.ws_models import (
@@ -307,9 +308,9 @@ class KalshiSource:
         published: int | None = None
         if isinstance(message, TickerMsg):
             ticker = message.market_ticker
-            # only markets the index knows (or watched ones) are kept: the ticker channel carries
-            # every market, combos included, and nothing would ever forget them (M1.R 16)
-            known = ticker in self.discovery.index.markets or ticker in self.watched.current
+            # the ticker channel carries every market, combos included: combos are never kept, and
+            # a market the index still lacks after a discovery cycle is forgotten then (M1.R 16)
+            known = not is_combo(ticker) or ticker in self.watched.current
             before = (self.quotes.get(ticker), self.last_price_e6.get(ticker))
             if known and message.price_e6 is not None:
                 self.last_price_e6[ticker] = message.price_e6
@@ -508,7 +509,11 @@ class KalshiSource:
             self._state.set_bookmark(FULL_BOOKMARK, self._clock.now_ns())
         else:
             await self.discovery.incremental()
-        self._forget(self.discovery.index.prune(began))
+        index = self.discovery.index
+        unlisted = [
+            t for t in self.quotes if t not in index.markets and self.changed_ns.get(t, 0) < began
+        ]
+        self._forget([*index.prune(began), *unlisted])
         for gap in self._state.gaps("open"):
             if gap.recovery == "discovery" and gap.end_ns <= began:  # this cycle covered it
                 self._state.finish_gap(gap.id, "done", "a discovery cycle ran after it")
@@ -545,6 +550,9 @@ class KalshiSource:
             except Exception as exc:
                 self._attempts[gap.id] += 1
                 if self._attempts[gap.id] >= self._every.backfill_attempts:
+                    self._state.delete_bookmarks(
+                        f"backfill.{gap.id}.done_s", f"backfill.{gap.id}.slice_ns"
+                    )
                     self._state.finish_gap(
                         gap.id, "failed", f"{self._attempts[gap.id]} attempts: {exc!r}"[:300]
                     )
@@ -573,7 +581,8 @@ class KalshiSource:
             # what the feed recorded in this slice, and what an earlier attempt at it stored (with
             # the time it was fetched, so in the hours since that attempt began)
             known = self.recorder.known_trade_ids(low * NS - MINUTE_NS, high * NS + MINUTE_NS)
-            known |= self.recorder.known_trade_ids(began - MINUTE_NS, now + MINUTE_NS)
+            if began < now:  # resuming this slice: what the attempt that failed stored since
+                known |= self.recorder.known_trade_ids(began - MINUTE_NS, now + MINUTE_NS)
             # a slice that crosses the cutoff is read from both stores, split at the cutoff
             for historical, a, b in (
                 (True, low, min(high, cutoff)),
@@ -592,6 +601,10 @@ class KalshiSource:
             if gap_id is not None:  # this slice is done: a later attempt starts after it
                 self._state.set_bookmark(done_key, high)
                 self._state.set_bookmark(slice_key, 0)
+        if gap_id is not None:
+            self._state.delete_bookmarks(
+                done_key, slice_key
+            )  # the gap is closed: nothing to resume
         self._metrics.count("kalshi.backfill.trades", count)
         return count
 

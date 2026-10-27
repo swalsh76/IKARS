@@ -109,7 +109,10 @@ slice still needs its own approved plan before code.
   an HttpOnly cookie, React with Vite and pnpm). PR #12 merged (`d73921b`); tag `wpf-terminal-final` pushed. **WPF
   pruned:** PR #13 merged as `1b92d49`. The owner edited the `main protection` ruleset, which now requires **no**
   status checks (to restore: `python`, `hygiene`, and `web` once it exists; Claude is not permitted to change it).
-  Next: the **M1.8a-web** plan for approval, on branch `m1/8a-web`; then M1.8b. The owner's M1.6 auto-start sign-out check is still pending. The owner allows
+  **M1.R Base hardening** (owner 2026-10-27: a whole-code-base review before the web terminal; items 1 to 26
+  approved): built on branch `m1/r-hardening` (BUILD-LOG 1.R; merge review itemized); PR open, waiting for the
+  owner's merge. Pending from the owner: a resting order to confirm the reconciliation rule live (GET only). Next:
+  the **M1.8a-web** plan for approval; then M1.8b. The owner's M1.6 auto-start sign-out check is still pending. The owner allows
   `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

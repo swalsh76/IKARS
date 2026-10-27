@@ -5,7 +5,9 @@ else small that another process reads while it may be rewritten.
 """
 
 import os
+from collections.abc import Iterable
 from datetime import UTC, datetime
+from itertools import count
 from pathlib import Path
 
 
@@ -20,12 +22,15 @@ def write_text_atomic(path: Path, text: str) -> None:
     os.replace(temporary, path)
 
 
+def first_free(candidates: Iterable[Path]) -> Path:
+    """The first of ``candidates`` that does not exist (an endless iterable)."""
+    return next(path for path in candidates if not path.exists())
+
+
 def backup_name(path: Path) -> Path:
     """A name beside ``path`` for a copy of it that never overwrites an earlier copy."""
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-    target = path.with_name(f"{path.stem}.{stamp}.bak{path.suffix}")
-    n = 1
-    while target.exists():
-        target = path.with_name(f"{path.stem}.{stamp}-{n}.bak{path.suffix}")
-        n += 1
-    return target
+    return first_free(
+        path.with_name(f"{path.stem}.{stamp}{'' if n == 0 else f'-{n}'}.bak{path.suffix}")
+        for n in count()
+    )

@@ -212,14 +212,17 @@ class AccountImporter:
         # the whole ledger every minute (M1.R 15)
         self._book: Book | None = None
         self._book_seq = 0
+        self._in_book: set[int] = set()  # records this importer appended (already in the book)
         self._archive_checked: dict[str, int] = {}  # ticker -> when it last failed to check out
 
     def _current_book(self) -> Book:
         if self._book is None:
-            self._book, self._book_seq = Book(), 0
+            self._book, self._book_seq, self._in_book = Book(), 0, set()
         for body in self._ledger.records(after=self._book_seq):  # annotations, other writers
-            self._book.apply_body(body)
+            if body["seq"] not in self._in_book:
+                self._book.apply_body(body)
             self._book_seq = body["seq"]
+        self._in_book.clear()
         return self._book
 
     async def run_once(self) -> ImportReport:
@@ -251,17 +254,15 @@ class AccountImporter:
                 log.warning("ledger: a fill arrived after a later one; flagged for the owner")
             book.add(entry)
             entries.append(entry)
-        self._ledger.append_all(entries)
-        self._book_seq = self._ledger.head().seq  # the book already holds what was just appended
+        self._in_book.update(self._ledger.append_all(entries))  # the book already holds these
         if first:  # the history is in: never read it all again, whatever fails below
             self._ledger.set_bookmark(FIRST_DONE, str(self._clock.now_ns()))
         held = await self._account.positions()
         derived = await self._derive_archived(held, book)
-        self._ledger.append_all(derived)
+        self._in_book.update(self._ledger.append_all(derived))
         for entry in derived:
             book.add(entry)
         reconciliation = await self.reconcile(held, book)
-        self._book_seq = self._ledger.head().seq
         log.info(
             "ledger import",
             extra={
@@ -525,8 +526,12 @@ class AccountImporter:
         }
         result = Reconciliation(balance.balance_dollars_e6, book.cash_e6, differ)
         if result.difference_e6 < 0:  # less available than explained: resting buys hold some back
-            reserved = await self._reserved_e6()
-            result = Reconciliation(result.balance_e6, result.explained_e6, differ, reserved)
+            try:
+                reserved = await self._reserved_e6()
+            except Exception as exc:  # unknown: the reconciliation is then simply not exact
+                log.warning("resting orders could not be read", extra={"error": type(exc).__name__})
+            else:
+                result = Reconciliation(result.balance_e6, result.explained_e6, differ, reserved)
         fields = {
             "balance_e6": result.balance_e6,
             "explained_e6": result.explained_e6,

@@ -245,6 +245,15 @@ async def test_resting_orders_are_read_in_fixed_point() -> None:
         account.orders(status="open")
 
 
+def test_an_order_without_outcome_side_takes_it_from_side_and_action() -> None:
+    from ikars_core.account import Order
+
+    base = {"order_id": "o", "ticker": "T", "status": "resting", "yes_price_dollars": "0.3000",
+            "no_price_dollars": "0.7000", "remaining_count_fp": "1.00"}  # fmt: skip
+    assert Order.model_validate({**base, "side": "yes", "action": "buy"}).outcome_side == "yes"
+    assert Order.model_validate({**base, "side": "yes", "action": "sell"}).outcome_side == "no"
+
+
 async def test_historical_positions_use_the_archive_route_without_a_status() -> None:
     account, seen = reader(lambda _: {"market_positions": [], "event_positions": []})
     await account.positions(historical=True)

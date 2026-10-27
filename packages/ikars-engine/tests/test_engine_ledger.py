@@ -21,6 +21,7 @@ from ikars_core.account import (
     Transfer,
 )
 from ikars_core.endpoints import TypedPage
+from ikars_core.rest import KalshiAPIError
 from ikars_engine import taxzone
 from ikars_engine.clocks import VirtualClock
 from ikars_engine.ledger import GENESIS, Entry, Ledger, LedgerError, Verified, canonical, digest
@@ -201,6 +202,8 @@ class FakeAccount:
         self.held: list[dict[str, Any]] = []
         self.archived: list[dict[str, Any]] = []
         self.resting: list[dict[str, Any]] = []
+        self.orders_fail = False
+        self.while_reading: Any = None  # runs during the positions read (another writer)
         self.calls: list[tuple[str, Any]] = []
 
     def fills_(self, rows: list[dict[str, Any]]) -> AsyncIterator[TypedPage[Fill]]:
@@ -232,10 +235,14 @@ class FakeAccount:
 
     def orders(self, *, status: str = "resting") -> AsyncIterator[TypedPage[Order]]:
         self.calls.append(("orders", status))
+        if self.orders_fail:
+            raise KalshiAPIError(403, "forbidden")
         return page([Order.model_validate(r) for r in self.resting], self.resting)
 
     async def positions(self, *, historical: bool = False) -> Positions:
         self.calls.append(("archived" if historical else "positions", None))
+        if self.while_reading is not None and not historical:
+            self.while_reading()
         rows = self.archived if historical else self.held
         return Positions(
             market_positions=[MarketPosition.model_validate(p) for p in rows], event_positions=[]
@@ -644,6 +651,33 @@ async def test_an_archived_market_that_does_not_check_out_is_rechecked_hourly(
     clock.advance_to(T0 + 3_601 * 10**9)
     await importer.run_once()
     assert account.calls.count(("archived", None)) == 2
+    ledger.close()
+
+
+async def test_an_annotation_made_during_an_import_is_counted(tmp_path: Path) -> None:
+    """M1.R merge review 2: the kept book skipped a record another process appended mid-import."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    importer = AccountImporter(ledger, account, VirtualClock(T0))  # type: ignore[arg-type]
+    await importer.run_once()
+    account.balance_cents += 42
+    account.while_reading = lambda: annotate(ledger, "interest", 420_000, T0, "made-up interest")
+    await importer.run_once()  # the annotation lands while the import waits on Kalshi
+    account.while_reading = None
+    report = await importer.run_once()
+    assert report.reconciliation is not None and report.reconciliation.exact
+    ledger.close()
+
+
+async def test_resting_orders_that_cannot_be_read_leave_the_import_running(
+    tmp_path: Path,
+) -> None:
+    """M1.R merge review 3: a failed orders read aborted the whole import."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    account.balance_cents -= 300
+    account.orders_fail = True
+    report = await AccountImporter(ledger, account, VirtualClock(T0)).run_once()  # type: ignore[arg-type]
+    assert report.added == {"deposit": 1, "fill": 2}
+    assert report.reconciliation is not None and not report.reconciliation.exact
     ledger.close()
 
 

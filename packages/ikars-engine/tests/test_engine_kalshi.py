@@ -4,6 +4,7 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +50,10 @@ def market(
     }
 
 
+def _seconds(iso: str) -> int:
+    return int(datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp())
+
+
 class FakeKalshi:
     """The REST endpoints the source uses, with state the tests can change."""
 
@@ -62,6 +67,9 @@ class FakeKalshi:
         self.on_markets: Any = None  # called on each market listing (to let time pass)
         self.trade_asks: list[str] = []  # each trades request's min_ts
         self.fail_trade_ask: int | None = None  # this trades request (1 is the first) fails
+        self.trades_by_time = (
+            False  # answer only the trades in the request's window, as Kalshi does
+        )
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -99,7 +107,11 @@ class FakeKalshi:
             self.trade_asks.append(params["min_ts"])
             if len(self.trade_asks) == self.fail_trade_ask:
                 return httpx.Response(400)
-            body = {"trades": self.trades, "cursor": ""}
+            trades = self.trades
+            if self.trades_by_time:
+                low, high = int(params["min_ts"]), int(params["max_ts"])
+                trades = [t for t in trades if low <= _seconds(t["created_time"]) < high]
+            body = {"trades": trades, "cursor": ""}
         else:
             return httpx.Response(404)
         return httpx.Response(200, content=json.dumps(body).encode())
@@ -688,15 +700,27 @@ async def test_a_market_is_asked_for_one_snapshot_until_it_comes(tmp_path: Path)
     await rig.source.stop()
 
 
-async def test_a_repeated_backfill_never_stores_a_trade_twice(tmp_path: Path) -> None:
-    """Review 5: an earlier attempt's rows carry the time they were fetched, in a later hour."""
+async def test_a_repeated_backfill_never_stores_a_trade_twice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review 5: an earlier attempt's rows carry the time they were fetched, in a later hour. With
+    M1.R 17 the attempt that failed after storing them is resumed, and still stores none twice."""
     rig = Rig(tmp_path, [market("M1")])
     rig.recorder = Recorder(tmp_path / "rec", flush_seconds=0)
     rig.source.recorder = rig.recorder
     await rig.source.start()
     rig.kalshi.trades = [fixture("trade.json")]
     rig.clock.advance_to(LATE + 2 * HOUR_NS)
-    assert await rig.source._backfill(LATE - 10 * 10**9, LATE, gap_id=7) == 1
+    real = rig.recorder.write
+
+    def store_then_fail(channel: str, row: dict[str, Any]) -> None:
+        real(channel, row)
+        raise OSError("the attempt fails right after storing the trade")
+
+    monkeypatch.setattr(rig.recorder, "write", store_then_fail)
+    with pytest.raises(OSError):
+        await rig.source._backfill(LATE - 10 * 10**9, LATE, gap_id=7)
+    monkeypatch.undo()
     rig.clock.advance_to(LATE + 3 * HOUR_NS)  # the attempt is repeated an hour later
     assert await rig.source._backfill(LATE - 10 * 10**9, LATE, gap_id=7) == 0
     await rig.source.stop()
@@ -886,7 +910,17 @@ async def test_a_failed_backfill_resumes_at_the_slice_it_failed(tmp_path: Path) 
     rig.recorder = Recorder(tmp_path / "rec", flush_seconds=0)
     rig.source.recorder = rig.recorder
     await rig.source.start()
-    rig.kalshi.trades = [fixture("trade.json")]
+
+    def trade_at(ns: int, trade_id: str) -> dict[str, Any]:
+        moment = datetime.fromtimestamp(ns / 10**9, UTC).isoformat().replace("+00:00", "Z")
+        return {**fixture("trade.json"), "trade_id": trade_id, "created_time": moment}
+
+    start = LATE - 3 * HOUR_NS
+    rig.kalshi.trades = [
+        trade_at(start + 600 * 10**9, "a"),  # in the first slice
+        trade_at(start + 2 * HOUR_NS + 60 * 10**9, "b"),  # in the third
+    ]
+    rig.kalshi.trades_by_time = True
     rig.kalshi.fail_trade_ask = 2  # the second slice fails, once
     asked = rig.kalshi.trade_asks
     gap = rig.state.add_gap("trade", "reconnect", LATE - 3 * HOUR_NS, LATE, "backfill", LATE)
@@ -897,9 +931,11 @@ async def test_a_failed_backfill_resumes_at_the_slice_it_failed(tmp_path: Path) 
     await rig.source._backfill_open_gaps()
     resumed = asked[len(first_attempt) :]
     assert resumed[0] == first_attempt[1]  # the finished first slice is not fetched again
-    assert rig.state.gaps("done")[0].detail == "0 trades fetched"  # nothing stored twice
+    assert rig.state.gaps("done")[0].detail == "1 trades fetched"  # only what was left
+    assert rig.state.bookmark(f"backfill.{gap}.done_s") is None  # closed: nothing kept
     await rig.source.stop()
-    assert read_rows(hours(tmp_path / "rec", "trade"), "trade").num_rows == 1
+    rows = read_rows(hours(tmp_path / "rec", "trade"), "trade")
+    assert sorted(rows.column("trade_id").to_pylist()) == ["a", "b"]  # each once
 
 
 async def test_long_closed_markets_are_forgotten_and_unknown_tickers_kept_nowhere(
@@ -915,12 +951,24 @@ async def test_long_closed_markets_are_forgotten_and_unknown_tickers_kept_nowher
     await rig.feed.queue.put(frame("ticker", TICKER_MSG, T0 + 2, sid=1))
     await rig.items(2)
     assert "KXMVE-X" not in rig.source.quotes and "M1" in rig.source.quotes
-    version = rig.discovery.index.version
+    assert "OLD" not in rig.discovery.index.markets  # long settled: never kept
     await rig.source._discover()
-    assert "OLD" not in rig.discovery.index.markets and "OLD" not in rig.source.quotes
-    assert "OLD" not in rig.source.last_price_e6 and rig.discovery.index.version > version
-    assert "M1" in rig.discovery.index.markets
+    assert "OLD" not in rig.source.quotes and "OLD" not in rig.source.last_price_e6
+    assert "M1" in rig.discovery.index.markets and "M1" in rig.source.quotes
     await rig.source.stop()
+
+
+def test_only_long_settled_markets_leave_the_index() -> None:
+    """M1.R merge review 5: a closed market waiting for its result may still be held."""
+    from ikars_core.models import Market
+
+    index = MarketIndex(now_ns=lambda: T0)
+    for ticker, status in (("WAITING", "closed"), ("PAID", "finalized")):
+        index.put(Market.model_validate(
+            {**market(ticker, status=status), "close_time": "2025-11-01T00:00:00Z"}
+        ))  # fmt: skip
+    assert "WAITING" in index.markets and "PAID" not in index.markets  # never re-added either
+    assert index.prune(T0) == []
 
 
 async def test_the_rebalance_removes_before_it_adds_and_trusts_the_exchange(

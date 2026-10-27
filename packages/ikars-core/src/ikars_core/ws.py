@@ -251,6 +251,8 @@ class KalshiFeed:
         """Send a remembered subscription again (after a failed restore); returns its new sid."""
         for sub in self._subscriptions:
             if sub.channel == channel:
+                if sub.sid is not None:  # restored meanwhile (a reconnect): never a second one
+                    return sub.sid
                 reply = await self._command("subscribe", sub.params)
                 sub.sid = self._sid_of(reply)
                 return sub.sid

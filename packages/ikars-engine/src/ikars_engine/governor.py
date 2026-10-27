@@ -50,7 +50,9 @@ class StorageGovernor:
         self._target = target_percent
 
     def _files(self) -> list[Path]:
-        return [p for p in self.root.glob("*/*/*") if p.suffix in (".parquet", ".arrow")]
+        return [
+            p for p in self.root.glob("*/*/*") if p.suffix in (".parquet", ".arrow", ".damaged")
+        ]
 
     def _sizes(self) -> dict[Path, int]:
         """Each file's size; one renamed or removed since the listing (a compaction running in a
@@ -76,7 +78,7 @@ class StorageGovernor:
             return StorageReport(Storage.WARN, used, self.budget_bytes)
         # oldest hour first across channels: by (date, hour), then channel for a stable order
         compacted = sorted(
-            (p for p in files if p.suffix == ".parquet"),
+            (p for p in files if p.suffix in (".parquet", ".damaged")),  # never an open hour
             key=lambda p: (p.parent.name, p.stem, p.parent.parent.name),
         )
         pruned: list[Path] = []

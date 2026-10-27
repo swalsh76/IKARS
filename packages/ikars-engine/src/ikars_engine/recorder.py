@@ -30,6 +30,7 @@ import time
 from collections import defaultdict
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from itertools import count
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,8 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.ipc as ipc
 import pyarrow.parquet as pq
+
+from ikars_engine.files import first_free
 
 log = logging.getLogger("ikars_engine.recorder")
 _I64 = pa.int64()
@@ -290,12 +293,23 @@ def compact(path: Path, channel: str) -> Path:
     schema = SCHEMAS[channel]
     target = path.with_suffix(".parquet")
     temporary = path.with_suffix(".parquet.tmp")
+    merged = path.with_suffix(".arrow.merged")
+    if merged.exists():
+        # an earlier fold-in of this hour stopped between its steps (its Parquet was held): finish
+        # it first, or this one would overwrite the rows it still holds (M1.R merge review 1)
+        finish_compaction(merged)
     tables = [_read_stream(path, schema)]
     if target.exists():
         try:
             tables.insert(0, pq.read_table(target, schema=schema))
-        except pa.ArrowInvalid as exc:  # not a readable Parquet file: kept aside, never deleted
-            damaged = _free_name(target.with_name(target.name + ".damaged"))
+        except pa.ArrowInvalid as exc:
+            if _readable(target):
+                raise  # a sound file that differs from the schema: never set aside, left for later
+            # not a readable Parquet file: kept aside, never deleted
+            damaged = first_free(
+                target.with_name(target.name + ".damaged" + ("" if n == 0 else f".{n}"))
+                for n in count()
+            )
             target.replace(damaged)
             log.error(
                 "a recorded hour could not be read; set aside",
@@ -308,18 +322,16 @@ def compact(path: Path, channel: str) -> Path:
     pq.write_table(table, temporary, compression="zstd")
     with open(temporary, "rb+") as written:  # on disk before it replaces anything (a power cut)
         os.fsync(written.fileno())
-    merged = path.with_suffix(".arrow.merged")
     path.replace(merged)  # step 1: from here the rows live in the temporary file
     return finish_compaction(merged)
 
 
-def _free_name(path: Path) -> Path:
-    """``path``, or ``path.1``, ``path.2``, ... the first that does not exist."""
-    candidate, n = path, 0
-    while candidate.exists():
-        n += 1
-        candidate = path.with_name(f"{path.name}.{n}")
-    return candidate
+def _readable(path: Path) -> bool:
+    """Whether ``path`` is a Parquet file whose footer can be read (whatever its schema)."""
+    try:
+        return pq.ParquetFile(path).metadata is not None
+    except (pa.ArrowInvalid, OSError):
+        return False
 
 
 def finish_compaction(merged: Path) -> Path:

@@ -117,6 +117,17 @@ class Order(Model):
     no_price_e6: Dollars = Field(validation_alias="no_price_dollars")
     remaining_e2: RequiredCountE2 = Field(validation_alias="remaining_count_fp")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_side(cls, data: Any) -> Any:
+        # the deprecated ``side`` gives the exposure when ``outcome_side`` is missing (as on a fill)
+        if isinstance(data, dict) and not data.get("outcome_side"):
+            side, action = data.get("side"), data.get("action")
+            if side in ("yes", "no") and action in BUY_SELL:
+                other = "no" if side == "yes" else "yes"
+                data = {**data, "outcome_side": side if action == "buy" else other}
+        return data
+
 
 class Positions(Model):
     market_positions: list[MarketPosition]

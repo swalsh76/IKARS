@@ -293,6 +293,50 @@ def test_an_hour_that_cannot_be_folded_in_is_never_overwritten(
     assert sorted(ids) == ["a", "b"]
 
 
+def test_a_fold_in_stopped_between_its_steps_is_finished_before_the_next(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R merge review 1: when step 2 failed (the Parquet held), the next fold-in of the hour
+    overwrote the files still holding the first one's rows."""
+    first = Recorder(tmp_path)
+    first.write("trade", trade(T0 + 1, "a"))
+
+    def held(merged: Path) -> Path:
+        raise PermissionError("the hour's Parquet is open in a reader")
+
+    monkeypatch.setattr("ikars_engine.recorder.finish_compaction", held)
+    first.close()  # step 1 done, step 2 failed: 00.arrow.merged and 00.parquet.tmp remain
+    monkeypatch.undo()
+    second = Recorder(tmp_path)
+    second.write("trade", trade(T0 + 2, "b"))
+    second.close()
+    assert read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist() == ["a", "b"]
+    assert not list(tmp_path.glob("trade/*/*.merged")) and not list(tmp_path.glob("trade/*/*.tmp"))
+
+
+def test_a_sound_file_of_another_schema_is_never_set_aside(tmp_path: Path) -> None:
+    """M1.R merge review 7: a schema change would have moved every good hour aside as damaged."""
+    import pyarrow as pa
+
+    folder = tmp_path / "trade" / "2026-01-01"
+    folder.mkdir(parents=True)
+    pq.write_table(pa.table({"received_ns": ["not a number"]}), folder / "00.parquet")
+    crashed = Recorder(tmp_path, flush_seconds=0)
+    crashed.write("trade", trade(T0 + 1, "a"))
+    next(iter(crashed._open.values()))[1].close()
+    restarted = Recorder(tmp_path)
+    assert restarted.recover() == 0 and restarted.compaction_failures == 1  # left, not set aside
+    assert (folder / "00.parquet").exists() and not list(folder.glob("*.damaged"))
+
+
+def test_damaged_hours_count_against_the_budget_and_go_first(tmp_path: Path) -> None:
+    """M1.R merge review 7: set-aside files were invisible to the storage governor."""
+    damaged = make_file(tmp_path / "trade/2026-01-01/00.parquet.damaged", 700)
+    kept = make_file(tmp_path / "trade/2026-01-02/00.parquet", 300)
+    report = StorageGovernor(tmp_path, budget_bytes=1_000).check()
+    assert report.state is Storage.PRUNED and not damaged.exists() and kept.exists()
+
+
 def test_an_hour_closes_only_after_its_grace_period(tmp_path: Path) -> None:
     recorder = Recorder(tmp_path, flush_seconds=3600)
     recorder.write("trade", trade(T0 + 1, "a"))
