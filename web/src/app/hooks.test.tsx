@@ -20,7 +20,7 @@ function fakeTerminal(): { terminal: Terminal; setRoute: (r: Route) => void } {
   const listeners = new Set<() => void>();
   const terminal = {
     hub,
-    meter: new Meter({ frame: (f) => f(), wallMs: () => 1_000, perfMs: () => 0 }),
+    meter: new Meter({ frame: (f) => f(), wallMs: () => 1_000, perfMs: () => 0, hidden: () => false, shownOrHidden: () => 0 }),
     stream: {} as Terminal["stream"],
     navigator: {
       current: () => route,

@@ -1,17 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { KEPT, Meter, Window } from "./meter";
+import { ENGINE_KEPT, Meter, SCREEN_KEPT, Window } from "./meter";
 
 describe("the window", () => {
-  it("keeps the latest samples and gives nearest-rank percentiles", () => {
+  it("keeps the latest samples and gives nearest-rank percentiles from one sort", () => {
     const window = new Window(4);
-    expect(window.percentile(50)).toBeNull();
+    expect(window.percentiles(50, 99)).toEqual([null, null]);
     for (const v of [10, 20, 30, 40, 50]) window.add(v); // 10 falls out
     expect(window.count).toBe(4);
-    expect(window.percentile(50)).toBe(30);
-    expect(window.percentile(99)).toBe(50);
-    expect(window.percentile(0)).toBe(20);
-    expect(new Window().percentile(99)).toBeNull();
-    expect(KEPT).toBe(10_000);
+    expect(window.percentiles(50, 99, 0)).toEqual([30, 50, 20]);
+    expect([SCREEN_KEPT, ENGINE_KEPT]).toEqual([1_000, 10_000]);
   });
 });
 
@@ -20,17 +17,25 @@ describe("the meter", () => {
     const frames: (() => void)[] = [];
     let wall = 1_000_000;
     let perf = 50;
+    let hidden = false;
+    let changes = 0;
     const meter = new Meter({
       frame: (callback) => frames.push(callback),
       wallMs: () => wall,
       perfMs: () => perf,
+      hidden: () => hidden,
+      shownOrHidden: () => changes,
     });
     const nextFrame = (advance: number) => {
       wall += advance;
       perf += advance;
       frames.shift()?.();
     };
-    return { meter, frames, nextFrame };
+    const hide = (h: boolean) => {
+      hidden = h;
+      changes += 1;
+    };
+    return { meter, frames, nextFrame, hide };
   }
 
   it("measures from the flush to the frame after the one that shows the change (D20 J)", () => {
@@ -51,5 +56,31 @@ describe("the meter", () => {
     nextFrame(1);
     nextFrame(1);
     expect(meter.reading().engineP99).toBe(0);
+  });
+
+  it("measures one at a time and not while hidden, so held frames never pile up (merge review 1)", () => {
+    const { meter, frames, nextFrame, hide } = rig();
+    meter.flushed([1]);
+    meter.flushed([1]); // one is in flight: skipped
+    expect(frames).toHaveLength(1);
+    nextFrame(1);
+    hide(true); // minimised between the two frames
+    nextFrame(300_000);
+    expect(meter.reading().samples).toBe(0);
+    meter.flushed([1]); // hidden: nothing queued
+    expect(frames).toHaveLength(0);
+    hide(false);
+    meter.flushed([1]);
+    expect(frames).toHaveLength(1);
+  });
+
+  it("drops a measurement during which the window was hidden and shown again (per-commit review)", () => {
+    const { meter, nextFrame, hide } = rig();
+    meter.flushed([1]);
+    hide(true); // hidden before the first frame: both frames are held
+    hide(false); // shown again: both callbacks now run
+    nextFrame(300_000);
+    nextFrame(16);
+    expect(meter.reading().samples).toBe(0);
   });
 });

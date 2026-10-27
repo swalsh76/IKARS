@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useSnapshot } from "../app/hooks";
+import type { LedgerStatusView } from "../api/contracts";
+import { useSnapshot, type Loaded } from "../app/hooks";
 import { href } from "../nav/route";
 import { recordRow } from "../view/market";
 import { ledgerLines } from "../view/records";
@@ -8,8 +9,7 @@ import { Link } from "./Shell";
 
 const PAGE = 100;
 
-function Status() {
-  const status = useSnapshot("/v1/ledger/status", "LedgerStatusView", 60_000);
+function Status({ status }: { status: Loaded<LedgerStatusView> }) {
   return (
     <section className="card" aria-label="Ledger status">
       <h2>Ledger</h2>
@@ -26,7 +26,7 @@ function Status() {
   );
 }
 
-function Records() {
+function Records({ zone }: { zone: string | undefined }) {
   const [ticker, setTicker] = useState("");
   const [filter, setFilter] = useState("");
   const [pages, setPages] = useState<number[]>([]); // the `before` of each older page opened
@@ -34,7 +34,8 @@ function Records() {
   const params = new URLSearchParams({ limit: String(PAGE) });
   if (before !== undefined) params.set("before", String(before));
   if (filter) params.set("ticker", filter);
-  const page = useSnapshot(`/v1/ledger/records?${params.toString()}`, "LedgerPage");
+  // refreshed with the status beside it, so a new import shows here too (merge review 6)
+  const page = useSnapshot(`/v1/ledger/records?${params.toString()}`, "LedgerPage", 60_000);
   return (
     <section className="card" aria-label="Ledger records">
       <div className="toolbar">
@@ -43,7 +44,7 @@ function Records() {
           role="search"
           onSubmit={(event) => {
             event.preventDefault();
-            setFilter(ticker.trim());
+            setFilter(ticker.trim().toUpperCase()); // Kalshi's tickers are upper case (merge review 4)
             setPages([]);
           }}
         >
@@ -83,7 +84,7 @@ function Records() {
             </thead>
             <tbody>
               {page.value.items.map((record) => {
-                const row = recordRow(record);
+                const row = recordRow(record, zone); // in the ledger's tax zone (merge review 5)
                 return (
                   <tr key={record.seq}>
                     <td className="num">{record.seq}</td>
@@ -104,14 +105,16 @@ function Records() {
 }
 
 export function Ledger() {
+  const status = useSnapshot("/v1/ledger/status", "LedgerStatusView", 60_000);
+  const zone = status.state === "ready" ? status.value.tax_zone : undefined;
   return (
     <div className="grid">
       <Guarded title="Ledger">
-        <Status />
+        <Status status={status} />
       </Guarded>
       <div className="span-2">
         <Guarded title="Records">
-          <Records />
+          <Records zone={zone} />
         </Guarded>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { ALERTS_PER_PRIORITY } from "../api/hub";
 import { useValue } from "../app/hooks";
 import { alertGroups } from "../view/records";
 
@@ -14,7 +15,7 @@ export function Alerts() {
       {groups.map((group) => (
         <section className="card span-3" key={group.priority} aria-label={`${group.priority} alerts`}>
           <h2 className={`priority-${group.priority}`}>
-            {group.priority} ({group.alerts.length})
+            {group.priority} ({group.alerts.length === ALERTS_PER_PRIORITY ? `the latest ${ALERTS_PER_PRIORITY}` : group.alerts.length})
           </h2>
           <table>
             <tbody>

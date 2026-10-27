@@ -104,6 +104,8 @@ export class Hub {
     if (this.deps.flushed) {
       const received: number[] = [];
       for (const [key, value] of changed) {
+        // only quotes a screen shows: one no screen listens to changes nothing on it (merge review 2)
+        if (!this.listeners.get(key)?.size) continue;
         const at = key.startsWith("quote:") ? (value as QuoteUpdate).received_ns : null;
         if (typeof at === "number") received.push(at);
       }

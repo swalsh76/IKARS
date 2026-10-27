@@ -79,9 +79,13 @@ describe("the meter's view of a flush", () => {
   it("is told the received times of the quotes handed on, and nothing for other values", () => {
     const flushed = vi.fn();
     const metered = new Hub({ ...rig().deps, flushed });
+    metered.listen("quote:KXA", () => undefined);
+    metered.listen("quote:KXB", () => undefined);
+    metered.listen("book:KXA", () => undefined);
     metered.handle({ event: "quote", data: { ticker: "KXA", yes_bid_e6: 1, yes_ask_e6: 2, last_price_e6: null, received_ns: 5 } });
     metered.handle({ event: "quote", data: { ticker: "KXB", yes_bid_e6: 1, yes_ask_e6: 2, last_price_e6: null, received_ns: null } });
     metered.handle({ event: "book", data: { ticker: "KXA", ready: true, yes: [], no: [] } });
+    metered.handle({ event: "quote", data: { ticker: "KXC", yes_bid_e6: 1, yes_ask_e6: 2, last_price_e6: null, received_ns: 9 } }); // shown nowhere
     metered.flush();
     expect(flushed).toHaveBeenCalledWith([5]);
   });

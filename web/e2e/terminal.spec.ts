@@ -1,17 +1,7 @@
 // Whole screens in Edge against the engine's real API server on made-up data (demo-api).
 
 import { expect, test, type Page } from "@playwright/test";
-
-const base = () => `http://127.0.0.1:${process.env.IKARS_DEMO_PORT ?? "0"}`;
-
-/** A fresh one-time sign-in address, as ikars open gets it (the bearer token is demo-api's own). */
-async function signInUrl(): Promise<string> {
-  const answer = await fetch(`${base()}/v1/session/code`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.IKARS_DEMO_TOKEN ?? ""}` },
-  });
-  return ((await answer.json()) as { url: string }).url;
-}
+import { base, signInUrl } from "./demo";
 
 /** Every Content Security Policy refusal the page reports (there must be none). */
 function watchPolicy(page: Page): string[] {
