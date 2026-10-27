@@ -3,6 +3,7 @@ book, ledger record and alert here is made up."""
 
 import json
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -185,6 +186,9 @@ async def test_markets_search_page_and_quote(ctx: ApiContext) -> None:
     assert [m.ticker for m in found.items] == ["OTHER"]
     second = await get(ctx, "/v1/markets?limit=1&offset=1", c.MarketPage)
     assert [m.ticker for m in second.items] == ["KXA"] and second.offset == 1
+    ctx.index.markets["KXDONE"] = replace(info("KXDONE", 9_999), status="closed")
+    closed_last = await get(ctx, "/v1/markets?category=Demo", c.MarketPage)
+    assert [m.ticker for m in closed_last.items] == ["KXB", "KXA", "KXDONE"]  # open ones first
     one = await get(ctx, "/v1/markets/KXA", c.MarketView)
     quote = (one.yes_bid_e6, one.yes_ask_e6, one.last_price_e6, one.watched)
     assert quote == (410_000, 430_000, 420_000, True)

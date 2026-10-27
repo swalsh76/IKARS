@@ -44,7 +44,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from ikars_engine import contracts as c
 from ikars_engine.files import write_text_atomic
-from ikars_engine.kalshi.discovery import MarketIndex, MarketInfo
+from ikars_engine.kalshi.discovery import OPEN_STATUSES, MarketIndex, MarketInfo
 from ikars_engine.ledger import KINDS, Ledger
 from ikars_engine.metrics import Metrics
 from ikars_engine.portfolio import Portfolio
@@ -380,7 +380,8 @@ def create_app(ctx: ApiContext) -> ASGIApp:
             if (not query or query in m.ticker.lower() or query in m.title.lower())
             and (category is None or m.category == category)
         ]  # fmt: skip
-        found.sort(key=lambda m: (-m.volume_24h_e2, m.ticker))
+        # open markets first (closed ones keep their day's volume for a while), then by volume
+        found.sort(key=lambda m: (m.status not in OPEN_STATUSES, -m.volume_24h_e2, m.ticker))
         page = [market_view(ctx, m) for m in found[offset : offset + limit]]
         return _json(c.MarketPage(items=page, total=len(found), offset=offset))
 

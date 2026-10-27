@@ -30,11 +30,19 @@ internal static class Converters
 internal sealed class MarketChart : UserControl
 {
     private readonly WpfPlot _plot = new();
+    private readonly TextBlock _empty = new()
+    {
+        Text = "no trades today",
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
+        Opacity = 0.7,
+    };
+
     private MarketScreen? _screen;
 
     public MarketChart()
     {
-        Content = _plot;
+        Content = new Grid { Children = { _plot, _empty } };
         MinHeight = 160;
         DataContextChanged += (_, _) => Attach(DataContext as MarketScreen);
     }
@@ -67,17 +75,18 @@ internal sealed class MarketChart : UserControl
         var plot = _plot.Plot;
         plot.Clear();
         var points = _screen?.ChartPoints ?? [];
+
+        // no axes without data: an empty plot reads as a broken chart
+        _plot.Visibility = points.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _empty.Visibility = points.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
         if (points.Count > 0)
         {
             var times = points.Select(p => p.End.ToLocalTime().ToOADate()).ToArray();
             var cents = points.Select(p => p.Cents).ToArray();
             plot.Add.ScatterLine(times, cents);
             plot.Axes.DateTimeTicksBottom();
+            plot.Axes.AutoScaleX();
             plot.Axes.SetLimitsY(0, 100);
-        }
-        else
-        {
-            plot.Title("no trades today");
         }
 
         _plot.Refresh();

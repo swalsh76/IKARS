@@ -14,7 +14,11 @@ internal partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        var connector = new EngineConnector(ApiInfo.DefaultDataFolder, new RegisteredEngineStarter(), info => new IkarsApiClient(info));
+
+        // --data-folder <path>: another engine's data folder (a portable install, or a load test)
+        var at = Array.IndexOf(e.Args, "--data-folder");
+        var folder = at >= 0 && at + 1 < e.Args.Length ? e.Args[at + 1] : ApiInfo.DefaultDataFolder;
+        var connector = new EngineConnector(folder, new RegisteredEngineStarter(), info => new IkarsApiClient(info));
         var shell = new ShellViewModel(connector, new FrameMeter());
         var window = new MainWindow { DataContext = shell };
         MainWindow = window;
