@@ -25,6 +25,51 @@ export function useValue<K extends keyof Values>(key: K): Values[K] {
   return useSyncExternalStore(subscribe, read);
 }
 
+/** The quotes of ``tickers``, live, **without re-rendering**: subscribes them while the screen is open
+ * and calls ``onChange`` once per hub flush with the tickers whose quotes changed in it. For a screen
+ * that updates its own widget (the Markets grid: only changed rows, no React render), so an update fits
+ * in a frame (D20 J; the owner's console run of M1.8a-web-2b). */
+export function useQuoteChanges(tickers: readonly string[], onChange: (changed: string[]) => void): void {
+  const { hub } = useTerminal();
+  const latest = useRef(onChange);
+  useEffect(() => {
+    latest.current = onChange;
+  });
+  const key = JSON.stringify(tickers);
+  const held = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    const list = JSON.parse(key) as string[];
+    const release = hub.want(list); // the new list before the old one goes (as useMarkets)
+    held.current?.();
+    held.current = release;
+    let pending: Set<string> | null = null;
+    let ended = false; // a batch still queued when the list changes or the screen closes is dropped
+    const stops = list.map((ticker) =>
+      hub.listen(`quote:${ticker}`, () => {
+        if (pending === null) {
+          const batch = (pending = new Set());
+          queueMicrotask(() => {
+            pending = null;
+            if (!ended) latest.current([...batch]); // the whole flush at once, before the next frame
+          });
+        }
+        pending.add(ticker);
+      }),
+    );
+    return () => {
+      ended = true;
+      for (const stop of stops) stop();
+    };
+  }, [hub, key]);
+  useEffect(
+    () => () => {
+      held.current?.();
+      held.current = null;
+    },
+    [],
+  );
+}
+
 /** The markets a screen shows, live: subscribes their quotes (and books) while the screen is open and
  * re-renders it when any of them changes (one render per hub flush). Returns a change count. */
 export function useMarkets(quotes: readonly string[], books: readonly string[] = []): number {

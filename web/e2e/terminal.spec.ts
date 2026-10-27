@@ -87,6 +87,10 @@ test("markets: the grid fills, a search narrows it and a row opens the market", 
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Markets" }).click();
   await expect(page.getByTestId("market-count")).toHaveText("30 found");
   await expect(page.locator(".ag-row").first()).toBeVisible();
+  // the grid's rows change in place as quotes stream (no React render: transactions)
+  const firstRow = page.locator('.ag-row[row-index="0"]').first(); // drawn: the grid draws only what shows
+  const before = await firstRow.textContent();
+  await expect.poll(() => firstRow.textContent(), { timeout: 10_000 }).not.toBe(before);
   await page.locator("#market-category").selectOption("Weather");
   await expect(page).toHaveURL(/category=Weather/);
   await expect(page.getByTestId("market-count")).toHaveText("10 found");
