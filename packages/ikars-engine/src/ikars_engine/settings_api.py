@@ -44,7 +44,8 @@ RESTART = runmode.RESTART
 BACKUPS_KEPT = 20  # the settings file's backups kept (each change but a skin makes one)
 LAYOUTS_KEPT = 20
 WINDOWS_MAX = 8  # in one layout
-LAYOUT_NAME = re.compile(r"[\w .-]{1,40}")
+# a name starts with a letter or digit: "." or ".." in an address is a folder, never a name
+LAYOUT_NAME = re.compile(r"\w[\w .-]{0,39}")
 # a screen is an address in the terminal: a path and its query, nothing that could leave the engine
 # (no // host, no #, no quotes or spaces on Edge's command line)
 SCREEN = re.compile(r"/(?!/)[A-Za-z0-9/?&=%._~+-]{0,300}")
@@ -125,7 +126,10 @@ def checked_layout(layout: Layout) -> Layout:
     """``layout`` with its name trimmed, every window checked; raises SettingsRefused."""
     name = layout.name.strip()
     if not LAYOUT_NAME.fullmatch(name):
-        raise SettingsRefused("a layout's name is 1 to 40 letters, digits, spaces, dots or dashes")
+        raise SettingsRefused(
+            "a layout's name is 1 to 40 letters, digits, spaces, dots or dashes, starting with a "
+            "letter or digit"
+        )
     if not 1 <= len(layout.windows) <= WINDOWS_MAX:
         raise SettingsRefused(f"a layout holds 1 to {WINDOWS_MAX} windows")
     for window in layout.windows:

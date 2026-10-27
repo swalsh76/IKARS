@@ -129,7 +129,10 @@ def test_an_unknown_or_unsafe_layout_is_refused_before_anything_starts(
     with pytest.raises(ot.OpenError, match="no layout is named"):
         opener(Paths(tmp_path), settings=with_layouts(), layout="Nope")
     edited = with_layouts()  # a hand-edited screen that would leave the engine
-    bad = Layout(name="Trading", windows=[LayoutWindow(screen="//evil.example/x")])
+    bad = Layout(
+        name="Trading",
+        windows=[msgspec.structs.replace(edited.terminal.layouts[0].windows[0], screen="//e.x/x")],
+    )
     edited = msgspec.structs.replace(
         edited, terminal=msgspec.structs.replace(edited.terminal, layouts=[bad])
     )

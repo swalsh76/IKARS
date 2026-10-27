@@ -71,16 +71,16 @@ class AlertSettings(msgspec.Struct, frozen=True, kw_only=True):
 class LayoutWindow(msgspec.Struct, frozen=True, kw_only=True, forbid_unknown_fields=True):
     # one IKARS window: its screen (an address in the terminal, like /markets?q=fed) and where it
     # sits, in Windows' screen coordinates, so any monitor (G16)
-    screen: str = "/overview"
-    x: int = 0
-    y: int = 0
-    width: int = 1280
-    height: int = 800
+    screen: str
+    x: int
+    y: int
+    width: int
+    height: int
 
 
 class Layout(msgspec.Struct, frozen=True, kw_only=True, forbid_unknown_fields=True):
     name: str
-    windows: list[LayoutWindow] = []
+    windows: list[LayoutWindow]
 
 
 class TerminalSettings(msgspec.Struct, frozen=True, kw_only=True):

@@ -414,7 +414,8 @@ def examples() -> dict[str, Any]:
     """A made-up example of every contract (the golden examples)."""
     level = Level(price_e6=410_000, count_e2=1_250)
     window = LayoutWindow(screen="/markets?q=fed", x=-1920, y=0, width=1600, height=1000)
-    layout = Layout(name="Trading", windows=[window, LayoutWindow(screen="/overview")])
+    second = LayoutWindow(screen="/overview", x=0, y=0, width=1280, height=800)
+    layout = Layout(name="Trading", windows=[window, second])
     market = MarketView(
         ticker="KXDEMO-26JAN01-T50",
         title="Made-up market",

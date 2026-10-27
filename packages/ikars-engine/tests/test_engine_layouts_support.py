@@ -31,7 +31,7 @@ def config(tmp_path: Path) -> TerminalConfig:
 
 
 def window(screen: str = "/overview", **place: int) -> LayoutWindow:
-    return LayoutWindow(screen=screen, **place)
+    return LayoutWindow(screen=screen, **{"x": 0, "y": 0, "width": 1280, "height": 800, **place})
 
 
 # --- layouts ------------------------------------------------------------------------------------
@@ -75,6 +75,7 @@ def test_layouts_are_kept_to_a_limit(tmp_path: Path) -> None:
     [
         (Layout(name="", windows=[window()]), "name"),
         (Layout(name="a/b", windows=[window()]), "name"),
+        (Layout(name="..", windows=[window()]), "name"),
         (Layout(name="x" * 41, windows=[window()]), "name"),
         (Layout(name="none", windows=[]), "1 to 8 windows"),
         (Layout(name="many", windows=[window()] * 9), "1 to 8 windows"),
@@ -108,6 +109,8 @@ def test_version_4_settings_gain_no_layouts_and_are_kept_as_a_backup(tmp_path: P
 def test_a_window_with_an_unknown_field_is_refused() -> None:
     with pytest.raises(msgspec.ValidationError):
         msgspec.json.decode(b'{"name":"a","windows":[{"screen":"/","frame":1}]}', type=Layout)
+    with pytest.raises(msgspec.ValidationError):  # every field is required
+        msgspec.json.decode(b'{"name":"a","windows":[{"screen":"/"}]}', type=Layout)
 
 
 # --- the support bundle -------------------------------------------------------------------------
@@ -270,15 +273,15 @@ async def test_the_layout_and_support_routes(
         config=cfg,
     )  # fmt: skip
     auth = {"Authorization": f"Bearer {TOKEN}"}
-    layout = {"name": "Trading", "windows": [{"screen": "/overview", "x": 0, "y": 0,
-                                              "width": 1280, "height": 800}]}  # fmt: skip
+    place: dict[str, object] = {"screen": "/overview", "x": 0, "y": 0, "width": 1280, "height": 800}
+    layout = {"name": "Trading", "windows": [place]}
     transport = httpx.ASGITransport(app=create_app(ctx))
     async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as http:
         assert (await http.get("/v1/layouts", headers=auth)).json() == {"layouts": [], "start": ""}
         saved = await http.put("/v1/layouts", headers=auth, json=layout)
         view = msgspec.json.decode(saved.content, type=c.LayoutsView)
         assert view.start == "Trading" and view.layouts[0].windows[0].width == 1280
-        bad = {**layout, "windows": [{"screen": "//evil.example"}]}
+        bad = {**layout, "windows": [{**place, "screen": "//evil.example"}]}
         assert (await http.put("/v1/layouts", headers=auth, json=bad)).status_code == 400
         sneaky = {**layout, "token": "x"}
         assert (await http.put("/v1/layouts", headers=auth, json=sneaky)).status_code == 400

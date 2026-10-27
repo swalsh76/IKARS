@@ -571,7 +571,6 @@
           "type": "string"
         },
         "windows": {
-          "default": [],
           "items": {
             "$ref": "#/$defs/LayoutWindow"
           },
@@ -579,7 +578,8 @@
         }
       },
       "required": [
-        "name"
+        "name",
+        "windows"
       ],
       "title": "Layout",
       "type": "object"
@@ -602,27 +602,28 @@
       "additionalProperties": false,
       "properties": {
         "height": {
-          "default": 800,
           "type": "integer"
         },
         "screen": {
-          "default": "/overview",
           "type": "string"
         },
         "width": {
-          "default": 1280,
           "type": "integer"
         },
         "x": {
-          "default": 0,
           "type": "integer"
         },
         "y": {
-          "default": 0,
           "type": "integer"
         }
       },
-      "required": [],
+      "required": [
+        "screen",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
       "title": "LayoutWindow",
       "type": "object"
     },

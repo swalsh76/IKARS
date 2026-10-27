@@ -182,14 +182,14 @@ path_set: boolean
 }
 export interface Layout {
 name: string
-windows?: LayoutWindow[]
+windows: LayoutWindow[]
 }
 export interface LayoutWindow {
-height?: number
-screen?: string
-width?: number
-x?: number
-y?: number
+height: number
+screen: string
+width: number
+x: number
+y: number
 }
 /**
  * ``PUT /v1/layouts/start``: the layout ``ikars open`` restores (empty: one window).

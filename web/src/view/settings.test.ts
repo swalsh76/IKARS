@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SettingsView } from "../api/contracts";
-import { changedCount, changes, formOf, keyLines, keyReady, restartNote } from "./settings";
+import { changedCount, changes, formOf, keyLines, keyReady, layoutLine, restartNote } from "./settings";
 
 const VIEW: SettingsView = {
   first_run: false,
@@ -47,6 +47,19 @@ describe("the key", () => {
     expect(keyLines({ ...VIEW.key, owner_only: false })[1]).toMatchObject({ ok: false, text: "set · file found · other accounts can read it" });
     expect(keyLines({ ...VIEW.key, owner_only: null })[1]?.text).toBe("set · file found");
     expect(keyLines({ ...VIEW.key, needs_restart: true })[2]?.text).toContain("restart the engine to use it");
+  });
+});
+
+describe("a layout in words", () => {
+  it("counts its windows and names each one's screen", () => {
+    const place = { x: 0, y: 0, width: 1280, height: 800 };
+    const windows = [
+      { screen: "/markets?q=fed", ...place },
+      { screen: "/market/KXDEMO-26JAN01-T50", ...place },
+      { screen: "/overview", ...place },
+    ];
+    expect(layoutLine({ name: "Trading", windows })).toBe("3 windows: Markets, KXDEMO-26JAN01-T50, Overview");
+    expect(layoutLine({ name: "One", windows: [{ screen: "/ledger", ...place }] })).toBe("1 window: Ledger");
   });
 });
 

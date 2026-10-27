@@ -35,7 +35,7 @@ export function checked<K extends ContractName>(name: K, value: unknown): Contra
 export interface RequestOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
-  method?: "GET" | "PUT" | "POST";
+  method?: "GET" | "PUT" | "POST" | "DELETE";
   body?: unknown;
 }
 
