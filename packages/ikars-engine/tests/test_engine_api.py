@@ -98,6 +98,7 @@ def ctx(tmp_path: Path) -> Iterator[ApiContext]:
         quotes={"KXA": (410_000, 430_000)},
         last_price={"KXA": 420_000},
         changed_ns={"KXA": T0},
+        book_changed_ns={"KXA": T0},
         books={"KXA": snapshot_book("KXA")},
         book_version={"KXA": 1},
         watched=lambda: {"KXA"},
@@ -213,7 +214,8 @@ def test_a_stream_sends_only_what_changed(ctx: ApiContext) -> None:
     ctx.book_version["KXA"] = 2  # type: ignore[index]
     assert len(changes(ctx, state)) == 2
     timings = ctx.metrics.snapshot()["timings"]
-    assert timings["api.feed_to_stream_ns"]["count"] == 4  # type: ignore[index]
+    # the first send of each is a snapshot, not an update: only the second round is timed
+    assert timings["api.feed_to_stream_ns"]["count"] == 2  # type: ignore[index]
 
 
 class FakeRequest:
@@ -314,3 +316,23 @@ def test_a_cut_back_alert_log_starts_the_stream_again(ctx: ApiContext) -> None:
     ctx.alert_log.write_text(json.dumps({"key": "new", "text": "after the cut"}) + "\n", "utf-8")
     added = new_alerts(ctx.alert_log, state)
     assert [(a.line, a.text) for a in added] == [(1, "after the cut")]
+
+
+async def test_the_server_starts_without_a_console(
+    ctx: ApiContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Live finding: under pythonw there is no stdout or stderr, and uvicorn's own logging set-up
+    failed and took the engine down; it must not configure logging at all."""
+    import sys
+
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+
+    def context_for(token: str) -> ApiContext:
+        ctx.token = token
+        return ctx
+
+    server = ApiServer(context_for, tmp_path)
+    await server.start()
+    assert server.port is not None and (tmp_path / "api.json").exists()
+    await server.stop()

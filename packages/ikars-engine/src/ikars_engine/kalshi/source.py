@@ -158,9 +158,11 @@ class KalshiSource:
         self.last_received: dict[str, int] = {}
         self.last_price_e6: dict[str, int] = {}
         self.quotes: dict[str, tuple[int | None, int | None]] = {}  # ticker -> (YES bid, YES ask)
-        # for the API's stream (M1.7): when each market's quote or book last changed (the frame's
-        # received time), and each book's version, so only what changed is sent
+        # for the API's stream (M1.7): when each market's quote and book last changed (the frame's
+        # received time; kept apart so neither makes the other's latency look smaller), and each
+        # book's version, so only what changed is sent
         self.changed_ns: dict[str, int] = {}
+        self.book_changed_ns: dict[str, int] = {}
         self.book_version: dict[str, int] = {}
         self._live_since = 0  # when the subscriptions went live: a loss starts here at the latest
         self._snapshots = 0
@@ -349,7 +351,7 @@ class KalshiSource:
 
     def _book_changed(self, ticker: str, at: int) -> None:
         self.book_version[ticker] = self.book_version.get(ticker, 0) + 1
-        self.changed_ns[ticker] = at
+        self.book_changed_ns[ticker] = at
 
     @staticmethod
     def _ticker_row(message: TickerMsg, at: int) -> dict[str, Any]:

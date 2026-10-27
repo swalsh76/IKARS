@@ -74,7 +74,8 @@ class ApiContext:
     index: MarketIndex
     quotes: Mapping[str, tuple[int | None, int | None]]
     last_price: Mapping[str, int]
-    changed_ns: Mapping[str, int]
+    changed_ns: Mapping[str, int]  # a market's quote
+    book_changed_ns: Mapping[str, int]
     books: Mapping[str, OrderBook]
     book_version: Mapping[str, int]
     watched: Callable[[], set[str]]
@@ -411,25 +412,29 @@ def _event(state: Stream, name: str, payload: Any) -> bytes:
 
 
 def changes(ctx: ApiContext, state: Stream) -> list[bytes]:
-    """The quote and book events due for ``state`` now (only what changed since last sent)."""
+    """The quote and book events due for ``state`` now (only what changed since last sent).
+
+    Latency is measured on updates only: the first event for a market after it is subscribed is
+    its current state, as old as the market is quiet, not a measure of the stream."""
     out: list[bytes] = []
     now = ctx.now_ns()
     for ticker in sorted(state.quotes):
         update = quote_update(ctx, ticker)
         key = (update.yes_bid_e6, update.yes_ask_e6, update.last_price_e6)
         if state.sent_quote.get(ticker) != key and update.received_ns is not None:
+            if ticker in state.sent_quote:
+                ctx.metrics.observe("api.feed_to_stream_ns", max(0, now - update.received_ns))
             state.sent_quote[ticker] = key
             out.append(_event(state, "quote", update))
-            ctx.metrics.observe("api.feed_to_stream_ns", max(0, now - update.received_ns))
     for ticker in sorted(state.books):
         seen = ctx.book_version.get(ticker)
         kept = ctx.books.get(ticker)
         if seen is not None and kept is not None and state.sent_book.get(ticker) != seen:
+            received = ctx.book_changed_ns.get(ticker)
+            if ticker in state.sent_book and received is not None:
+                ctx.metrics.observe("api.feed_to_stream_ns", max(0, now - received))
             state.sent_book[ticker] = seen
             out.append(_event(state, "book", book_view(ticker, kept)))
-            received = ctx.changed_ns.get(ticker)
-            if received is not None:
-                ctx.metrics.observe("api.feed_to_stream_ns", max(0, now - received))
     return out
 
 
@@ -493,6 +498,9 @@ class ApiServer:
         config = uvicorn.Config(
             create_app(self.ctx), log_level="warning", access_log=False, lifespan="off",
             server_header=False, date_header=False,
+            # uvicorn must not configure logging: its console formatter fails under pythonw (no
+            # console: live finding), and the engine's redacting log handlers already cover it
+            log_config=None,
         )  # fmt: skip
         self._server = uvicorn.Server(config)
         self._server.install_signal_handlers = lambda: None  # the engine owns its signals

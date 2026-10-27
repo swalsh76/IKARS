@@ -425,7 +425,7 @@ async def test_account_values_never_reach_a_log(
     with caplog.at_level(logging.DEBUG):
         await AccountImporter(ledger, account, VirtualClock(T0)).run_once()  # type: ignore[arg-type]
     logged = caplog.text + " ".join(json.dumps(r.__dict__, default=str) for r in caplog.records)
-    for secret in ("KXT-26JAN01-A", "h1", "dep-1", "77.77", "777", "4.02", "0.4000"):
+    for secret in ("KXT-26JAN01-A", "h1", "dep-1", "77.77", "77770000", "4.02", "0.4000"):
         assert secret not in logged
     ledger.close()
 

@@ -198,6 +198,7 @@ async def build(paths: Paths, settings: Settings) -> Live:
             quotes=source.quotes,
             last_price=source.last_price_e6,
             changed_ns=source.changed_ns,
+            book_changed_ns=source.book_changed_ns,
             books=source.books,
             book_version=source.book_version,
             watched=lambda: source.watched.current,
