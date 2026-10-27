@@ -121,6 +121,12 @@ public sealed record Candle(
 /// <summary><c>GET /v1/markets/{ticker}/candles</c>, oldest first.</summary>
 public sealed record CandlePage(string Ticker, long IntervalMinutes, IReadOnlyList<Candle> Items);
 
+/// <summary>A loss the engine logged: what was missed, and what became of it.</summary>
+public sealed record GapView(long Id, string Channel, string Reason, string StartUtc, string EndUtc, string Recovery, string Status, string Detail);
+
+/// <summary><c>GET /v1/gaps</c>, newest first.</summary>
+public sealed record GapPage(IReadOnlyList<GapView> Items);
+
 /// <summary>A recommendation (filled from M1.12).</summary>
 public sealed record RecommendationView(string Id, string Ticker, string Side, string Summary, string AtUtc);
 

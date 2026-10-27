@@ -84,6 +84,7 @@ public class ClientTests
             "/v1/portfolio" => Example("PortfolioView"),
             "/v1/ledger/status" => Example("LedgerStatusView"),
             "/v1/recommendations" => Example("RecommendationPage"),
+            "/v1/gaps" => Example("GapPage"),
             _ => "{}",
         }));
         using var client = new IkarsApiClient(Info, handler);
@@ -93,6 +94,7 @@ public class ClientTests
         Assert.NotEmpty((await client.PortfolioAsync(cancellationToken: Ct)).Positions);
         Assert.Equal("America/Denver", (await client.LedgerStatusAsync(cancellationToken: Ct)).TaxZone);
         Assert.Empty((await client.RecommendationsAsync(cancellationToken: Ct)).Items);
+        Assert.Equal("trade", (await client.GapsAsync(7, cancellationToken: Ct)).Items[0].Channel);
     }
 
     [Fact]

@@ -212,6 +212,63 @@
       "title": "CandlePage",
       "type": "object"
     },
+    "GapPage": {
+      "description": "``GET /v1/gaps``: newest first.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/GapView"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "GapPage",
+      "type": "object"
+    },
+    "GapView": {
+      "description": "A loss the engine logged (PLAN M1.4b): what was missed, and what became of it.",
+      "properties": {
+        "channel": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "end_utc": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "recovery": {
+          "type": "string"
+        },
+        "start_utc": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "channel",
+        "reason",
+        "start_utc",
+        "end_utc",
+        "recovery",
+        "status",
+        "detail"
+      ],
+      "title": "GapView",
+      "type": "object"
+    },
     "HealthView": {
       "description": "``GET /v1/health``: the engine's health as it reports it (counts and states only).",
       "properties": {

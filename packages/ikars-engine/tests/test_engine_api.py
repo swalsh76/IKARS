@@ -153,6 +153,24 @@ async def get(ctx: ApiContext, path: str, kind: type[Any], status: int = 200) ->
     return msgspec.json.decode(response.content, type=kind)
 
 
+async def test_the_gap_log_by_days(ctx: ApiContext, tmp_path: Path) -> None:
+    from ikars_engine.store import StateStore
+
+    state = StateStore(tmp_path / "state.sqlite")
+    old = state.add_gap(
+        "trade", "restart", T0 - 30 * 86_400 * 10**9, T0 - 29 * 86_400 * 10**9, "backfill", T0
+    )
+    new = state.add_gap("book", "reconnect", T0 - 10**9, T0, "unrecoverable", T0, "down 1.0 s")
+    ctx.gaps = state.gaps_since
+    page = await get(ctx, "/v1/gaps?days=7", c.GapPage)
+    assert [g.id for g in page.items] == [new] and old != new
+    assert page.items[0].status == "unrecoverable" and page.items[0].end_utc.endswith("Z")
+    assert len((await get(ctx, "/v1/gaps?days=90", c.GapPage)).items) == 2
+    ctx.gaps = None
+    assert (await get(ctx, "/v1/gaps", c.GapPage)).items == []
+    state.close()
+
+
 async def test_hello_health_and_recommendations(ctx: ApiContext) -> None:
     hello = await get(ctx, "/v1/hello", c.Hello)
     assert hello.api_version == c.API_VERSION and hello.schema_sha256 == c.schema_sha256()

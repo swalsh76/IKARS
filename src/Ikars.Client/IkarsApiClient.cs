@@ -42,6 +42,9 @@ public interface IIkarsApi
     /// <summary>Recommendations (from M1.12).</summary>
     Task<RecommendationPage> RecommendationsAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>The engine's gap log for the last <paramref name="days"/> days, newest first.</summary>
+    Task<GapPage> GapsAsync(int days, CancellationToken cancellationToken = default);
+
     /// <summary>Sets which markets a stream carries.</summary>
     Task SetSubscriptionsAsync(string streamId, Subscriptions subscriptions, CancellationToken cancellationToken = default);
 
@@ -139,6 +142,9 @@ public sealed class IkarsApiClient : IIkarsApi, IDisposable
     /// <inheritdoc/>
     public Task<RecommendationPage> RecommendationsAsync(CancellationToken cancellationToken = default) =>
         GetAsync<RecommendationPage>("/v1/recommendations", cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<GapPage> GapsAsync(int days, CancellationToken cancellationToken = default) => GetAsync<GapPage>($"/v1/gaps?days={days}", cancellationToken);
 
     /// <inheritdoc/>
     public async Task SetSubscriptionsAsync(string streamId, Subscriptions subscriptions, CancellationToken cancellationToken = default)

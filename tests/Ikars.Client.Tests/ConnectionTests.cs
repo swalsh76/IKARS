@@ -34,6 +34,8 @@ internal sealed class FakeApi(string apiVersion = "1.0") : IIkarsApi
 
     public Task<RecommendationPage> RecommendationsAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
+    public Task<GapPage> GapsAsync(int days, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
     public Task SetSubscriptionsAsync(string streamId, Subscriptions subscriptions, CancellationToken cancellationToken = default)
     {
         Subscribed.Add((streamId, subscriptions));

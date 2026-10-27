@@ -48,6 +48,7 @@ from ikars_engine.kalshi.discovery import MarketIndex, MarketInfo
 from ikars_engine.ledger import KINDS, Ledger
 from ikars_engine.metrics import Metrics
 from ikars_engine.portfolio import Portfolio
+from ikars_engine.store import Gap
 
 log = logging.getLogger("ikars_engine.api")
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
@@ -94,6 +95,8 @@ class ApiContext:
     # Kalshi's candlesticks through the engine's request budget: (series, ticker, start_s, end_s,
     # interval minutes); None when the engine has no REST client (tests, offline)
     candles: "Callable[[str, str, int, int, int], Awaitable[list[Candlestick]]] | None" = None
+    # the engine's gap log, ended at or after a time (newest first, at most a limit)
+    gaps: "Callable[[int, int], list[Gap]] | None" = None
     streams: dict[str, "Stream"] = field(default_factory=dict)
     candle_cache: dict[tuple[str, int, int], tuple[float, bytes]] = field(default_factory=dict)
     closing: bool = False  # set at stop: every stream ends
@@ -205,6 +208,17 @@ def candle_view(row: Candlestick) -> c.Candle:
         open_e6=row.price.open_e6, high_e6=row.price.high_e6, low_e6=row.price.low_e6,
         close_e6=row.price.close_e6, bid_close_e6=row.yes_bid.close_e6,
         ask_close_e6=row.yes_ask.close_e6, volume_e2=row.volume_e2,
+    )  # fmt: skip
+
+
+def utc_text(ns: int) -> str:
+    return datetime.fromtimestamp(ns // NS, UTC).isoformat().replace("+00:00", "Z")
+
+
+def gap_view(gap: Gap) -> c.GapView:
+    return c.GapView(
+        id=gap.id, channel=gap.channel, reason=gap.reason, start_utc=utc_text(gap.start_ns),
+        end_utc=utc_text(gap.end_ns), recovery=gap.recovery, status=gap.status, detail=gap.detail,
     )  # fmt: skip
 
 
@@ -440,6 +454,12 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         ctx.candle_cache[key] = (now, body)
         return Response(body, media_type="application/json")
 
+    async def gaps(request: Request) -> Response:
+        days = _int(request, "days", 7, 1, 90) or 7
+        limit = _int(request, "limit", 200, 1, MAX_PAGE) or 200
+        found = [] if ctx.gaps is None else ctx.gaps(ctx.now_ns() - days * 86_400 * NS, limit)
+        return _json(c.GapPage(items=[gap_view(g) for g in found]))
+
     async def recommendations(request: Request) -> Response:
         return _json(c.RecommendationPage(items=[]))  # from M1.12
 
@@ -474,7 +494,8 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         Route("/v1/markets/{ticker}/candles", candles),
         Route("/v1/portfolio", portfolio), Route("/v1/ledger/status", ledger_status),
         Route("/v1/ledger/records", ledger_records), Route("/v1/alerts", alerts),
-        Route("/v1/recommendations", recommendations), Route("/v1/stream", stream),
+        Route("/v1/recommendations", recommendations), Route("/v1/gaps", gaps),
+        Route("/v1/stream", stream),
         Route("/v1/stream/{stream_id}/subscriptions", subscribe, methods=["PUT"]),
     ]  # fmt: skip
 

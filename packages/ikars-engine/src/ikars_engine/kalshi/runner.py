@@ -209,6 +209,7 @@ async def build(paths: Paths, settings: Settings) -> Live:
             alert_log=paths.data / ALERT_LOG,
             metrics=metrics,
             now_ns=clock.now_ns,
+            gaps=state.gaps_since,
             candles=lambda series, ticker, start, end, interval: data.candlesticks(
                 series, ticker, start_ts=start, end_ts=end, period_interval=interval
             ),
