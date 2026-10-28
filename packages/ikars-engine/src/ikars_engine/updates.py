@@ -104,8 +104,15 @@ class Updater:
     progress: int | None = None
     size_bytes: int | None = None
     events: deque[str] = field(default_factory=lambda: deque(maxlen=EVENTS_KEPT))
+    version: str | None = None  # read once: Velopack's manager allows one thread at a time
     _pending: Any = None
+    # every use of the manager holds this: a second thread raises "Already mutably borrowed"
+    # inside Velopack (the owner's 0.1.4 update: the version box failed while a check ran)
     _turn: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.manager is not None and self.version is None:
+            self.version = str(self.manager.get_current_version())
 
     @classmethod
     def for_this_program(cls) -> "Updater":
@@ -119,7 +126,7 @@ class Updater:
             return cls(problem=str(exc))
 
     def current(self) -> str | None:
-        return None if self.manager is None else str(self.manager.get_current_version())
+        return self.version
 
     def view(self) -> c.UpdateView:
         at = None if self.checked_at is None else self.checked_at.isoformat(timespec="seconds")
@@ -171,9 +178,14 @@ class Updater:
         (``stop``) and then starts the program again."""
         if self.manager is None or self.state != READY or self._pending is None:
             return c.Done(done=False, detail="no update is ready to install")
-        self.manager.wait_exit_then_apply_updates(
-            self._pending, silent=True, restart=True, restart_args=[AFTER_UPDATE]
-        )
+        if not self._turn.acquire(blocking=False):
+            return c.Done(done=False, detail="a check is running: try again in a moment")
+        try:
+            self.manager.wait_exit_then_apply_updates(
+                self._pending, silent=True, restart=True, restart_args=[AFTER_UPDATE]
+            )
+        finally:
+            self._turn.release()
         self._event(f"installing {self.available}: the engine stops for it")
         stop()
         return c.Done(

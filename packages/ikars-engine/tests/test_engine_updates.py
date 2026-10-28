@@ -33,10 +33,13 @@ class FakeManager:
 
     found: Found | None = None
     fails: Exception | None = None
+    busy: bool = False  # inside a check: Velopack refuses a second thread
     applied: list[tuple[Any, bool, bool, list[str]]] = field(default_factory=list)
     downloaded: list[Any] = field(default_factory=list)
 
     def get_current_version(self) -> str:
+        if self.busy:
+            raise RuntimeError("Already mutably borrowed")
         return "0.1.0"
 
     def check_for_updates(self) -> Found | None:
@@ -167,3 +170,17 @@ def test_a_delta_s_size_is_what_the_download_fetches() -> None:
     updater._downloaded("not a number")  # never a crash from Velopack's thread
     updater._downloaded(250)
     assert updater.progress == 100
+
+
+def test_the_version_is_read_once_so_a_check_never_breaks_the_view() -> None:
+    manager = FakeManager(found=Found(Release("0.1.1")))
+    updater = Updater(manager=manager, state=UP_TO_DATE)
+    assert updater.check().state == READY
+    manager.busy = True  # a check or download holds Velopack's manager in another thread
+    assert updater.view().current == "0.1.0"  # from the start, never from the manager now
+    updater._turn.acquire()  # a check is running
+    try:
+        refused = updater.apply(lambda: None)
+    finally:
+        updater._turn.release()
+    assert refused.done is False and "try again" in refused.detail

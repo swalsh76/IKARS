@@ -11,7 +11,9 @@ if (root) {
   placeFrom(window.location.hash); // a layout's window: to its place, before signing in clears it
   startTerminal()
     .then((terminal) => {
-      answerAsks(); // another window saving a layout asks where this one is (M1.8b-2)
+      // another window saving a layout asks where this one is (M1.8b-2); the Update window is
+      // none of them, and must not reload on its own announcement (the owner's 0.1.4 update)
+      if (window.location.pathname !== "/update") answerAsks();
       createRoot(root).render(
         <StrictMode>
           <TerminalContext value={terminal}>

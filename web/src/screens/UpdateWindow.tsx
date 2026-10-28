@@ -7,7 +7,7 @@ import { clock, downloadText, steps, updatedTo, type Phase, type PHASES } from "
 const CHECK_WAIT_MS = 600_000; // the download (about 65 MB, less for a delta)
 const POLL_MS = 1_000;
 const GIVE_UP_MS = 180_000; // from the engine's stop to the new version answering
-const CLOSE_AFTER_MS = 2_500;
+const CLOSE_AFTER_S = 5; // "Update complete", then a countdown to closing
 
 const now = () => new Date().toISOString().slice(11, 19);
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -25,6 +25,19 @@ export function UpdateWindow({ to }: { to: string }) {
   const [since, setSince] = useState<number>(() => Date.now());
   const [nowMs, setNowMs] = useState<number>(() => Date.now()); // the clock, a second at a time
   const started = useRef(false);
+  const [closingIn, setClosingIn] = useState<number | null>(null);
+  const [stayed, setStayed] = useState(false); // Edge would not let it close: the owner closes it
+
+  useEffect(() => {
+    if (closingIn === null) return;
+    if (closingIn <= 0) {
+      window.close();
+      const check = window.setTimeout(() => setStayed(true), 500);
+      return () => window.clearTimeout(check);
+    }
+    const next = window.setTimeout(() => setClosingIn(closingIn - 1), 1_000);
+    return () => window.clearTimeout(next);
+  }, [closingIn]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
@@ -51,6 +64,11 @@ export function UpdateWindow({ to }: { to: string }) {
         return fail("download", `the engine did not answer: ${words(error)}`);
       }
       setView(current);
+      if (current.installed && current.current === to && current.state !== "ready") {
+        setPhase("done"); // opened again after the update: nothing to do, never a fresh start
+        setClosingIn(CLOSE_AFTER_S);
+        return;
+      }
       if (!current.installed) {
         setPhase("cannot");
         setProblem("This copy of IKARS is a development copy: it cannot update itself.");
@@ -98,7 +116,7 @@ export function UpdateWindow({ to }: { to: string }) {
             announceReload();
             note("every IKARS window reloads");
             setPhase("done");
-            window.setTimeout(() => window.close(), CLOSE_AFTER_MS);
+            setClosingIn(CLOSE_AFTER_S);
             return;
           }
         } catch {
@@ -118,7 +136,7 @@ export function UpdateWindow({ to }: { to: string }) {
   const all = [...(view?.events ?? []), ...log].sort();
   const from = view?.current ?? "?";
   const heading =
-    phase === "done" ? `IKARS ${to} is installed` : phase === "cannot" ? "IKARS cannot update here" : `Updating IKARS ${from} → ${view?.available ?? to}`;
+    phase === "done" ? "Update complete" : phase === "cannot" ? "IKARS cannot update here" : `Updating IKARS ${from} → ${view?.available ?? to}`;
   const elapsed = clock((nowMs - since) / 1000);
 
   return (
@@ -144,7 +162,19 @@ export function UpdateWindow({ to }: { to: string }) {
         </ol>
       )}
       {problem && <p className={phase === "cannot" ? "muted" : "loss"}>{problem}</p>}
-      {phase === "done" && <p className="gain">Done. This window closes by itself.</p>}
+      {phase === "done" && (
+        <p className="gain" role="status">
+          IKARS {to} is installed and running.{" "}
+          {stayed ? "You can close this window." : closingIn !== null && closingIn > 0 ? `This window closes in ${closingIn} s.` : ""}
+        </p>
+      )}
+      {phase === "done" && stayed && (
+        <div className="update-actions">
+          <button type="button" onClick={() => window.close()}>
+            Close
+          </button>
+        </div>
+      )}
       <p className="muted small">Your data folder is never touched. Please leave IKARS's windows open.</p>
       <details>
         <summary>Details</summary>
