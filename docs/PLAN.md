@@ -739,6 +739,8 @@ M1.11. M1.10 can run any time after M1.2; M1.13 any time after M1.12 and before 
   when the ledger reaches tens of thousands.
 - One `times` module for the duplicated time helpers (`api.utc_text` and `ledger.iso_utc`; `alerts._ns` and
   `ledger_import.ns_of`): with the next slice that touches those files (2026-10-27 platform review, item 10).
+- A rollback keeps the newer version's own `app` records (IKARS's events, not Kalshi's) only in the ledger copy set
+  aside in `backups\rolled-back\`: M5's per-year tax package should include such copies (M1.9b drill).
 - A fresh engine refreshes only the standard key variable names (`IKARS_KALSHI_*`) from Windows: with custom
   names in the settings, a key set since the old engine started needs a sign-out (M1.9a merge review 4).
 - A layout saved from a New window popup keeps the popup's outer size, which includes Edge's address strip: reopened

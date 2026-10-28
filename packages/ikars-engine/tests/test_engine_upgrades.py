@@ -95,15 +95,16 @@ def test_a_restore_sets_the_current_data_aside_and_counts_annotations_since(
     paths = engine_data(tmp_path)
     upgrades.before_start(paths, "0.1.0")
     upgrades.before_start(paths, "0.1.1")  # the snapshot of 0.1.0: ledger head 2
-    ledger(paths.ledger / "ledger.sqlite", [(3, "fill"), (4, "annotation"), (5, "annotation")])
+    ledger(paths.ledger / "ledger.sqlite",
+           [(3, "fill"), (4, "annotation"), (5, "annotation"), (6, "app")])  # fmt: skip
     (paths.data / "state.sqlite-wal").write_bytes(b"journal")
     paths.settings.write_text("version = 6\n", encoding="utf-8")
     done = upgrades.restore(paths, "0.1.0", "0.1.1", now=AT)
-    assert done["annotations_to_enter_again"] == 2
+    assert done["annotations_to_enter_again"] == 2 and done["own_records_kept_aside"] == 1
     assert paths.settings.read_text(encoding="utf-8") == "version = 5\n"
     assert heads(paths.ledger / "ledger.sqlite") == 2  # the snapshot's; Kalshi's re-import follows
     aside = paths.backups / "rolled-back" / done["set_aside"]
-    assert heads(aside / "ledger.sqlite") == 5 and (aside / "state.sqlite-wal").is_file()
+    assert heads(aside / "ledger.sqlite") == 6 and (aside / "state.sqlite-wal").is_file()
     assert not (paths.data / "state.sqlite-wal").exists()  # never a newer journal on an old file
     assert upgrades.last_version(paths) == "0.1.0"
     with pytest.raises(RollbackRefused, match="there are: 0.1.0"):

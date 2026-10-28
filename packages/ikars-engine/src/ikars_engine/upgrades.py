@@ -131,14 +131,17 @@ def snapshots(paths: Paths) -> dict[str, dict[str, Any]]:
             for p in sorted(folder.iterdir()) if (p / MANIFEST).is_file()}  # fmt: skip
 
 
-def annotations_since(ledger: Path, head: int) -> int:
-    """The owner's annotations recorded after ``head`` (to be entered again after a rollback)."""
+def records_since(ledger: Path, head: int, source: str) -> int:
+    """The real ledger's records from ``source`` after ``head``: what a rollback leaves in the copy
+    set aside (``annotation``: the owner's, to enter again; ``app``: IKARS's own events, which no
+    re-import from Kalshi brings back). Kalshi's records come back by the re-import."""
     if not ledger.is_file():
         return 0
     try:
         with closing(sqlite3.connect(f"{ledger.as_uri()}?mode=ro", uri=True)) as db:
             row = db.execute(
-                "SELECT COUNT(*) FROM record WHERE seq > ? AND source = 'annotation'", (head,)
+                "SELECT COUNT(*) FROM record WHERE stream = 'real' AND seq > ? AND source = ?",
+                (head, source),
             ).fetchone()
     except sqlite3.Error:
         return 0
@@ -195,5 +198,7 @@ def restore(
         problem = f"the snapshot could not be restored ({exc}); nothing changed"
         raise RollbackRefused(problem) from exc
     write_text_atomic(paths.data / VERSION_FILE, version + "\n")
-    since = annotations_since(aside / "ledger.sqlite", int(manifest["ledger_head"]))
-    return {"restored": name, "set_aside": str(aside.name), "annotations_to_enter_again": since}
+    head, kept = int(manifest["ledger_head"]), aside / "ledger.sqlite"
+    return {"restored": name, "set_aside": str(aside.name),
+            "annotations_to_enter_again": records_since(kept, head, "annotation"),
+            "own_records_kept_aside": records_since(kept, head, "app")}  # fmt: skip
