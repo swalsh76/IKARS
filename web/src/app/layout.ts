@@ -104,3 +104,27 @@ export async function allowPlacement(view: object = window): Promise<boolean> {
     return false;
   }
 }
+
+export const NEW_WINDOW_OFFSET = 30; // pixels right and down, so the new window does not hide this one
+
+export type Opener = Pick<Window, "open" | "location" | "screenX" | "screenY" | "innerWidth" | "innerHeight"> & {
+  screen: Pick<Screen, "availWidth" | "availHeight">;
+};
+
+/** Another IKARS window on this screen, a little offset and the same size, less the offset when this
+ * one fills the screen (so it never hides this one whole) (M1.8c). It shares Edge's profile, so it
+ * is signed in already; it answers layout asks like any other window. */
+export function openNewWindow(view: Opener = window): void {
+  const room = (inner: number, avail: number) => Math.min(inner, avail - 2 * NEW_WINDOW_OFFSET);
+  const features = [
+    "popup",
+    `left=${view.screenX + NEW_WINDOW_OFFSET}`,
+    `top=${view.screenY + NEW_WINDOW_OFFSET}`,
+    `width=${room(view.innerWidth, view.screen.availWidth)}`,
+    `height=${room(view.innerHeight, view.screen.availHeight)}`,
+  ].join(",");
+  // not "noopener": with it Edge may ignore the size and place and open a tab instead (merge review
+  // 1); the link back is cut once it is open, so nothing ties the windows together but the engine
+  const other = view.open(view.location.pathname + view.location.search, "_blank", features);
+  if (other) other.opener = null;
+}

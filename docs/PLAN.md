@@ -718,12 +718,13 @@ M1.11. M1.10 can run any time after M1.2; M1.13 any time after M1.12 and before 
 | M1.7 Loopback API and contracts | **done** (BUILD-LOG 1.7; PR #10 merged as `0ba5d83`) |
 | M1.R Base hardening (owner, 2026-10-27) | **built** on `m1/r-hardening` (BUILD-LOG 1.R): a whole-code-base review's items 1 to 26 fixed, plus 10 merge-review findings; **done** (PR #14, `fca7941`) |
 | M1.8a-web-1a Engine side of the web terminal | **done** (PR #16, `d70cb83`; BUILD-LOG 1.8a-web-1a): file serving with the browser hardening, cookie sign-in that survives restarts, `ikars open`, contracts 2.0, `demo-api`; security review (1 finding, fixed) and merge review (8, fixed) |
-| M1.8b-2 Layouts and the support bundle | **built** on `m1/8b-2` (BUILD-LOG 1.8b-2): layouts as sets of IKARS windows saved in the engine's settings (version 5) and reopened by `ikars open --layout`, each window placing itself; the redacted support bundle (`ikars support`, Health); merge review (10: 9 fixed, 1 the docs); PR #23 open; the owner's two-monitor check pending |
+| M1.8c New window (approved addition, 2026-10-27) | **built** on `m1/8c` (BUILD-LOG 1.8c): a New window item in the side navigation opens a popup on the same screen, signed in; merge review (10: 8 fixed, 1 parked, 1 the docs); PR pending |
+| M1.8b-2 Layouts and the support bundle | **done** (PR #23, `47984db`; BUILD-LOG 1.8b-2): layouts as sets of IKARS windows saved in the engine's settings (version 5) and reopened by `ikars open --layout`, each window placing itself; the redacted support bundle (`ikars support`, Health); merge review (10: 9 fixed, 1 the docs); the owner's two-monitor check pending |
 | M1.8b-1 Hotkeys, skins, Settings and the wizard | **done** (PR #21, `db0bf9a`, and the settings race fix PR #22, `e6a29f3`; BUILD-LOG 1.8b-1): the hotkeys, the built-in skins, the Settings screen and the first-run wizard (approved mock-ups), the engine's settings routes; merge review (10, fixed) |
 | M1.8a-web-2b Ledger, Alerts and the meter | **done**, built on `m1/8a-web-2b` (BUILD-LOG 1.8a-web-2b): Ledger and Alerts screens, the update-to-screen meter on Health, `pnpm load` (100 markets at 10 Hz); merge review (10, fixed); the owner's console check **passed** (p99 19 ms, after the Markets grid was made faster); **done** (PR #20, `1aeb2bf`) |
 | M1.8a-web-2a Markets and Market | **done** (PR #19, `94dbcaa`), built on `m1/8a-web-2a` (BUILD-LOG 1.8a-web-2a): the Markets grid and the Market screen (quote, chart, book, linked items); the CSP's font exception; merge review (10, fixed) |
 | M1.8a-web-1b Web foundation, Overview and Health | **done**, built on `m1/8a-web-1b` (BUILD-LOG 1.8a-web-1b): `web/` (types and validators from the contracts, client, stream, hub, money, navigator, Overview, Health), the `web` CI job, CodeQL for TypeScript, Dependabot npm; security review clean, merge review (10: 9 fixed, 1 no change); **done** (PR #17, `0fe5415`) |
-| M1.8 Terminal shell | M1.8a (WPF) done and merged as `77849e3`, then **retired by the D1 amendment** (2026-10-27; BUILD-LOG 1.8w; tag `wpf-terminal-final`). **WPF pruned** (PR #13 merged as `1b92d49`). Rebuilt as a web terminal: **M1.8a-web done** (PR #20), **M1.8b-1 done** (PRs #21, #22), **M1.8b-2 built** (PR #23): M1.8 completes with it |
+| M1.8 Terminal shell | M1.8a (WPF) done and merged as `77849e3`, then **retired by the D1 amendment** (2026-10-27; BUILD-LOG 1.8w; tag `wpf-terminal-final`). **WPF pruned** (PR #13 merged as `1b92d49`). Rebuilt as a web terminal: **M1.8a-web done** (PR #20), **M1.8b-1 done** (PRs #21, #22), **M1.8b-2 done** (PR #23, `47984db`): **M1.8 complete**; M1.8c New window approved after it |
 
 ## 9. Parking lot
 
@@ -737,6 +738,8 @@ M1.11. M1.10 can run any time after M1.2; M1.13 any time after M1.12 and before 
   when the ledger reaches tens of thousands.
 - One `times` module for the duplicated time helpers (`api.utc_text` and `ledger.iso_utc`; `alerts._ns` and
   `ledger_import.ns_of`): with the next slice that touches those files (2026-10-27 platform review, item 10).
+- A layout saved from a New window popup keeps the popup's outer size, which includes Edge's address strip: reopened
+  as an app window (no strip), its content is that strip taller (M1.8c merge review 8). Small; revisit if it shows.
 - Panes docked, floated and moved within an IKARS window (the Layout mock-up's caption): M1.8b's layouts are
   sets of windows instead (owner, 2026-10-27); a docking library would come back through a proposal.
 - Readable screen-reader names for list items: the terminal's lists expose each record's raw text to UI Automation

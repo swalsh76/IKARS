@@ -1,5 +1,6 @@
 import { useState, type MouseEvent, type ReactNode } from "react";
 import { useRoute, useTerminal, useValue } from "../app/hooks";
+import { openNewWindow } from "../app/layout";
 import { crumbs, href, type Route } from "../nav/route";
 import { strip } from "../view/health";
 import { Hotkeys } from "./Keys";
@@ -88,6 +89,11 @@ export function Shell({ children }: { children: ReactNode }) {
               {item.label}
             </Link>
           ))}
+          {route.screen !== "welcome" && ( // a second wizard would save settings alongside the first
+            <button type="button" className="side-new" onClick={() => openNewWindow()}>
+              + New window
+            </button>
+          )}
         </nav>
         <main className="main">{children}</main>
       </div>
