@@ -2747,4 +2747,9 @@ sent.
   | 9 | Normal alerts now pop up for every caller, not only recommendations | No change: approved in this slice's plan (normal shows by day, nothing else raises it) |
   | 10 | demo-api called the journal service's private `_write` | It uses `listen` and `flush` |
 
+**Added at the owner's request (2026-10-28, after a network outage):** a watchdog "recovered" notification
+repeated the problem ("recovered: the engine is not running"), which read as if it still were. Each problem now has
+its own all-clear text ("the engine is running again", "Kalshi's feed is live again", ...), and a test holds every
+problem the watchdog can raise to one. Per-commit review: none.
+
 **M1.12c built**, subject to the live checks and the owner's merge.

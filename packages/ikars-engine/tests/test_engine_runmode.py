@@ -259,7 +259,8 @@ def test_confirm_remind_and_clear() -> None:
     assert [m.kind for m in reminder] == ["reminder"]
     committed(state, reminder[0], later)
     cleared = plan(state, [], later + 1, rules)
-    assert [(m.kind, m.text) for m in cleared] == [("recovered", "recovered: stale")]
+    # the state now, never the problem again (owner, 2026-10-28)
+    assert [(m.kind, m.text) for m in cleared] == [("recovered", "Kalshi's feed is live again")]
     committed(state, cleared[0], later + 1)
     assert state.problems == {}
     blip = State()
@@ -552,3 +553,13 @@ async def test_an_engine_that_ends_by_itself_is_named() -> None:
     cancelled.cancel()
     await asyncio.gather(cancelled, return_exceptions=True)
     assert _ended(cancelled) == "the engine's main task was cancelled"
+
+
+def test_every_watchdog_problem_has_its_own_recovered_text() -> None:
+    import inspect
+    import re
+
+    from ikars_engine import watchdog
+
+    names = set(re.findall(r'Problem\(\s*"([a-z-]+)"', inspect.getsource(watchdog)))
+    assert names and names <= set(watchdog.RECOVERED)  # a new problem says how it is fixed too

@@ -37,6 +37,20 @@ from ikars_engine.runmode import at, engine_running, read_snapshot, stopped_by_o
 log = logging.getLogger("ikars_engine.watchdog")
 STATE = "watchdog.json"
 TITLES = {"problem": "problem", "reminder": "still a problem", "recovered": "recovered"}
+# what a "recovered" notification says: the state now, never the problem again (owner, 2026-10-28:
+# "recovered: the engine is not running" read as if it still were)
+RECOVERED = {
+    "engine": "the engine is running again",
+    "engine-silent": "the engine is reporting again",
+    "restarting": "the engine is running again",
+    "feed": "Kalshi's feed is live again",
+    "ledger-chain": "the ledger's hash chain checks out again",
+    "ledger-reconcile": "the ledger reconciles exactly with Kalshi again",
+    "backup": "backups to the share are up to date again",
+    "storage": "recordings are back within their storage budget",
+    "setup": "the Kalshi key is set up",
+    "terminal-port": "the terminal's port is free again",
+}
 NS = 1_000_000_000
 
 
@@ -162,7 +176,7 @@ def plan(state: State, current: list[Problem], now_ns: int, rules: Rules) -> lis
             del state.problems[name]  # a blip that never reached the owner is forgotten
         else:
             known.seen = 0
-            messages.append(Message("recovered", name, f"recovered: {known.text}"))
+            messages.append(Message("recovered", name, RECOVERED.get(name, "back to normal")))
     return messages
 
 
