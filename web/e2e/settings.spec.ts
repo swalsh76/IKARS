@@ -128,6 +128,19 @@ test.describe("layouts and the support bundle", () => {
     await page.getByRole("button", { name: "Make a support bundle" }).click();
     await expect(page.getByTestId("support-note")).toContainText("saved as support", { timeout: 30_000 });
     await expect(page.getByTestId("support-note")).toContainText("never sent");
+    // the program's version (M1.9b): the demo server is a development copy, with no updates
+    await expect(page.getByRole("region", { name: "Program" })).toContainText("Development copy");
+    expect(refused).toEqual([]);
+  });
+
+  test("the IKARS Update window draws on its own, and says a development copy cannot update", async ({ page }) => {
+    const refused = watchPolicy(page);
+    await page.goto(await signInTo(demo));
+    await page.goto(`http://127.0.0.1:${demo.port}/update?to=0.1.3`);
+    const window = page.getByRole("main", { name: "IKARS Update" });
+    await expect(window.getByRole("heading", { name: "IKARS cannot update here" })).toBeVisible();
+    await expect(window).toContainText("development copy");
+    await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0); // no terminal frame
     expect(refused).toEqual([]);
   });
 });

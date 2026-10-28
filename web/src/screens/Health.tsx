@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ApiFailure, change } from "../api/client";
 import { useMeterReading, useSnapshot, useValue } from "../app/hooks";
 import { gapRow, healthCards, meterCard } from "../view/health";
+import { Updates } from "./Updates";
 
 function Gaps() {
   const gaps = useSnapshot("/v1/gaps?days=7&limit=200", "GapPage", 30_000);
@@ -99,6 +100,10 @@ export function Health() {
       ))}
       <Gaps />
       <SupportBundle />
+      <section className="card span-3" aria-label="Program">
+        <h2>Program</h2>
+        <Updates />
+      </section>
       <section className="card span-3">
         <details>
           <summary>The engine's whole report</summary>

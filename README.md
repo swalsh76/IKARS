@@ -12,6 +12,10 @@ KalTerm3.
 **Status:** being set up (milestone M1). IKARS only recommends; it sends no orders. See [docs/PLAN.md](docs/PLAN.md)
 for the plan and [docs/BUILD-LOG.md](docs/BUILD-LOG.md) for how each part was built and verified.
 
+**Downloads:** test pre-releases on the [Releases](https://github.com/swalsh76/IKARS/releases) page (`Setup.exe`
+installs per user, without admin rights, and updates itself; or the portable zip). See the
+[code signing policy](docs/CODE-SIGNING.md).
+
 IKARS is a personal project and is **not affiliated with, endorsed by or connected to Kalshi**. Nothing here is
 financial or tax advice.
 

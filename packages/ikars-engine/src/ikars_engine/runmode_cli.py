@@ -10,6 +10,7 @@
 - ``open``: the web terminal in its own Edge window (starting the engine if needed), or a saved
   layout's windows (``--layout``).
 - ``support``: a redacted support bundle in the data folder's ``support`` folder (never sent).
+- ``rollback VERSION``: back to an earlier release, its pre-upgrade snapshot restored (M1.9b).
 """
 
 import argparse
@@ -53,6 +54,7 @@ COMMANDS = (
     "alerts",
     "open",
     "support",
+    "rollback",
 )
 STOP_WAIT_S = 60
 
@@ -76,9 +78,44 @@ def add_parsers(commands: Any) -> None:
                 "--layout", default=None,
                 help="a saved layout's windows (default: the one chosen to open at start; '': one)",
             )  # fmt: skip
+    back = commands.add_parser("rollback", help="back to an earlier release and its data (M1.9b)")
+    back.add_argument("--root", default=None, help="the data folder (default: the usual)")
+    back.add_argument("version", help="the release to go back to, like 0.1.0")
     alerts = commands.add_parser("alerts", help="workstation notifications")
     alerts.add_argument("--root", default=None, help="the data folder (default: the usual)")
     alerts.add_argument("action", choices=["test"])
+
+
+def rollback(paths: Paths, version: str, managers: Any = None) -> dict[str, object]:
+    """Back to release ``version``: everything is checked and the release downloaded before the
+    engine stops and the data is swapped (a failed swap is undone), so a failure on the way leaves
+    the current version and its data as they were."""
+    from ikars_engine import launcher, updates, upgrades
+
+    where = updates.locator() if managers is None else managers.where
+    if where is None:
+        raise upgrades.RollbackRefused("only the installed program rolls back")
+    make = updates.github_manager if managers is None else managers.current
+    current = str(make(where).get_current_version())
+    if version == current:
+        raise upgrades.RollbackRefused(f"{version} is the version installed now")
+    upgrades.require_snapshot(paths, version)
+    back = (updates.downgrade_manager if managers is None else managers.back)(version, where)
+    try:
+        found_release = back.check_for_updates()
+    except Exception as exc:
+        raise upgrades.RollbackRefused(f"release v{version} could not be read: {exc}") from exc
+    if found_release is None or str(found_release.TargetFullRelease.Version) != version:
+        raise upgrades.RollbackRefused(f"release v{version} was not found on GitHub")
+    back.download_updates(found_release)
+    launcher.stop_engine(paths)
+    if runmode.engine_running(paths.data):  # never a swap under a running engine (merge review 2)
+        raise upgrades.RollbackRefused(
+            "the engine did not stop in time: nothing changed, try again"
+        )
+    done = upgrades.restore(paths, version, current)
+    back.wait_exit_then_apply_updates(found_release, silent=True, restart=True)
+    return {"rolled_back": True, "installing": version, **done}
 
 
 def support_bundle(paths: Paths, settings: Settings) -> Done:
@@ -150,6 +187,15 @@ def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
             _print(open_terminal(paths, root, settings=settings, layout=args.layout))
         except OpenError as exc:
             _print({"opened": False, "problem": str(exc)})
+            return 1
+        return 0
+    if args.command == "rollback":
+        from ikars_engine.upgrades import RollbackRefused
+
+        try:
+            _print(rollback(paths, args.version))
+        except RollbackRefused as exc:
+            _print({"rolled_back": False, "problem": str(exc)})
             return 1
         return 0
     if args.command == "support":

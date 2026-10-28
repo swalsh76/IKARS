@@ -41,6 +41,7 @@ ShareCheck: ShareCheck
 ShareCheckView: ShareCheckView
 StreamOpened: StreamOpened
 Subscriptions: Subscriptions
+UpdateView: UpdateView
 }
 export interface AlertPage {
 items: AlertView[]
@@ -378,6 +379,21 @@ stream_id: string
 export interface Subscriptions {
 books?: string[]
 quotes?: string[]
+}
+/**
+ * ``GET /v1/update`` (and ``POST /v1/update/check``): the program's version and any newer one,
+ * downloaded and waiting for the owner's Restart to update (``POST /v1/update/apply``).
+ */
+export interface UpdateView {
+available: (string | null)
+checked_at_utc: (string | null)
+current: (string | null)
+events: string[]
+installed: boolean
+problem: (string | null)
+progress: (number | null)
+size_bytes: (number | null)
+state: string
 }
 
 /** The stream's event names and the contract each carries. */

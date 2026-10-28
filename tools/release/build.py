@@ -71,7 +71,7 @@ def left_out(folder: str, names: list[str]) -> set[str]:
     return {n for n in names if n in LEFT_OUT}
 
 
-def build(version: str) -> None:
+def build(version: str, keep_releases: bool = False) -> None:
     if not SEMVER.fullmatch(version):
         raise SystemExit(f"{version!r} is not a version like 1.2.3 or 1.2.3-beta.1")
     web = ROOT / "web" / "dist"
@@ -80,9 +80,10 @@ def build(version: str) -> None:
     for folder in (APP, BUILD / "wheels"):
         if folder.exists():
             shutil.rmtree(folder)
-    # emptied, not removed: an open Windows Sandbox holds the folder itself (it is mapped there)
+    # emptied, not removed: an open Windows Sandbox holds the folder itself (it is mapped there);
+    # kept when it holds the previous release, which Velopack makes the update's delta from
     RELEASES.mkdir(parents=True, exist_ok=True)
-    for old in RELEASES.iterdir():
+    for old in [] if keep_releases else RELEASES.iterdir():
         shutil.rmtree(old) if old.is_dir() else old.unlink()
     python = APP / "python"
     shutil.copytree(python_home(), python, ignore=left_out)
@@ -147,7 +148,10 @@ def sandbox() -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--version", required=True, help="the release's version, like 0.1.0")
-    build(parser.parse_args().version)
+    parser.add_argument("--keep-releases", action="store_true",
+                        help="keep build/releases (the previous release, for a delta)")  # fmt: skip
+    args = parser.parse_args()
+    build(args.version, args.keep_releases)
 
 
 if __name__ == "__main__":

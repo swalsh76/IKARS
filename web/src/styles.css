@@ -218,8 +218,27 @@ kbd { padding: 2px 8px; border-radius: 4px; border: 1px solid var(--line); backg
 .setting label { color: var(--sub); }
 .setting input, .setting select, .wizard input { width: 100%; height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.actions button, .wizard button { height: 34px; padding: 0 16px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
-.actions button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+.actions button, .wizard button, .updates button, .update-window button { height: 34px; padding: 0 16px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
+.updates { display: grid; gap: 4px; }
+.update-version { font-weight: 600; }
+.update-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.updates button, .update-window button { height: auto; min-height: 34px; padding: 6px 14px; text-align: left; }
+.updates button:disabled { opacity: 0.6; cursor: default; }
+.bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin: 6px 0 2px; }
+.bar .fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+.bar .fill.moving { width: 35%; animation: bar-moving 1.4s ease-in-out infinite; }
+@keyframes bar-moving { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+@media (prefers-reduced-motion: reduce) { .bar .fill.moving { animation: none; width: 100%; opacity: 0.5; } }
+.update-window { padding: 20px 24px; max-width: 560px; }
+.update-window h1 { font-size: 18px; margin: 0 0 14px; }
+.update-steps { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; }
+.update-steps li { color: var(--sub); }
+.update-steps li.done { color: var(--text); }
+.update-steps li.now { color: var(--text); font-weight: 600; }
+.update-steps .mark { display: inline-block; width: 22px; }
+.update-steps li.done .mark { color: var(--gain, var(--accent)); }
+.update-log { margin: 6px 0 0; padding-left: 18px; font-family: ui-monospace, Consolas, monospace; max-height: 140px; overflow: auto; }
+.actions button.primary, .updates button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
 .actions .push { margin-left: auto; }
 .layouts ul { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
 .setting .layouts input[type="radio"] { width: auto; height: auto; margin: 0 6px 0 0; }

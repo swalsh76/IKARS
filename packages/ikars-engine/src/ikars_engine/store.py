@@ -111,6 +111,11 @@ STATE_MIGRATIONS = (
     );
     CREATE TABLE clean_shutdown (id INTEGER PRIMARY KEY CHECK (id = 1), at_ns INTEGER NOT NULL)
     """,
+    # 2 (M1.9b): the gap log is read by its end (Health's last 7 days, gaps_since); the first
+    # migration an installed IKARS carried, so the rollback drill had a real one to undo
+    """
+    CREATE INDEX gap_end ON gap (end_ns)
+    """,
 )
 
 

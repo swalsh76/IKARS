@@ -4,6 +4,7 @@ import type { SettingsView, ShareCheckView } from "../api/contracts";
 import { SKINS, applyTheme, isTheme, type Theme } from "../app/theme";
 import { changedCount, changes, formOf, keyLines, restartNote, type Form } from "../view/settings";
 import { Layouts } from "./Layouts";
+import { Updates } from "./Updates";
 
 function Row({ label, htmlFor, children }: { label: string; htmlFor?: string; children: ReactNode }) {
   return (
@@ -154,6 +155,9 @@ export function Settings() {
         {field("session_days", "Stay signed in for (days)")}
         <Row label="Layouts">
           <Layouts />
+        </Row>
+        <Row label="Version">
+          <Updates />
         </Row>
       </section>
 

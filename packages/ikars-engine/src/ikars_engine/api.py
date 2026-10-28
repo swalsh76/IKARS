@@ -48,7 +48,7 @@ from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from ikars_engine import contracts as c
-from ikars_engine import support
+from ikars_engine import runmode, support
 from ikars_engine.files import write_text_atomic
 from ikars_engine.kalshi.discovery import OPEN_STATUSES, MarketIndex, MarketInfo
 from ikars_engine.ledger import KINDS, Ledger
@@ -60,6 +60,7 @@ from ikars_engine.settings import Layout
 from ikars_engine.settings_api import SettingsRefused, TerminalConfig
 from ikars_engine.store import Gap
 from ikars_engine.threads import in_daemon_thread
+from ikars_engine.updates import CHECK_WAIT_S, Updater
 from ikars_engine.webserve import SECURITY_HEADERS, files_route
 
 log = logging.getLogger("ikars_engine.api")
@@ -127,6 +128,7 @@ class ApiContext:
     sessions: Sessions | None = None  # the terminal's sign-in; None: the bearer token only
     web_root: Path | None = None  # the terminal's files; None: none served
     config: TerminalConfig | None = None  # the settings and their actions (M1.8b-1); None: none
+    updates: "Updater | None" = None  # the program's updates (M1.9b); None: none
 
 
 @dataclass
@@ -699,6 +701,26 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         except (support.BundleRefused, OSError) as exc:
             return _json(c.Done(done=False, detail=str(exc)))
 
+    def updater() -> "Updater":
+        return ctx.updates if ctx.updates is not None else Updater()  # none: "not installed"
+
+    async def update_view(request: Request) -> Response:
+        return _json(updater().view())
+
+    async def update_check(request: Request) -> Response:
+        try:
+            return _json(await asyncio.wait_for(in_daemon_thread(updater().check), CHECK_WAIT_S))
+        except TimeoutError:
+            return _error(503, "unavailable", "the update check did not finish in time")
+
+    async def update_apply(request: Request) -> Response:
+        """Restart to update: Velopack installs the downloaded release once this engine stops."""
+        config = configured()
+        if not config.restartable:  # nothing would start it again (as for a restart)
+            return _json(c.Done(done=False, detail="this engine runs in the foreground: stop it "
+                                "and start IKARS from the Start menu to update"))  # fmt: skip
+        return _json(updater().apply(lambda: runmode.request_stop(config.paths.data)))
+
     async def layouts(request: Request) -> Response:
         try:
             return _json(await in_daemon_thread(configured().layouts))
@@ -754,6 +776,9 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         Route("/v1/engine/autostart", autostart_install, methods=["POST"]),
         Route("/v1/engine/restart", restart, methods=["POST"]),
         Route("/v1/support/bundle", support_bundle, methods=["POST"]),
+        Route("/v1/update", update_view),
+        Route("/v1/update/check", update_check, methods=["POST"]),
+        Route("/v1/update/apply", update_apply, methods=["POST"]),
         Route("/v1/layouts", layouts), Route("/v1/layouts", layout_change, methods=["PUT"]),
         Route("/v1/layouts/start", layout_change, methods=["PUT"]),
         Route("/v1/layouts/{name}", layout_change, methods=["DELETE"]),

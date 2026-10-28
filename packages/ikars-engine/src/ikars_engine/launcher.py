@@ -16,6 +16,8 @@ from collections.abc import Callable, Sequence
 
 from ikars_engine import autostart, runmode
 from ikars_engine.paths import Paths, resolve
+from ikars_engine.updates import AFTER_UPDATE
+from ikars_engine.watchdog import engine_command, start_engine
 
 STOP_WAIT_S = 20.0  # within Velopack's 30 seconds for a step
 MB_ICONERROR = 0x10
@@ -70,11 +72,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         .on_before_uninstall_fast_callback(lambda version: before_uninstall(paths))
         .run()
     )
+    from ikars_engine import upgrades
     from ikars_engine.open_terminal import OpenError, open_terminal
     from ikars_engine.settings import SettingsError, load
 
     try:
-        settings = load(paths.create().settings)
+        upgrades.on_start(paths.create())  # before the settings are read, which migrates them
+        settings = load(paths.settings)
+        if AFTER_UPDATE in args:  # the window that asked for the update reconnects by itself
+            if not runmode.engine_running(paths.data):
+                start_engine(engine_command(None))
+            return 0
         open_terminal(paths, settings=settings)
     except (OpenError, SettingsError, OSError) as exc:
         say(f"IKARS could not open: {exc}")
