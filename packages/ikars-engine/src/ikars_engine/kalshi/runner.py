@@ -60,6 +60,7 @@ from ikars_engine.share import configured, migration_copier
 from ikars_engine.skew import SkewMonitor
 from ikars_engine.store import StateStore
 from ikars_engine.threads import in_daemon_thread
+from ikars_engine.updates import Updater
 from ikars_engine.webserve import terminal_root
 
 log = logging.getLogger("ikars_engine.kalshi.runner")
@@ -113,6 +114,7 @@ class Live:
     gpu_task: asyncio.Task[None]
     api: ApiServer
     public_client: KalshiPublicClient
+    updates: Updater
 
 
 def describer(index: MarketIndex) -> Describe:
@@ -203,6 +205,7 @@ async def build(
 
     sessions = Sessions(paths.data, settings.terminal.session_days)
     web_root = terminal_root()
+    updates = Updater.for_this_program()
 
     def api_context(token: str) -> ApiContext:
         return ApiContext(
@@ -229,14 +232,16 @@ async def build(
             sessions=sessions,
             web_root=web_root,
             config=TerminalConfig(paths, settings, root, restartable=restartable),
+            updates=updates,
         )
 
     api = ApiServer(api_context, paths.data, port=settings.terminal.port)
     engine.health_parts["api"] = api.health
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
     return Live(
-        engine, source, state, ledger, service, backups, account_client, gpu_task, api, client
-    )
+        engine, source, state, ledger, service, backups, account_client, gpu_task, api, client,
+        updates,
+    )  # fmt: skip
 
 
 class PortfolioHealth:
@@ -361,6 +366,8 @@ async def run(
         stack.push_async_callback(live.api.stop)  # stops before the ledger it reads closes
         await live.api.start()
         running.append(asyncio.create_task(engine.run(), name="engine"))
+        checking = asyncio.create_task(live.updates.keep_checking(), name="updates")
+        stack.callback(checking.cancel)  # it sleeps a day at a time: cancelled, not awaited
         if on_minute is not None:
             on_minute(engine.health())
         started = last = time.monotonic()
@@ -443,6 +450,7 @@ async def run_setup(
     sessions = Sessions(paths.data, settings.terminal.session_days)
     restartable = should_stop is not None
     servers: list[ApiServer] = []
+    updates = Updater.for_this_program()  # a machine being set up gets updates too
 
     def health() -> dict[str, object]:
         report: dict[str, object] = {
@@ -460,11 +468,12 @@ async def run_setup(
             ledger=ledger, ledger_health=dict, portfolio=held.portfolio,
             alert_log=paths.data / ALERT_LOG, metrics=Metrics(), now_ns=clock.now_ns,
             sessions=sessions, web_root=terminal_root(),
-            config=TerminalConfig(paths, settings, root, restartable=restartable),
+            config=TerminalConfig(paths, settings, root, restartable=restartable), updates=updates,
         )  # fmt: skip
 
     api = ApiServer(api_context, paths.data, port=settings.terminal.port)
     servers.append(api)
+    checking = asyncio.create_task(updates.keep_checking(), name="updates")
     try:
         await api.start()
         if on_minute is not None:
@@ -482,6 +491,7 @@ async def run_setup(
             ):
                 break
     finally:
+        checking.cancel()
         await api.stop()
         ledger.close()
     return health()

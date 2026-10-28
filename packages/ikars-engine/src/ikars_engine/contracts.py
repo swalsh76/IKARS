@@ -356,6 +356,18 @@ class LayoutStart(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
     name: str
 
 
+class UpdateView(msgspec.Struct, kw_only=True):
+    """``GET /v1/update`` (and ``POST /v1/update/check``): the program's version and any newer one,
+    downloaded and waiting for the owner's Restart to update (``POST /v1/update/apply``)."""
+
+    installed: bool  # False: a development checkout, which has no updates
+    current: str | None
+    available: str | None
+    state: str  # not installed, up to date, checking, ready, failed
+    checked_at_utc: str | None
+    problem: str | None
+
+
 class ApiError(msgspec.Struct, kw_only=True):
     error: str  # a short code: unauthorised, not_found, bad_request, unavailable
     detail: str
@@ -379,7 +391,7 @@ CONTRACTS: tuple[type[msgspec.Struct], ...] = (
     RecommendationView,
     RecommendationPage, Subscriptions, StreamOpened, QuoteUpdate, SessionCode, SessionCodeIssued,
     KeyStatus, SettingsView, SettingsChange, ShareCheck, ShareCheckView, Done,
-    LayoutWindow, Layout, LayoutsView, LayoutStart, ApiError,
+    LayoutWindow, Layout, LayoutsView, LayoutStart, UpdateView, ApiError,
 )  # fmt: skip
 
 # The stream's event names and the payload each carries.
@@ -581,6 +593,14 @@ def examples() -> dict[str, Any]:
         "Layout": layout,
         "LayoutsView": LayoutsView(layouts=[layout], start="Trading"),
         "LayoutStart": LayoutStart(name="Trading"),
+        "UpdateView": UpdateView(
+            installed=True,
+            current="0.1.0",
+            available="0.1.1",
+            state="ready",
+            checked_at_utc="2026-01-01T12:00:00+00:00",
+            problem=None,
+        ),
         "ApiError": ApiError(error="not_found", detail="no such market"),
     }
     return found

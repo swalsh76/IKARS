@@ -43,3 +43,4 @@ export declare const ShareCheck: Validator;
 export declare const ShareCheckView: Validator;
 export declare const StreamOpened: Validator;
 export declare const Subscriptions: Validator;
+export declare const UpdateView: Validator;

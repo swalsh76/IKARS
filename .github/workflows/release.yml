@@ -1,0 +1,73 @@
+name: release
+
+# A version tag (v1.2.3 or v1.2.3-beta.1) builds IKARS's two downloads, Setup.exe and the portable
+# zip, with Velopack, and publishes them as a GitHub pre-release with the update packages the
+# installed program reads (M1.9b, PLAN D12). Pre-releases until signing is decided (M6).
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  UV_VERSION: "0.13.4"
+  NODE_VERSION: "24.22.1"
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write # the release and its files; nothing else
+    env:
+      IKARS_UV: uv
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }} # read from the environment, never pasted into a script
+      REPOSITORY: https://github.com/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: The standalone Python the release bundles (.python-version)
+        run: uv python install
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: The web terminal
+        working-directory: web
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: vpk (dotnet-tools.json)
+        run: dotnet tool restore
+
+      - name: The previous release (Velopack makes the update a small delta from it)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/releases | Out-Null
+          dotnet vpk download github --repoUrl "$env:REPOSITORY" `
+            --token "$env:GITHUB_TOKEN" --pre --outputDir build/releases
+          if ($LASTEXITCODE -ne 0) { Write-Host "no earlier release: a full package only"; exit 0 }
+
+      - name: Build (the tag's version)
+        shell: pwsh
+        run: python tools/release/build.py --version $env:TAG.Substring(1) --keep-releases
+
+      - name: Publish the pre-release
+        shell: pwsh
+        run: |
+          dotnet vpk upload github --repoUrl "$env:REPOSITORY" `
+            --token "$env:GITHUB_TOKEN" --outputDir build/releases --pre --publish `
+            --tag "$env:TAG" --releaseName "IKARS $env:TAG"

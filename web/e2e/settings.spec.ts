@@ -128,6 +128,8 @@ test.describe("layouts and the support bundle", () => {
     await page.getByRole("button", { name: "Make a support bundle" }).click();
     await expect(page.getByTestId("support-note")).toContainText("saved as support", { timeout: 30_000 });
     await expect(page.getByTestId("support-note")).toContainText("never sent");
+    // the program's version (M1.9b): the demo server is a development copy, with no updates
+    await expect(page.getByRole("region", { name: "Program" })).toContainText("a development copy");
     expect(refused).toEqual([]);
   });
 });

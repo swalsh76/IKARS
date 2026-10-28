@@ -1555,6 +1555,67 @@
       "required": [],
       "title": "Subscriptions",
       "type": "object"
+    },
+    "UpdateView": {
+      "description": "``GET /v1/update`` (and ``POST /v1/update/check``): the program's version and any newer one,\ndownloaded and waiting for the owner's Restart to update (``POST /v1/update/apply``).",
+      "properties": {
+        "available": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "checked_at_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "current": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "installed": {
+          "type": "boolean"
+        },
+        "problem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "installed",
+        "current",
+        "available",
+        "state",
+        "checked_at_utc",
+        "problem"
+      ],
+      "title": "UpdateView",
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
