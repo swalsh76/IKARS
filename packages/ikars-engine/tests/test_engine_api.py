@@ -882,3 +882,75 @@ def test_streams_share_one_health_build_per_interval(ctx: ApiContext) -> None:
     assert shared_health(ctx, 100.0 + HEALTH_EVERY_S / 4) is first and built[0] == 1
     shared_health(ctx, 100.0 + HEALTH_EVERY_S)
     assert built[0] == 2
+
+
+# --- the recommendations (M1.12c) ----------------------------------------------------------------
+
+
+async def test_the_ranked_list_one_recommendation_the_response_and_the_scorecard(
+    ctx: ApiContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ikars_engine.api as api
+    from ikars_core.fees import fee_schedule
+    from ikars_engine.journal import Journal, JournalService, Recommendation
+    from ikars_engine.model import Item, Ref
+
+    def item(rid: str, ticker: str, pnl_e6: int) -> Item:  # 10 at 46c, valid half an hour
+        rec = Recommendation(ticker=ticker, side="yes", entry_price_e6=460_000, count_e2=1_000,
+                             expires_ns=T0 + 1800 * 10**9, summary="made up", strategy="momentum",
+                             version="9f2ce1a0", pnl_e6=pnl_e6)  # fmt: skip
+        return Item(ref=Ref("recommendation", rid), source="momentum", received_ns=T0,
+                    payload=msgspec.to_builtins(rec), hops=1)  # fmt: skip
+
+    fees = fee_schedule("quadratic", 1_000_000)
+    assert fees is not None
+    ctx.index.fees["KXDEMO"] = fees
+    journal = Journal(tmp_path / "journal.sqlite")
+    service = JournalService(journal, {}, ctx.now_ns, fees=api.market_fees(ctx.index))
+    ctx.journal, ctx.recommendations = journal, service
+    service._write([item("r1", "KXA", 40_000), item("r2", "KXB", 90_000)])
+    page = await get(ctx, "/v1/recommendations?state=active", c.RecommendationPage)
+    assert [r.id for r in page.items] == ["r2", "r1"] and page.total == 2  # by return per day
+    first = page.items[0]
+    assert (first.title, first.source, first.outlay_e6) == ("Made up KXB", "momentum", 4_780_000)
+    assert first.per_day_e6 is not None and first.per_day_e6 > page.items[1].per_day_e6
+    one = await get(ctx, "/v1/recommendations/r1", c.RecommendationView)
+    assert one.id == "r1" and one.response is None and one.return_e6 == 8_368
+    assert (await call(ctx, "GET", "/v1/recommendations/nope")).status_code == 404
+    path = "/v1/recommendations/r2/response"
+    answered = await call(ctx, "PUT", path, body={"answer": "dismissed"})
+    assert answered.status_code == 200 and answered.json()["response"] == "dismissed"
+    assert (await call(ctx, "PUT", path, body={"answer": "bought"})).status_code == 400
+    assert (await call(ctx, "PUT", path, body={"answer": "taken", "x": 1})).status_code == 400
+    missing = await call(ctx, "PUT", "/v1/recommendations/nope/response", body={"answer": None})
+    assert missing.status_code == 404
+    page = await get(ctx, "/v1/recommendations?state=active", c.RecommendationPage)
+    assert [r.id for r in page.items] == ["r1"] and page.total == 1  # the dismissed left out
+    recent = await get(ctx, "/v1/recommendations", c.RecommendationPage)
+    assert {r.id for r in recent.items} == {"r1", "r2"} and recent.total == 2
+    card = await get(ctx, "/v1/scorecard", c.ScoreCard)
+    assert card.at_utc is None and card.lines == [] and card.since_utc.endswith("Z")
+    await service.refresh_card()
+    card = await get(ctx, "/v1/scorecard", c.ScoreCard)
+    assert card.at_utc is not None and card.lines == []
+    # the stream sends the list once, then again only when it changes
+    monkeypatch.setattr(api, "PORTFOLIO_EVERY_S", 0.0)
+    state = Stream(id="s1")
+    ctx.streams[state.id] = state
+    chunks = [chunk async for chunk in _events(ctx, state, FakeRequest(3))]  # type: ignore[arg-type]
+    sent = [chunk for chunk in chunks if b"event: recommendations" in chunk]
+    assert len(sent) == 1 and b'"id":"r1"' in sent[0]
+    service.respond("r1", "dismissed")
+    chunks = [chunk async for chunk in _events(ctx, state, FakeRequest(2))]  # type: ignore[arg-type]
+    sent = [chunk for chunk in chunks if b"event: recommendations" in chunk]
+    assert len(sent) == 1 and b'"total":0' in sent[0]
+    journal.close()
+
+
+async def test_without_a_journal_the_recommendations_are_empty(ctx: ApiContext) -> None:
+    page = await get(ctx, "/v1/recommendations?state=active", c.RecommendationPage)
+    assert page.items == [] and page.total == 0
+    assert (await call(ctx, "GET", "/v1/recommendations/r1")).status_code == 404
+    put = await call(ctx, "PUT", "/v1/recommendations/r1/response", body={"answer": "taken"})
+    assert put.status_code == 404
+    assert (await get(ctx, "/v1/scorecard", c.ScoreCard)).lines == []

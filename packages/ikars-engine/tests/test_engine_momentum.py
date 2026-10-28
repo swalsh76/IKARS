@@ -199,7 +199,7 @@ def test_the_journal_takes_whole_contracts_and_knows_what_is_active(tmp_path: An
     with pytest.raises(ValueError, match="whole contracts"):
         journal.add(made)
     whole = msgspec.structs.replace(made, payload={**made.payload, "count_e2": 1_000})
-    assert journal.add(whole) is True
+    assert journal.add(whole) is not None
     assert journal.active("momentum", TICKER, T0 + 60 * S) is True
     assert journal.active("momentum", TICKER, T0 + 1800 * S) is False  # expired by then
     journal.close()

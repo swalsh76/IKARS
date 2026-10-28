@@ -48,3 +48,24 @@ def round_trip_e6(fees: FeeSchedule, count_e2: int, entry_e6: int, exit_e6: int)
     legs' fees. Exact for whole contracts; a fraction of a millionth is dropped, never raised."""
     gross = (exit_e6 - entry_e6) * count_e2 // 100
     return gross - taker_fee_e6(fees, count_e2, entry_e6) - taker_fee_e6(fees, count_e2, exit_e6)
+
+
+def outlay_e6(fees: FeeSchedule, count_e2: int, entry_e6: int) -> int:
+    """What buying costs: the contracts and the entry fee. It is also the most the position can
+    lose, held to a settlement against it (M1.12c's worst case)."""
+    return entry_e6 * count_e2 // 100 + taker_fee_e6(fees, count_e2, entry_e6)
+
+
+def mark_score_e6(
+    fees: FeeSchedule, side: str, count_e2: int, entry_e6: int, yes_bid_e6: int | None,
+    yes_ask_e6: int | None, closed: bool | None, settled: str | None,
+) -> tuple[int | None, bool]:  # fmt: skip
+    """A check's score after fees, and whether it is at settlement: sold at the side's bid then;
+    with no bid because the market had stopped trading (never just an empty book) and has since
+    settled, held to its settlement; else None (M1.12b)."""
+    sold = sell_price_e6(side, yes_bid_e6, yes_ask_e6)
+    if sold is not None:
+        return round_trip_e6(fees, count_e2, entry_e6, sold), False
+    if closed and settled in ("yes", "no"):
+        return settled_e6(fees, count_e2, entry_e6, settled == side), True
+    return None, False

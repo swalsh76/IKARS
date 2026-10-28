@@ -70,7 +70,9 @@ def test_priorities_quiet_hours_throttling_and_the_log(tmp_path: Path) -> None:
     assert desk.raise_alert(stale, NOON) == "shown"
     assert desk.raise_alert(stale, NOON + timedelta(minutes=5)) == "throttled"
     assert desk.raise_alert(stale, NOON + timedelta(minutes=11)) == "shown"
-    assert desk.raise_alert(Alert("b", NORMAL, "note", "x"), NOON) == "held"
+    assert desk.raise_alert(Alert("b", NORMAL, "note", "x"), NOON) == "shown"  # M1.12c
+    assert desk.raise_alert(Alert("b2", LOW, "note", "x"), NOON) == "held"  # the digest's
+    assert desk.raise_alert(Alert("b3", NORMAL, "note", "x"), NIGHT) == "held"  # quiet: waits
     assert desk.raise_alert(Alert("c", HIGH, "feed", "stale"), NIGHT) == "held"  # quiet: waits
     assert desk.raise_alert(Alert("d", URGENT, "engine down", "x"), NIGHT) == "shown"  # urgent pops
     assert toasts.shown[0] == ("IKARS: feed", "stale", False) and toasts.shown[-1][2] is True
@@ -78,7 +80,7 @@ def test_priorities_quiet_hours_throttling_and_the_log(tmp_path: Path) -> None:
         json.loads(line) for line in (tmp_path / "alerts.jsonl").read_text("utf-8").splitlines()
     ]
     outcomes = [entry["outcome"] for entry in lines]
-    assert outcomes == ["shown", "throttled", "shown", "held", "held", "shown"]
+    assert outcomes == ["shown", "throttled", "shown", "shown", "held", "held", "held", "shown"]
     with pytest.raises(ValueError, match="priority"):
         desk.raise_alert(Alert("e", "loud", "x", "y"), NOON)
 

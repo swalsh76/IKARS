@@ -18,12 +18,18 @@
       "yes_bid_e6": 440000
     }
   ],
-  "pnl_e6": null,
+  "outlay_e6": 4270000,
+  "per_day_e6": 224784,
+  "pnl_e6": 20000,
+  "response": null,
+  "return_e6": 4683,
   "side": "yes",
+  "source": "momentum",
   "state": "active",
   "strategy": "momentum",
   "summary": "made up: up 5c in 5 min on 120",
   "superseded_by": null,
   "ticker": "KXDEMO-26JAN01-T50",
+  "title": "Made-up market above 50",
   "version": "9f2ce1a0"
 }

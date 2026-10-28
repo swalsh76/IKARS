@@ -152,7 +152,8 @@ slice still needs its own approved plan before code.
   unchanged (until about 2026-11-04), then its record decides; a closed market's check is scored at settlement
   (built, `f810687`). The M1.6 auto-start check passed (the installed IKARS started at sign-in after a restart).
   **M1.12c** (owner 2026-10-28: proceed as recommended: a ranked list, toasts for the strongest few) on
-  `m1/12c`: **plan proposed** (BUILD-LOG 1.12c), waiting for the owner's answers. Then M1.11 (M1.13 any time
+  `m1/12c`: **plan APPROVED** (BUILD-LOG 1.12c; all as recommended: top-ranked toasts, 3 an hour; T/I/D
+  and C now; the scorecard now; no redraw); building. Then M1.11 (M1.13 any time
   before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

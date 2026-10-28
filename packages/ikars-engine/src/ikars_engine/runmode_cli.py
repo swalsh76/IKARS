@@ -28,6 +28,7 @@ import msgspec
 
 from ikars_engine import autostart, runmode
 from ikars_engine.alerts import (
+    DESK_STATE,
     URGENT,
     Alert,
     AlertDesk,
@@ -143,7 +144,7 @@ def support_bundle(paths: Paths, settings: Settings) -> Done:
         return Done(done=False, detail=str(exc))
 
 
-def desk_for(paths: Paths, settings: Settings) -> AlertDesk:
+def desk_for(paths: Paths, settings: Settings, state_name: str = DESK_STATE) -> AlertDesk:
     try:
         quiet = QuietHours.parse(settings.alerts.quiet_start, settings.alerts.quiet_end)
     except ValueError:  # a bad setting must never stop the watchdog: the owner's default, logged
@@ -155,6 +156,7 @@ def desk_for(paths: Paths, settings: Settings) -> AlertDesk:
         quiet,
         throttle_s=settings.alerts.throttle_minutes * 60,
         digest_s=settings.alerts.digest_minutes * 60,
+        state_name=state_name,
     )
 
 

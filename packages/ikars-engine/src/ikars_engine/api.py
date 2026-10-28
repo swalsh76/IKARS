@@ -12,7 +12,8 @@ here trades (PLAN D6).
 
 **Snapshots** (``GET``): ``/v1/hello`` (the version handshake), ``/v1/health``, ``/v1/markets``,
 ``/v1/markets/{ticker}``, ``/v1/books/{ticker}``, ``/v1/portfolio``, ``/v1/ledger/status``,
-``/v1/ledger/records``, ``/v1/alerts``, ``/v1/recommendations``.
+``/v1/ledger/records``, ``/v1/alerts``, ``/v1/recommendations`` (``?state=active``: ranked),
+``/v1/recommendations/{id}`` (and ``PUT .../response``, the owner's), ``/v1/scorecard``.
 
 **The stream** (``GET /v1/stream``): an ``opened`` event names the stream; ``PUT
 /v1/stream/{id}/subscriptions`` sets which markets' quotes and books it carries. Every
@@ -51,12 +52,13 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from ikars_engine import contracts as c
 from ikars_engine import runmode, support
 from ikars_engine.files import write_text_atomic
-from ikars_engine.journal import Entry, Journal
+from ikars_engine.journal import Entry, Journal, JournalService
 from ikars_engine.kalshi.discovery import OPEN_STATUSES, MarketIndex, MarketInfo
 from ikars_engine.ledger import KINDS, Ledger
 from ikars_engine.metrics import Metrics
-from ikars_engine.pnl import round_trip_e6, sell_price_e6, settled_e6
+from ikars_engine.pnl import mark_score_e6
 from ikars_engine.portfolio import Portfolio
+from ikars_engine.recommendations import CARD_DAYS, DAY_NS, figures
 from ikars_engine.runmode import at
 from ikars_engine.session import COOKIE, Sessions
 from ikars_engine.settings import Layout
@@ -133,6 +135,10 @@ class ApiContext:
     config: TerminalConfig | None = None  # the settings and their actions (M1.8b-1); None: none
     updates: "Updater | None" = None  # the program's updates (M1.9b); None: none
     journal: "Journal | None" = None  # the recommendations (M1.12a); None: none (setup mode)
+    # their service: the ranking, the responses and the scorecard (M1.12c); None: none
+    recommendations: "JournalService | None" = None
+    # the ranked active page, the journal change it was built at, and its encoding
+    active_cache: "tuple[int, c.RecommendationPage, bytes] | None" = None
 
 
 @dataclass
@@ -143,6 +149,7 @@ class Stream:
     sent_quote: dict[str, tuple[Any, ...]] = field(default_factory=dict)
     sent_book: dict[str, int] = field(default_factory=dict)
     sent_portfolio: bytes = b""
+    sent_recommendations: bytes = b""
     alert_line: int = 0  # the last alert-log line sent
     alert_offset: int = 0  # where in the file that line ends: only new bytes are read
     events: int = 0
@@ -300,40 +307,71 @@ def candle_view(row: Candlestick) -> c.Candle:
 
 
 def recommendation_view(
-    entry: "Entry", fees: "Callable[[str], FeeSchedule | None]" = lambda ticker: None
+    entry: "Entry",
+    fees: "Callable[[str], FeeSchedule | None]" = lambda ticker: None,
+    title: Callable[[str], str] = lambda ticker: "",
 ) -> c.RecommendationView:
     """``fees`` gives a ticker's fee schedule: each mark is scored as if sold at the side's bid
-    then, after both legs' fees (M1.12b; None without a bid or a fee model)."""
+    then, after both legs' fees, or at its settlement (M1.12b); a score the journal has kept is
+    used as it is (M1.12c: it stays when the market leaves the index)."""
     rec = entry.recommendation
     schedule = fees(rec.ticker)
-
-    def score(bid: int | None, ask: int | None, closed: bool | None) -> tuple[int | None, bool]:
-        """The score, and whether it is at settlement: no bid then because the market had stopped
-        trading (never just an empty book), and it has since settled."""
-        sold = sell_price_e6(rec.side, bid, ask)
-        if schedule is None:
-            return None, False
-        if sold is not None:
-            return round_trip_e6(schedule, rec.count_e2, rec.entry_price_e6, sold), False
-        if closed and entry.settled in ("yes", "no"):  # stopped trading then: its settlement
-            won = entry.settled == rec.side
-            return settled_e6(schedule, rec.count_e2, rec.entry_price_e6, won), True
-        return None, False
-
     marks = []
     for m in entry.marks:
-        value, settled = score(m.yes_bid_e6, m.yes_ask_e6, m.closed)
+        value, settled = m.score_e6, m.at_settlement
+        if not m.scored:
+            value, settled = (None, False) if schedule is None else mark_score_e6(
+                schedule, rec.side, rec.count_e2, rec.entry_price_e6, m.yes_bid_e6, m.yes_ask_e6,
+                m.closed, entry.settled,
+            )  # fmt: skip
         marks.append(c.MarkView(horizon_s=m.horizon_s, at_utc=utc_text(m.at_ns),
                                 yes_bid_e6=m.yes_bid_e6, yes_ask_e6=m.yes_ask_e6, score_e6=value,
                                 at_settlement=settled))  # fmt: skip
+    found = figures(rec, entry.received_ns, schedule)
     return c.RecommendationView(
         id=entry.id, ticker=rec.ticker, event_ticker=rec.event_ticker, side=rec.side,
         summary=rec.summary, at_utc=utc_text(entry.received_ns), strategy=rec.strategy,
         version=rec.version, state=entry.state, superseded_by=entry.superseded_by,
         entry_price_e6=rec.entry_price_e6, count_e2=rec.count_e2,
         expires_utc=utc_text(rec.expires_ns), pnl_e6=rec.pnl_e6,
-        inputs=[str(ref) for ref in rec.inputs], marks=marks,
+        inputs=[str(ref) for ref in rec.inputs], marks=marks, title=title(rec.ticker),
+        source=entry.source, outlay_e6=None if found is None else found.outlay_e6,
+        return_e6=None if found is None else found.return_e6,
+        per_day_e6=None if found is None else found.per_day_e6, response=entry.response,
     )  # fmt: skip
+
+
+def market_fees(index: MarketIndex) -> "Callable[[str], FeeSchedule | None]":
+    def fees(ticker: str) -> FeeSchedule | None:
+        info = index.markets.get(ticker)
+        return None if info is None else index.fees.get(info.series_ticker)
+
+    return fees
+
+
+def market_title(index: MarketIndex) -> Callable[[str], str]:
+    def title(ticker: str) -> str:
+        info = index.markets.get(ticker)
+        return "" if info is None else info.title
+
+    return title
+
+
+def active_page(ctx: "ApiContext") -> "tuple[c.RecommendationPage, bytes]":
+    """The active recommendations, ranked (the dismissed left out), built again only when the
+    journal has changed: every stream and request between shares one."""
+    service = ctx.recommendations
+    if service is None:
+        empty = c.RecommendationPage(items=[], total=0)
+        return empty, msgspec.json.encode(empty)
+    cached = ctx.active_cache
+    if cached is None or cached[0] != service.journal.changes:
+        fees, title = market_fees(ctx.index), market_title(ctx.index)
+        entries = service.journal.entries(service.board.top())
+        page = c.RecommendationPage(items=[recommendation_view(e, fees, title) for e in entries],
+                                    total=service.board.shown())  # fmt: skip
+        cached = ctx.active_cache = (service.journal.changes, page, msgspec.json.encode(page))
+    return cached[1], cached[2]
 
 
 def utc_text(ns: int) -> str:
@@ -650,15 +688,46 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         return _json(c.GapPage(items=[gap_view(g) for g in found]))
 
     async def recommendations(request: Request) -> Response:
+        if request.query_params.get("state") == "active":
+            return Response(active_page(ctx)[1], media_type="application/json")
         if ctx.journal is None:
-            return _json(c.RecommendationPage(items=[]))
-
-        def fees(ticker: str) -> FeeSchedule | None:
-            info = ctx.index.markets.get(ticker)
-            return None if info is None else ctx.index.fees.get(info.series_ticker)
-
+            return _json(c.RecommendationPage(items=[], total=0))
+        fees, title = market_fees(ctx.index), market_title(ctx.index)
         entries = ctx.journal.recent()
-        return _json(c.RecommendationPage(items=[recommendation_view(e, fees) for e in entries]))
+        return _json(c.RecommendationPage(
+            items=[recommendation_view(e, fees, title) for e in entries], total=len(entries)
+        ))  # fmt: skip
+
+    async def recommendation(request: Request) -> Response:
+        rid = request.path_params["rid"]
+        entry = None if ctx.journal is None else ctx.journal.get(rid)
+        if entry is None:
+            return _error(404, "not_found", "no such recommendation")
+        return _json(recommendation_view(entry, market_fees(ctx.index), market_title(ctx.index)))
+
+    async def respond(request: Request) -> Response:
+        rid = request.path_params["rid"]
+        try:
+            change = msgspec.json.decode(await request.body(), type=c.ResponseChange)
+        except msgspec.DecodeError as exc:  # malformed, or not one of the answers
+            return _error(400, "bad_request", str(exc))
+        service = ctx.recommendations
+        if service is None or not service.respond(rid, change.answer):
+            return _error(404, "not_found", "no such recommendation")
+        return await recommendation(request)
+
+    async def scorecard(request: Request) -> Response:
+        service = ctx.recommendations
+        at = None if service is None or not service.card_at_ns else service.card_at_ns
+        since = (ctx.now_ns() if at is None else at) - CARD_DAYS * DAY_NS
+        lines = [] if service is None else [
+            c.ScoreLineView(strategy=x.strategy, version=x.version, horizon_s=x.horizon_s,
+                            checks=x.checks, scored=x.scored, above_zero=x.above_zero,
+                            mean_e6=x.mean_e6, median_e6=x.median_e6)
+            for x in service.card
+        ]  # fmt: skip
+        at_utc = None if at is None else utc_text(at)
+        return _json(c.ScoreCard(since_utc=utc_text(since), at_utc=at_utc, lines=lines))
 
     async def stream(request: Request) -> Response:
         after = _int(request, "after_alert", None, 0, 2**62)
@@ -814,6 +883,9 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         Route("/v1/portfolio", portfolio), Route("/v1/ledger/status", ledger_status),
         Route("/v1/ledger/records", ledger_records), Route("/v1/alerts", alerts),
         Route("/v1/recommendations", recommendations), Route("/v1/gaps", gaps),
+        Route("/v1/recommendations/{rid}", recommendation),
+        Route("/v1/recommendations/{rid}/response", respond, methods=["PUT"]),
+        Route("/v1/scorecard", scorecard),
         Route("/v1/stream", stream),
         Route("/v1/stream/{stream_id}/subscriptions", subscribe, methods=["PUT"]),
         Route(SESSION_PATH, signin, methods=["POST"]),
@@ -943,6 +1015,11 @@ async def _events(ctx: ApiContext, state: Stream, request: Request) -> AsyncGene
                     yield _event(state, "portfolio", view)
                 for alert in new_alerts(ctx.alert_log, state):
                     yield _event(state, "alert", alert)
+                if ctx.recommendations is not None:
+                    page, encoded = active_page(ctx)
+                    if encoded != state.sent_recommendations:
+                        state.sent_recommendations = encoded
+                        yield _event(state, "recommendations", page)
             if now - health_at >= HEALTH_EVERY_S:
                 health_at = now
                 yield _event(state, "health", shared_health(ctx, now))

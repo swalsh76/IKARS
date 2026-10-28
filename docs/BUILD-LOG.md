@@ -2617,7 +2617,7 @@ workstation (v0.1.7, 2026-10-28 05:31 to 06:32 UTC; counts and states only):**
 **M1.12b done:** PR #28 merged as `3f0f8bd` (2026-10-28), CI and CodeQL green on `main`. Momentum v1 keeps
 running on the installed IKARS.
 
-### 1.12c The terminal side of momentum (plan proposed 2026-10-28)
+### 1.12c The terminal side of momentum (plan APPROVED 2026-10-28)
 
 The third slice of M1.12 (approved in 1.12): the Overview's recommendation list, the Recommendation drill-down
 and the alert tier (D20 H). **Owner (2026-10-28): proceed as recommended**: momentum v1 makes about 7 to 20
@@ -2688,5 +2688,6 @@ log; the screens in Vitest and Playwright (the list live, the drill-down, `T`/`I
 - the scorecard matches the journal read directly;
 - no order is ever sent.
 
-**Open questions:** the hourly budget for notifications; whether the response and Copy order come now; whether
-the scorecard comes now; and whether the mock-up's relabel and omissions need a redraw first.
+**Owner's answers (2026-10-28): all as recommended.** Notifications: top-ranked only, at most 3 an hour; the
+response and Copy order come now; the scorecard comes now; no mock-up redraw (the relabel and omissions as
+listed).
