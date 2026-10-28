@@ -181,14 +181,35 @@ class AlertPage(msgspec.Struct, kw_only=True):
     items: list[AlertView]
 
 
+class MarkView(msgspec.Struct, kw_only=True):
+    """A recommendation's market at one of its horizons (the score after fees comes from it)."""
+
+    horizon_s: int
+    at_utc: str
+    yes_bid_e6: int | None
+    yes_ask_e6: int | None
+
+
 class RecommendationView(msgspec.Struct, kw_only=True):
-    """Filled from M1.12; the shape the Overview will show (provenance, PLAN D20 F, comes then)."""
+    """A recommendation from the journal (M1.12): what was advised, by which rule (its registered
+    version, G4), from what (provenance, F), its lifecycle (G9) and its marks."""
 
     id: str
     ticker: str
+    event_ticker: str
     side: str
     summary: str
-    at_utc: str
+    at_utc: str  # when IKARS made it
+    strategy: str
+    version: str
+    state: str  # active, expired, superseded
+    superseded_by: str | None
+    entry_price_e6: int
+    count_e2: int
+    expires_utc: str
+    pnl_e6: int | None  # after fees on entry and exit (M1.12b)
+    inputs: list[str]  # the items it was built from ("kind:id")
+    marks: list[MarkView]
 
 
 class RecommendationPage(msgspec.Struct, kw_only=True):
@@ -383,7 +404,7 @@ SMALL_INTEGERS = frozenset({
     "id", "interval_minutes", "line", "offset", "open_gaps", "records", "seq", "total",
     "watched_markets", "throttle_minutes", "digest_minutes", "watched_max_markets",
     "read_share_percent", "storage_budget_gb", "port", "session_days", "x", "y", "width",
-    "height", "progress", "size_bytes",
+    "height", "progress", "size_bytes", "horizon_s",
 })  # fmt: skip
 
 CONTRACTS: tuple[type[msgspec.Struct], ...] = (
@@ -392,7 +413,8 @@ CONTRACTS: tuple[type[msgspec.Struct], ...] = (
     LedgerStatusView, LedgerRecordView, LedgerPage, AlertView, AlertPage, Candle, CandlePage,
     GapView, GapPage,
     RecommendationView,
-    RecommendationPage, Subscriptions, StreamOpened, QuoteUpdate, SessionCode, SessionCodeIssued,
+    MarkView, RecommendationPage, Subscriptions, StreamOpened, QuoteUpdate, SessionCode,
+    SessionCodeIssued,
     KeyStatus, SettingsView, SettingsChange, ShareCheck, ShareCheckView, Done,
     LayoutWindow, Layout, LayoutsView, LayoutStart, UpdateView, ApiError,
 )  # fmt: skip
@@ -429,6 +451,16 @@ def schema_sha256() -> str:
 def examples() -> dict[str, Any]:
     """A made-up example of every contract (the golden examples)."""
     level = Level(price_e6=410_000, count_e2=1_250)
+    mark = MarkView(horizon_s=1800, at_utc="2026-01-01T00:30:00Z", yes_bid_e6=440_000,
+                    yes_ask_e6=450_000)  # fmt: skip
+    recommendation = RecommendationView(
+        id="momentum-KXDEMO-26JAN01-T50-1", ticker="KXDEMO-26JAN01-T50",
+        event_ticker="KXDEMO-26JAN01", side="yes", summary="made up: up 5c in 5 min on 120",
+        at_utc="2026-01-01T00:00:00Z", strategy="momentum", version="9f2ce1a0", state="active",
+        superseded_by=None, entry_price_e6=420_000, count_e2=1_000,
+        expires_utc="2026-01-01T00:30:00Z", pnl_e6=None, inputs=["market:KXDEMO-26JAN01-T50"],
+        marks=[mark],
+    )  # fmt: skip
     window = LayoutWindow(screen="/markets?q=fed", x=-1920, y=0, width=1600, height=1000)
     second = LayoutWindow(screen="/overview", x=0, y=0, width=1280, height=800)
     layout = Layout(name="Trading", windows=[window, second])
@@ -543,14 +575,9 @@ def examples() -> dict[str, Any]:
         "LedgerPage": LedgerPage(items=[record], head_seq=1, before=None),
         "AlertView": alert,
         "AlertPage": AlertPage(items=[alert]),
-        "RecommendationView": RecommendationView(
-            id="r-1",
-            ticker=market.ticker,
-            side="yes",
-            summary="made up",
-            at_utc="2026-01-01T00:00:00Z",
-        ),
-        "RecommendationPage": RecommendationPage(items=[]),
+        "MarkView": mark,
+        "RecommendationView": recommendation,
+        "RecommendationPage": RecommendationPage(items=[recommendation]),
         "Candle": candle,
         "CandlePage": CandlePage(ticker=market.ticker, interval_minutes=1, items=[candle]),
         "GapView": gap,

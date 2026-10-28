@@ -26,6 +26,7 @@ LedgerPage: LedgerPage
 LedgerRecordView: LedgerRecordView
 LedgerStatusView: LedgerStatusView
 Level: Level
+MarkView: MarkView
 MarketPage: MarketPage
 MarketView: MarketView
 PortfolioView: PortfolioView
@@ -237,6 +238,15 @@ records: {
 tax_zone: string
 verified: (boolean | null)
 }
+/**
+ * A recommendation's market at one of its horizons (the score after fees comes from it).
+ */
+export interface MarkView {
+at_utc: string
+horizon_s: number
+yes_ask_e6: (number | null)
+yes_bid_e6: (number | null)
+}
 export interface MarketPage {
 items: MarketView[]
 offset: number
@@ -292,14 +302,26 @@ export interface RecommendationPage {
 items: RecommendationView[]
 }
 /**
- * Filled from M1.12; the shape the Overview will show (provenance, PLAN D20 F, comes then).
+ * A recommendation from the journal (M1.12): what was advised, by which rule (its registered
+ * version, G4), from what (provenance, F), its lifecycle (G9) and its marks.
  */
 export interface RecommendationView {
 at_utc: string
+count_e2: number
+entry_price_e6: number
+event_ticker: string
+expires_utc: string
 id: string
+inputs: string[]
+marks: MarkView[]
+pnl_e6: (number | null)
 side: string
+state: string
+strategy: string
 summary: string
+superseded_by: (string | null)
 ticker: string
+version: string
 }
 /**
  * ``POST /v1/session``: the terminal trades its one-time code for the session cookie.

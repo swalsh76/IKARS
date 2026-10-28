@@ -104,10 +104,15 @@ class PluginContext:
 
     async def emit(self, item: Item) -> None:
         """Emit ``item``. Its ``hops`` is set to one more than the item being handled (none, for a
-        producer), so the engine can stop plugins that feed each other, live or replayed."""
+        producer), so the engine can stop plugins that feed each other, live or replayed. Its
+        ``received_ns`` is the host's clock, never the plugin's word (review 1.R2 item 9): live,
+        the wall clock; replayed, the replay's, so a back-test sees it when IKARS would have."""
         if item.ref.kind not in self.spec.produces:
             raise PluginError(f"{self.spec.name} may not emit {item.ref.kind!r}")
-        await self._emit(msgspec.structs.replace(item, hops=_handling_hops.get() + 1))
+        stamped = msgspec.structs.replace(
+            item, hops=_handling_hops.get() + 1, received_ns=self.clock.now_ns()
+        )
+        await self._emit(stamped)
 
     async def call[T](self, awaitable: Awaitable[T], seconds: float | None = None) -> T:
         """Await an outside call within the plugin's timeout; every network call goes through it."""

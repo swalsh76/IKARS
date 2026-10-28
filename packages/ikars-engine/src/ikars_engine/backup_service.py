@@ -77,6 +77,7 @@ class BackupService:
                 self._share,
                 ledger=self._paths.ledger / "ledger.sqlite",
                 state=self._paths.data / "state.sqlite",
+                journal=self._paths.data / "journal.sqlite",
                 settings=self._paths.settings,
                 checkpoints=self._paths.ledger / "checkpoints",
                 staging=self._paths.data / "backup-staging",

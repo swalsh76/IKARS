@@ -40,6 +40,7 @@ from ikars_engine.backup_service import BackupService
 from ikars_engine.clocks import WallClock
 from ikars_engine.engine import Engine
 from ikars_engine.governor import GB, StorageGovernor
+from ikars_engine.journal import Journal, JournalService
 from ikars_engine.kalshi.discovery import Discovery, MarketIndex
 from ikars_engine.kalshi.exchange import ExchangeWatch
 from ikars_engine.kalshi.source import KalshiSource
@@ -49,7 +50,9 @@ from ikars_engine.ledger_import import AccountImporter, Describe
 from ikars_engine.ledger_service import LedgerService
 from ikars_engine.logs import Redactor, configure
 from ikars_engine.metrics import Metrics
+from ikars_engine.model import Item
 from ikars_engine.paths import Paths
+from ikars_engine.plugins import HostOptions, PluginError, discover
 from ikars_engine.portfolio import Held, Portfolio, holdings, portfolio
 from ikars_engine.recorder import Recorder
 from ikars_engine.runmode import at
@@ -115,6 +118,9 @@ class Live:
     api: ApiServer
     public_client: KalshiPublicClient
     updates: Updater
+    journal: Journal
+    journal_service: JournalService
+    recorder: Recorder
 
 
 def describer(index: MarketIndex) -> Describe:
@@ -156,13 +162,14 @@ async def build(
         pinned=set(settings.feed.watch),
     )
     index = MarketIndex()
+    recorder = Recorder(paths.recordings)
     source = KalshiSource(
         feed=feed,
         data=data,
         discovery=Discovery(data, index, state, clock),
         exchange=ExchangeWatch(data, state, clock),
         state=state,
-        recorder=Recorder(paths.recordings),
+        recorder=recorder,
         clock=clock,
         metrics=metrics,
         skew=skew,
@@ -182,7 +189,25 @@ async def build(
         key_fingerprint=account_signer.fingerprint,
         settings_sha256=settings_digest(settings),
     )
-    engine = Engine(clock, source, metrics=metrics, skew=skew)
+    plugin_defaults = settings.plugins
+    options = HostOptions(
+        queue_size=plugin_defaults.queue_size, call_timeout=plugin_defaults.call_timeout_seconds,
+        restart_base=plugin_defaults.restart_base_seconds,
+        restart_max=plugin_defaults.restart_max_seconds, settings=settings.plugin_settings,
+    )  # fmt: skip
+    engine = Engine(clock, source, metrics=metrics, skew=skew, host_options=options)
+    # the plugins (review 1.R2 item 8): one that cannot load is said in health, never a stop
+    plugins, unloaded = discover()
+    for plugin in plugins:
+        try:
+            engine.host.add(plugin)
+        except PluginError as exc:  # two of one name (merge review 2): the second is left out
+            unloaded.append(f"{plugin.spec.name}: {exc}")
+    journal = Journal(paths.data / "journal.sqlite")
+    journal_service = JournalService(journal, source.quotes, clock.now_ns)
+    engine.listeners += [journal_service.listen, recording(recorder)]
+    engine.health_parts["journal"] = journal_service.health
+    engine.health_parts["plugins_unloaded"] = lambda: {"problems": list(unloaded)}
     cards: dict[str, object] = {"device": None, "note": "detecting"}
 
     async def detect_gpu() -> None:  # in the background: a hung driver never delays the start
@@ -233,6 +258,7 @@ async def build(
             web_root=web_root,
             config=TerminalConfig(paths, settings, root, restartable=restartable),
             updates=updates,
+            journal=journal,
         )
 
     api = ApiServer(api_context, paths.data, port=settings.terminal.port)
@@ -240,7 +266,7 @@ async def build(
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
     return Live(
         engine, source, state, ledger, service, backups, account_client, gpu_task, api, client,
-        updates,
+        updates, journal, journal_service, recorder,
     )  # fmt: skip
 
 
@@ -353,6 +379,12 @@ async def run(
         stack.push_async_callback(live.account_client.aclose)
         stack.push_async_callback(live.public_client.aclose)  # M1.R 24
         stack.callback(live.state.close)
+        # last of all, once the plugins have drained (merge review 4 and 5): what they emitted
+        # while stopping is recorded (the source closed the recorder; closing again flushes it)
+        # and written to the journal before it closes, after the API that reads it has stopped
+        stack.callback(live.recorder.close)
+        stack.callback(live.journal.close)
+        stack.callback(live.journal_service.flush)
         stack.callback(live.ledger.close)
         stack.callback(lambda: health.update(engine.health()))
         stack.push_async_callback(_finish, running)
@@ -368,6 +400,8 @@ async def run(
         running.append(asyncio.create_task(engine.run(), name="engine"))
         checking = asyncio.create_task(live.updates.keep_checking(), name="updates")
         stack.callback(checking.cancel)  # it sleeps a day at a time: cancelled, not awaited
+        writing = asyncio.create_task(live.journal_service.run(), name="journal")
+        stack.callback(writing.cancel)
         if on_minute is not None:
             on_minute(engine.health())
         started = last = time.monotonic()
@@ -403,6 +437,20 @@ def signer_environment(
         "IKARS_KALSHI_KEY_ID": env.get(settings.kalshi.key_id_variable, ""),
         "IKARS_KALSHI_PRIVATE_KEY_PATH": env.get(settings.kalshi.key_path_variable, ""),
     }
+
+
+def recording(recorder: Recorder) -> Callable[[Item], None]:
+    """The engine's listener that records every item a plugin emits (D20 A; review 1.R2 item 8):
+    a row in the recorder's batch, never a wait."""
+
+    def record(item: Item) -> None:
+        recorder.write("item", {
+            "received_ns": item.received_ns, "published_ns": item.published_ns,
+            "kind": item.ref.kind, "id": item.ref.id, "source": item.source, "hops": item.hops,
+            "payload": msgspec.json.encode(item.payload).decode(),
+        })  # fmt: skip
+
+    return record
 
 
 def key_problem(settings: Settings, environ: Mapping[str, str] | None = None) -> str | None:

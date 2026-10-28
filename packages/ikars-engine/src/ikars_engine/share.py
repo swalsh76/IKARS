@@ -22,7 +22,7 @@ name; at worst one of them fails and says so.
     ikars\ledger\monthly\<yyyy>\<yyyy-mm>\         the same, rewritten daily (the month's last)
     ikars\ledger\checkpoints\<yyyy>\<date>.json     every local daily checkpoint
     ikars\ledger\pre-migration\                    the ledger as it was before each schema migration
-    ikars\state\daily\<yyyy>\<yyyy-mm-dd>\         state.sqlite, SHA256SUMS
+    ikars\state\daily\<yyyy>\<yyyy-mm-dd>\         state.sqlite, journal.sqlite, SHA256SUMS
     ikars\config\settings.toml                      the settings (they never hold secrets)
 
 **Retention:** ledger dailies 90 days, state dailies 30 days; monthlies, checkpoints and
@@ -55,6 +55,7 @@ MARKER = ".ikars-backup-marker"
 SUBTREE = "ikars"
 LEDGER_FILE = "ikars-ledger.sqlite"
 STATE_FILE = "state.sqlite"
+JOURNAL_FILE = "journal.sqlite"
 SUMS = "SHA256SUMS"
 LEDGER_DAYS = 90
 STATE_DAYS = 30
@@ -252,6 +253,7 @@ def back_up(
     checkpoints: Path,
     staging: Path,
     now_ns: int,
+    journal: Path | None = None,
 ) -> BackupReport:
     """One backup of everything (safe to repeat the same day: the day's copies are replaced).
     Runs in a worker thread: it opens its own SQLite connections."""
@@ -279,8 +281,10 @@ def back_up(
                 share.put(local, "ledger", "checkpoints", local.parent.name, local.name)
                 sent += 1
         if state.is_file():
-            state_copy = snapshot(state, staging / STATE_FILE)
-            share.put_folder({STATE_FILE: state_copy}, "state", "daily", year, day)
+            files = {STATE_FILE: snapshot(state, staging / STATE_FILE)}
+            if journal is not None and journal.is_file():  # the recommendations (M1.12a)
+                files[JOURNAL_FILE] = snapshot(journal, staging / JOURNAL_FILE)
+            share.put_folder(files, "state", "daily", year, day)
         if settings.is_file():
             share.put(settings, "config", "settings.toml")
         pruned = share.prune("ledger", LEDGER_DAYS, moment) + share.prune(
