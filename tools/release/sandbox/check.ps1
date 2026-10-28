@@ -32,13 +32,19 @@ switch ($Step) {
         Say "installed to %LOCALAPPDATA%\IKARS-App" (Test-Path (Join-Path $program "current\IKARS.exe"))
         Say "Start-menu entry IKARS" (Test-Path $menu)
         Say "no desktop shortcut" (-not (Test-Path (Join-Path ([Environment]::GetFolderPath("Desktop")) "IKARS.lnk")))
-        # the first start after installing opens the engine and the terminal (the wizard: no settings)
+        # a silent install starts nothing: start IKARS as the owner would, from its Start-menu entry
+        Start-Process -FilePath $menu
         $started = WaitFor { Test-Path (Join-Path $data "data\api.json") } 180
-        Say "the engine started (its data folder appeared)" $started
-        $log = Join-Path $data "logs\ikars.jsonl"
-        if (Test-Path $log) {  # a clean machine has no key or account: its log holds nothing private
-            Add-Content -Path $report -Value "-- the engine log's last lines --"
-            Get-Content $log -Tail 8 | Add-Content -Path $report
+        Say "the engine started from the Start menu (setup mode: no key here)" $started
+        Say "an IKARS window is open in Edge" ($null -ne (Get-Process msedge -ErrorAction SilentlyContinue))
+        if (-not $started) {  # a clean machine has no key or account: these hold nothing private
+            $logs = @((Join-Path $data "logs\ikars.jsonl"), (Join-Path $program "velopack.log"))
+            foreach ($log in $logs) {
+                if (Test-Path $log) { Write-Host "-- $log"; Get-Content $log -Tail 8 | Tee-Object -FilePath $report -Append }
+            }
+            Write-Host "-- python processes:"; Get-Process python* -ErrorAction SilentlyContinue | Format-Table Id, Path -AutoSize
+            Write-Host "-- opening by hand:"
+            & (Join-Path $program "current\python\python.exe") -I -m ikars_engine open 2>&1 | Select-Object -Last 8
         }
         Say "the data folder is apart from the program's" (-not (Test-Path (Join-Path $program "IKARS-data")))
         Write-Host "Now: walk the wizard in the Edge window, then uninstall IKARS from Settings > Apps, then run: check.ps1 uninstalled"
