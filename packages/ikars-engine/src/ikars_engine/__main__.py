@@ -25,6 +25,10 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ikars_engine.paths import Paths
 
 from ikars_engine.clocks import VirtualClock
 from ikars_engine.engine import Engine
@@ -90,6 +94,21 @@ def _positive(text: str) -> float:
     return value
 
 
+def before_start(paths: "Paths") -> None:
+    """Before the settings are first read (which migrates them): the pre-upgrade snapshot when the
+    installed program's version changed (M1.9b)."""
+    from ikars_engine import upgrades
+    from ikars_engine.settings import SettingsError, read
+    from ikars_engine.share import configured, migration_copier
+    from ikars_engine.updates import program_version
+
+    try:  # read, never rewritten: nothing may change before the snapshot
+        share = migration_copier(configured(read(paths.settings).backup.share))
+    except SettingsError:
+        share = None
+    upgrades.before_start(paths, program_version(), share)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m ikars_engine")
     commands = parser.add_subparsers(dest="command")
@@ -126,6 +145,7 @@ def main(argv: list[str]) -> int:
         from ikars_engine.settings import load
 
         paths = default_paths(args.root)
+        before_start(paths)
         try:
             health = asyncio.run(run(paths, load(paths.settings), args.minutes))
         except KeyboardInterrupt:
@@ -146,6 +166,8 @@ def main(argv: list[str]) -> int:
         from ikars_engine.settings import load
 
         paths = default_paths(Path(args.root) if args.root else None)
+        if args.command == "serve":
+            before_start(paths)
         return runmode_cli.run(args, paths, load(paths.settings))
     if args.command in ("ledger", "backup"):
         from ikars_engine.kalshi.runner import default_paths

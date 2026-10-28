@@ -65,6 +65,26 @@ def github_manager(where: Any) -> Any:
     return UpdateManager(GithubSource(REPOSITORY, prerelease=True), locator=where)
 
 
+def program_version() -> str | None:
+    """The installed program's version (Velopack's manifest), or None in a development checkout."""
+    where = locator()
+    if where is None:
+        return None
+    try:
+        return str(github_manager(where).get_current_version())
+    except Exception:  # a broken install: no version, so no snapshot is keyed to a wrong one
+        return None
+
+
+def downgrade_manager(version: str, where: Any) -> Any:
+    """A manager for one earlier release (its own GitHub release's feed), allowed to go back."""
+    from velopack import HttpSource, UpdateManager, UpdateOptions
+
+    options = UpdateOptions(AllowVersionDowngrade=True, MaximumDeltasBeforeFallback=10)
+    source = HttpSource(f"{REPOSITORY}/releases/download/v{version}")
+    return UpdateManager(source, options, where)
+
+
 @dataclass
 class Updater:
     """One engine's updates. ``manager`` is Velopack's (None: not installed)."""
