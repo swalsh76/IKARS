@@ -2336,3 +2336,21 @@ in a popup, signed in, with no toolbar and no opener); lint, types, audit, data 
   | 10 | `Math.round` on values the browser gives as whole numbers | Removed |
 
 **M1.8c built**, subject to the owner's merge.
+
+### 1.9 Packaging (plan APPROVED 2026-10-27; two slices)
+
+PLAN M1.9, D12, G, G12. **Owner's answers (2026-10-27): all as recommended.**
+
+| Slice | Builds |
+|---|---|
+| **M1.9a** | the `ikars` command (and window-less `ikarsw`); a launcher that answers Velopack's install and uninstall steps first (a Start-menu entry "IKARS"; on uninstall, start at sign-in, the watchdog task and the notification name removed, **never data**), else opens the terminal; a build script: a standalone relocatable Python with the locked packages (no development tools) and the built web terminal, packed by Velopack into `Setup.exe` and a portable zip (with `portable.marker`); install, first-run wizard, portable run and uninstall checked in **Windows Sandbox**; download sizes measured |
+| **M1.9b** | a CI release workflow (a `vX.Y.Z` tag builds both and publishes a GitHub pre-release; pinned, release write permission only); update checks at start and daily, shown on Health and Settings, **installed only when the owner clicks Restart to update** (the engine stops cleanly, Velopack swaps the program, migrations back up first); the rollback drill (N, then N+1 with a real migration, then N again with the pre-migration copies restored; the ledger verifies and reconciles exactly); the signing decision recorded |
+
+- **Folders:** the program installs to `%LOCALAPPDATA%\IKARS-App` (Velopack deletes its own folder on uninstall);
+  the data stays in `%LOCALAPPDATA%\IKARS`, which install, update and uninstall never touch (tested).
+- **Signing:** unsigned pre-releases for now (the owner is the only user); an application to SignPath Foundation's
+  free open-source signing in parallel (the publisher shown would be SignPath Foundation; a published signing policy
+  is required); decided for good before the M6 release. Azure Artifact Signing (paid, the owner's name) was offered.
+- **Packages:** `velopack` (PyPI, the launcher) and `vpk` (Velopack's .NET packing tool, builds only); both MIT, to
+  be confirmed in the slice.
+- **Machine:** Windows Sandbox enabled once (the owner; admin, one restart); test installs go into the Sandbox only.
