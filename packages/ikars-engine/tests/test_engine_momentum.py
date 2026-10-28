@@ -1,4 +1,4 @@
-"""M1.12b: the momentum signal, its registration, its filters, and P&L after fees (made-up markets)."""
+"""M1.12b: the momentum signal, its registration, its filters, and P&L after fees (made up)."""
 
 import hashlib
 import json
@@ -18,7 +18,9 @@ from ikars_engine.signals.momentum import RULE, VERSION, Momentum
 S = 1_000_000_000
 T0 = 1_767_225_600 * S  # 2026-01-01 00:00 UTC
 TICKER = "KXDEMO-26JAN01-T50"
-FEES = fee_schedule("quadratic", 1_000_000)
+_fees = fee_schedule("quadratic", 1_000_000)
+assert _fees is not None
+FEES = _fees
 
 
 def info(status: str = "active", closes_in_s: int = 86_400) -> MarketInfo:
@@ -43,8 +45,9 @@ class Setup:
     async def ticker(self, at_s: int, bid: int, ask: int, size: int = 5_000) -> None:
         payload = {"market_ticker": TICKER, "yes_bid_e6": bid, "yes_ask_e6": ask,
                    "yes_bid_size_e2": size, "yes_ask_size_e2": size}  # fmt: skip
-        await self.plugin.handle(Item(ref=Ref("ticker", TICKER), source="kalshi",
-                                      received_ns=T0 + at_s * S, payload=payload), self.ctx)  # fmt: skip
+        made = Item(ref=Ref("ticker", TICKER), source="kalshi", received_ns=T0 + at_s * S,
+                    payload=payload)  # fmt: skip
+        await self.plugin.handle(made, self.ctx)
 
     async def trade(self, at_s: int, count_e2: int) -> None:
         await self.plugin.handle(Item(ref=Ref("trade", TICKER), source="kalshi",
@@ -59,7 +62,7 @@ class Setup:
 
 
 def test_the_rule_is_registered_by_its_hash() -> None:
-    assert VERSION == hashlib.sha256(json.dumps(RULE, sort_keys=True).encode()).hexdigest()[:12]
+    assert hashlib.sha256(json.dumps(RULE, sort_keys=True).encode()).hexdigest()[:12] == VERSION
     changed = {**RULE, "move_e6": 50_000}
     assert hashlib.sha256(json.dumps(changed, sort_keys=True).encode()).hexdigest()[:12] != VERSION
     assert Momentum.spec.version == VERSION
@@ -95,7 +98,6 @@ async def test_a_fall_recommends_no_at_the_no_ask() -> None:
         ({"traded": 4_000}, None, FEES),  # 40 contracts traded: too few
         ({"to_bid": 430_000, "to_ask": 470_000}, None, FEES),  # a 4c spread: too wide
         ({"size": 500}, None, FEES),  # the ask holds 5: less than the 10
-        ({"at_s": 400}, None, FEES),  # the first mid left the 5 minutes: no move inside them
         ({}, info(status="closed"), FEES),  # not trading
         ({}, info(closes_in_s=1_000), FEES),  # closes before the recommendation would expire
         ({}, None, None),  # a fee that cannot be modelled
@@ -138,8 +140,66 @@ def test_each_mark_is_scored_after_fees() -> None:
     rec = Recommendation(ticker=TICKER, side="yes", entry_price_e6=460_000, count_e2=1_000,
                          expires_ns=T0 + 1800 * S, summary="s", strategy="momentum",
                          version=VERSION, horizons_s=[1800, 3600])  # fmt: skip
-    entry = Entry("r1", T0, "expired", None, "momentum", rec,
-                  [Mark(1800, T0 + 1800 * S, 500_000, 510_000), Mark(3600, T0 + 3600 * S, None, 1)])  # fmt: skip
+    marks = [Mark(1800, T0 + 1800 * S, 500_000, 510_000), Mark(3600, T0 + 3600 * S, None, 1)]
+    entry = Entry("r1", T0, "expired", None, "momentum", rec, marks)
     view = recommendation_view(entry, lambda ticker: FEES)
     assert [m.score_e6 for m in view.marks] == [40_000, None]  # sold at 50c; then no bid
     assert recommendation_view(entry).marks[0].score_e6 is None  # no fee model: no score
+
+
+async def test_a_quiet_market_s_move_counts_from_its_last_price() -> None:
+    setup = Setup()  # Kalshi sends a ticker only on a change: 41c held through the quiet minutes
+    await setup.ticker(0, 400_000, 420_000)
+    await setup.trade(350, 6_000)
+    await setup.ticker(400, 440_000, 460_000)  # 4c above the price at the window's start
+    assert len(setup.emitted) == 1
+
+
+async def test_a_move_finished_before_the_window_does_not_count() -> None:
+    setup = Setup()
+    await setup.ticker(0, 400_000, 420_000)
+    await setup.ticker(50, 440_000, 460_000)  # the move, six minutes before the next update
+    await setup.trade(350, 6_000)
+    await setup.ticker(400, 441_000, 461_000)  # 45.1c: barely moved since the window began
+    assert setup.emitted == []
+
+
+def test_no_bid_is_no_price_never_a_sale_at_nothing() -> None:
+    assert pnl.sell_price_e6("no", 300_000, 1_000_000) is None  # a YES ask of $1: no NO bid
+    assert pnl.sell_price_e6("yes", 0, 10_000) is None
+    assert pnl.buy_price_e6("no", 0, 10_000) is None
+
+
+async def test_a_recommendation_still_valid_in_the_journal_blocks_another_after_a_restart() -> None:
+    setup = Setup()
+    setup.ctx = PluginContext(
+        setup.plugin.spec, VirtualClock(T0), {}, setup.ctx._emit, 1.0,
+        {**setup.ctx.services, "active": lambda strategy, ticker, now: True},
+    )  # fmt: skip
+    await setup.rise()
+    assert setup.emitted == []
+
+
+def test_the_services_are_read_only() -> None:
+    setup = Setup()
+    with pytest.raises(TypeError):
+        setup.ctx.services["fees"] = lambda s: None  # type: ignore[index]
+
+
+def test_the_journal_takes_whole_contracts_and_knows_what_is_active(tmp_path: Any) -> None:
+    import msgspec
+    from ikars_engine.journal import Journal
+
+    journal = Journal(tmp_path / "journal.sqlite")
+    rec = Recommendation(ticker=TICKER, side="yes", entry_price_e6=460_000, count_e2=1_050,
+                         expires_ns=T0 + 1800 * S, summary="s", strategy="momentum",
+                         version=VERSION)  # fmt: skip
+    made = Item(ref=Ref("recommendation", "r1"), source="momentum", received_ns=T0,
+                payload=msgspec.to_builtins(rec))  # fmt: skip
+    with pytest.raises(ValueError, match="whole contracts"):
+        journal.add(made)
+    whole = msgspec.structs.replace(made, payload={**made.payload, "count_e2": 1_000})
+    assert journal.add(whole) is True
+    assert journal.active("momentum", TICKER, T0 + 60 * S) is True
+    assert journal.active("momentum", TICKER, T0 + 1800 * S) is False  # expired by then
+    journal.close()

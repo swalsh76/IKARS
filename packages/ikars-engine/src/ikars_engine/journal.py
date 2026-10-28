@@ -152,6 +152,8 @@ class Journal:
         rec = msgspec.convert(item.payload, Recommendation)
         if not item.received_ns < rec.expires_ns <= item.received_ns + LONGEST_NS:
             raise ValueError("it must expire after it is made, within 30 days")
+        if rec.count_e2 % 100:  # whole contracts: every amount is then exact (merge review 1)
+            raise ValueError("a recommendation is for whole contracts")
         known = "SELECT 1 FROM recommendation WHERE id = ?"
         if self._db.execute(known, (item.ref.id,)).fetchone():  # merge review 1
             return False
@@ -199,6 +201,15 @@ class Journal:
             self._db.execute(
                 "DELETE FROM pending_mark WHERE id = ? AND horizon_s = ?", (rid, horizon_s)
             )
+
+    def active(self, strategy: str, ticker: str, now_ns: int) -> bool:
+        """Whether ``strategy`` has a recommendation on ``ticker`` still valid at ``now_ns``."""
+        row = self._db.execute(
+            "SELECT 1 FROM recommendation WHERE state = ? AND strategy = ? AND ticker = ?"
+            " AND expires_ns > ? LIMIT 1",
+            (ACTIVE, strategy, ticker, now_ns),
+        ).fetchone()
+        return row is not None
 
     def recent(self, limit: int = RECENT) -> list[Entry]:
         """The newest recommendations, newest first, with their marks."""

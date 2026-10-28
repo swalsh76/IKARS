@@ -189,12 +189,13 @@ async def build(
         key_fingerprint=account_signer.fingerprint,
         settings_sha256=settings_digest(settings),
     )
+    journal = Journal(paths.data / "journal.sqlite")
     plugin_defaults = settings.plugins
     options = HostOptions(
         queue_size=plugin_defaults.queue_size, call_timeout=plugin_defaults.call_timeout_seconds,
         restart_base=plugin_defaults.restart_base_seconds,
         restart_max=plugin_defaults.restart_max_seconds, settings=settings.plugin_settings,
-        services={"market": index.markets.get, "fees": index.fees.get},  # read only (M1.12b)
+        services={"market": index.markets.get, "fees": index.fees.get, "active": journal.active},
     )  # fmt: skip
     engine = Engine(clock, source, metrics=metrics, skew=skew, host_options=options)
     # the plugins (review 1.R2 item 8): one that cannot load is said in health, never a stop
@@ -204,7 +205,6 @@ async def build(
             engine.host.add(plugin)
         except PluginError as exc:  # two of one name (merge review 2): the second is left out
             unloaded.append(f"{plugin.spec.name}: {exc}")
-    journal = Journal(paths.data / "journal.sqlite")
     journal_service = JournalService(journal, source.quotes, clock.now_ns)
     engine.listeners += [journal_service.listen, recording(recorder)]
     engine.health_parts["journal"] = journal_service.health

@@ -24,13 +24,12 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from ikars_core.fees import FeeSchedule, round_up
-from ikars_core.fixedpoint import CountE2, DollarsE6
+from ikars_core.fees import FeeSchedule
 
 from ikars_engine.ledger import Ledger
 from ikars_engine.ledger_import import Book, value_e6
+from ikars_engine.pnl import taker_fee_e6
 
-CENT_E6 = 10_000
 DOLLAR_E6 = 1_000_000
 Quote = tuple[int | None, int | None]  # (YES bid, YES ask)
 
@@ -177,7 +176,7 @@ def portfolio(
         if price == 0:  # nothing to sell into: worth nothing, no fee
             fee, unrealised = 0, -cost
         elif price is not None and schedule is not None:
-            fee = round_up(schedule.taker_fee_e6(CountE2(count), DollarsE6(price)), CENT_E6)
+            fee = taker_fee_e6(schedule, count, price)  # the one fee rule (merge review 7)
             unrealised = value_e6(price, count) - fee - cost
         positions.append(
             Position(

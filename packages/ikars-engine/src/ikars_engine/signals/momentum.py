@@ -27,6 +27,7 @@ import msgspec
 from ikars_core.fixedpoint import E6
 
 from ikars_engine.journal import Recommendation
+from ikars_engine.kalshi.discovery import OPEN_STATUSES
 from ikars_engine.model import Item, Ref
 from ikars_engine.plugins import PluginBase, PluginContext, PluginKind, PluginSpec
 from ikars_engine.pnl import buy_price_e6, round_trip_e6
@@ -48,6 +49,8 @@ RULE: dict[str, Any] = {
 }
 # the registration (G4): the parameters, canonically written, hashed
 VERSION = hashlib.sha256(json.dumps(RULE, sort_keys=True).encode()).hexdigest()[:12]
+IDLE_NS = 3_600 * S  # a market with nothing for this long is forgotten
+FORGET_EVERY = 10_000  # items between two looks for idle markets
 
 
 @dataclass
@@ -58,10 +61,13 @@ class Market:
     trades: deque[tuple[int, int]] = field(default_factory=deque)  # (received_ns, count_e2)
     traded_e2: int = 0
     quiet_until_ns: int = 0  # one recommendation per market at a time
+    last_ns: int = 0
 
     def prune(self, now_ns: int) -> None:
+        """Keep the window, and the last mid before it: the price at the window's start (Kalshi
+        sends a ticker only on a change, so a quiet market's price is its last one; review 4)."""
         oldest = now_ns - RULE["window_s"] * S
-        while self.mids and self.mids[0][0] < oldest:
+        while len(self.mids) > 1 and self.mids[1][0] <= oldest:
             self.mids.popleft()
         while self.trades and self.trades[0][0] < oldest:
             self.traded_e2 -= self.trades.popleft()[1]
@@ -70,6 +76,11 @@ class Market:
 def _nothing(key: str) -> None:
     """A service the host does not offer (a test, a replay without the index): nothing known."""
     return None
+
+
+def _never(strategy: str, ticker: str, now_ns: int) -> bool:
+    """No journal to ask (a test, a replay): nothing is active."""
+    return False
 
 
 def _int(value: Any) -> int | None:
@@ -87,11 +98,24 @@ class Momentum(PluginBase):
 
     def __init__(self) -> None:
         self.markets: dict[str, Market] = {}
+        self.handled = 0
+
+    def forget_idle(self, now_ns: int) -> None:
+        """Markets with nothing inside the window for an hour are dropped (review 6)."""
+        idle = now_ns - IDLE_NS
+        for ticker in [t for t, m in self.markets.items() if m.last_ns < idle]:
+            del self.markets[ticker]
 
     async def handle(self, item: Item, ctx: PluginContext) -> None:
         ticker = item.ref.id
-        market = self.markets.setdefault(ticker, Market())
         now = item.received_ns
+        market = self.markets.get(ticker)
+        if market is None:  # made only when new, not on every item (review 6)
+            market = self.markets[ticker] = Market()
+        market.last_ns = now
+        self.handled += 1
+        if self.handled % FORGET_EVERY == 0:
+            self.forget_idle(now)
         if item.ref.kind == "trade":
             count = _int(item.payload.get("count_e2"))
             if count is not None and count > 0:
@@ -115,7 +139,7 @@ class Momentum(PluginBase):
     ) -> Item | None:
         """The recommendation this ticker update makes, or None (the rule and its filters)."""
         now, ticker = item.received_ns, item.ref.id
-        if now < market.quiet_until_ns or not market.mids:
+        if now < market.quiet_until_ns or len(market.mids) < 2:
             return None
         move = mid - market.mids[0][1]
         if abs(move) < RULE["move_e6"] or market.traded_e2 < RULE["min_traded_e2"]:
@@ -128,8 +152,10 @@ class Momentum(PluginBase):
         if (_int(size) or 0) < RULE["count_e2"]:
             return None
         info = ctx.services.get("market", _nothing)(ticker)
-        if info is None or info.status != "active":
+        if info is None or info.status not in OPEN_STATUSES:  # "active" or "open" (review 3)
             return None
+        if ctx.services.get("active", _never)(RULE["name"], ticker, now):
+            return None  # still valid in the journal: after a restart too (review 5)
         if info.close_time is not None:
             closes_ns = int(info.close_time.timestamp()) * S
             if closes_ns <= now + RULE["valid_s"] * S:

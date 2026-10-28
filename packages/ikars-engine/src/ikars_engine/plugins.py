@@ -29,6 +29,7 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from importlib.metadata import EntryPoint, entry_points
+from types import MappingProxyType
 from typing import Any, Protocol, runtime_checkable
 
 import msgspec
@@ -100,7 +101,7 @@ class PluginContext:
         self.settings = settings
         # read-only lookups the engine offers (M1.12b): "market" (a ticker's details) and "fees"
         # (a series' fee schedule); a plugin asks by name and copes with one that is missing
-        self.services: Mapping[str, Callable[..., Any]] = services or {}
+        self.services: Mapping[str, Callable[..., Any]] = MappingProxyType(dict(services or {}))
         self._emit = emit
         self._call_timeout = call_timeout
         self.log = logging.getLogger(f"ikars_engine.plugin.{spec.name}")
