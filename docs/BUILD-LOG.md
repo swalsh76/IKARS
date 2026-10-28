@@ -2412,3 +2412,81 @@ on the portable zip crashed the Sandbox (`tar` now, with 4 GB).
   | 10 | The Sandbox config did not escape its folder paths | Escaped as XML |
 
 **M1.9a built**, subject to the owner's merge.
+
+#### 1.9b built (2026-10-27)
+
+**Built** on `m1/9b`: `a41b0f8` (updates and the release workflow), `b72701d` (the pre-upgrade snapshot and
+`ikars rollback`), `1431125` (the state migration v0.1.1 carried), `a6e53fc`, `800c80d` and `7c14960` (the update's
+progress, from the owner's three rounds of notes), `6098a74` (what a rollback leaves aside), `e5b9acc` (the code
+signing policy), `e42b07c` (the merge-review fixes). After M1.9a (PR #25, `31a992a`). **No new packages.**
+
+**Owner's answers during the slice (2026-10-27):** a pre-upgrade snapshot for the rollback (not forward-fix only);
+the drill on the workstation, installed (not the Sandbox); the **IKARS Update window** (approved from its mock-up,
+not Velopack's own window); publishing each test pre-release (v0.1.4, v0.1.5, v0.1.6 at the owner's word).
+
+- **Releases** (`.github/workflows/release.yml`): a `vX.Y.Z` tag builds `Setup.exe` and the portable zip (the
+  previous release fetched first, so an update is a small delta) and publishes a GitHub **pre-release**;
+  `contents: write` only there; the tag read from the environment, never pasted into a script. Seven releases,
+  v0.1.0 to v0.1.6, each built on its first run.
+- **Updates** (`updates.py`; `GET /v1/update`, `POST /v1/update/check` and `/apply`): the installed program checks a
+  minute after the start and then daily, downloads in the background (Velopack's progress, a delta's own size,
+  a short step log), and installs only on **Restart to update**: Velopack waits for the engine to stop, swaps the
+  program folder (never the data), and restarts `IKARS.exe --after-update`, which starts the engine without a
+  second window. Velopack's manager allows one thread at a time: every use holds the updater's lock and the
+  version is read from its manifest. Health (Program) and Settings (Version) show the version, Check now with a
+  download bar, and Restart to update.
+- **The IKARS Update window** (`/update`, the owner's design): opened by Restart to update, centred over the
+  terminal; the download with its bar, then each step ticked as it is seen (the engine stops, Velopack installs,
+  the engine starts, the terminal reloads) with the elapsed time, and Details; once the new version answers every
+  IKARS window reloads (a message on the windows' channel, which the Update window itself ignores) and it says
+  **Update complete** and closes after a 5-second countdown.
+- **Safe upgrades** (`upgrades.py`): every start of the installed program (`serve`, `run`, `IKARS.exe`), before the
+  settings are first read, compares its version with `data\program.version`; on a change it copies the settings,
+  the state, the ledger and its checkpoints to `backups\pre-upgrade\<old version>\` with a manifest (the ledger to
+  the share too; a development engine's data as `unversioned`; the latest 5 kept). A failed snapshot is logged and
+  never stops the start.
+- **`ikars rollback VERSION`**: checks the snapshot and downloads that release first (Velopack, allowed to go back),
+  refuses if the engine does not stop, sets the current data aside in `backups\rolled-back\` (never deleted; a
+  failed swap undoes exactly what it did), restores the snapshot, and has Velopack install the release; it reports
+  the owner's annotations and IKARS's own records left in the copy set aside.
+- **Code signing** ([docs/CODE-SIGNING.md](CODE-SIGNING.md), linked from the README): the policy SignPath asks for
+  (the release workflow the only build; the owner approves; what IKARS connects to). **Decision (owner): unsigned
+  pre-releases now**; the SignPath Foundation application is the owner's to file; decided for good before M6.
+
+**Verified.** Python 1,483 tests; Vitest 212; Playwright 18 in Edge; lint, types, audit, data guard, gitleaks and
+CodeQL (C# included) clean. **Live, on the workstation:**
+- **Installed:** v0.1.0 from its GitHub release, silently, started from the Start menu; it took the `unversioned`
+  snapshot of the development engine's data and ran on the owner's key: the feed live, the ledger **verified and
+  reconciled exactly**.
+- **Update with a migration:** 0.1.0 to 0.1.1 on the owner's click: the 0.1.0 snapshot first, then the state
+  migration (schema 2, the new index); the ledger verified and reconciled exactly.
+- **Rollback drill:** `ikars rollback 0.1.0`: 0.1.0 downloaded, the engine stopped, the data set aside, the
+  snapshot restored (schema 1), Velopack installed 0.1.0; the engine ran on the owner's key, the ledger **verified
+  and reconciled exactly**. Records after the snapshot were only IKARS's own `app` events (now reported, kept
+  aside; their place in M5's tax package parked).
+- **The update experience**, three rounds of the owner's notes: 0.1.2 (little feedback, a second window, the
+  layout), 0.1.4 (the window stayed open, a cut-off button, a 500 from Velopack's one-thread rule), and **0.1.5 to
+  0.1.6 approved** ("looks good").
+
+**Pending (the owner):** start at sign-in and the watchdog task still point at the development Python
+(`install-autostart` from the installed program, which the classifier left to the owner); the SignPath application.
+
+**Review.**
+- **Per commit:** `b72701d` 3 found and fixed before committing (snapshot lookup by version, the settings file's
+  name, the undo of a failed swap); the others none.
+- **Merge review (medium), 10 findings, fixed in `e42b07c` unless noted:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | A failed restore's undo deleted every live place, including data it never moved | It undoes exactly what it did; tested |
+  | 2 | A rollback went on when the engine had not stopped in time | Refused, nothing changed; tested |
+  | 3 | `IKARS.exe` read (and migrated) the settings before the snapshot | One start hook, `upgrades.on_start`, before any read |
+  | 4 | A failed daily recheck turned a downloaded update into a failure | The update stays ready; no recheck while one waits; tested |
+  | 5 | The Update window failed when a check was already running | It waits for that check |
+  | 6 | A failed snapshot stopped every start; two starts at once collided | Logged, never stops the start, the version recorded; each start its own folder; tested |
+  | 7 | A second Restart to update handed the update to Velopack twice | Installing after the first; tested |
+  | 8 | The snapshot lookup and its message were in two places | `upgrades.require_snapshot` |
+  | 9 | A whole update manager was built only to read the version | Read from Velopack's manifest; tested |
+  | 10 | No BUILD-LOG entry for the slice | This entry, PLAN section 5 and the resume point |
+
+**M1.9b built**, subject to the owner's merge. **M1.9 is then complete.**
