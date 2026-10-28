@@ -2614,4 +2614,79 @@ workstation (v0.1.7, 2026-10-28 05:31 to 06:32 UTC; counts and states only):**
   | 8 | `pnl` depended on the ledger importer and the portfolio | It depends on neither |
   | 9 | The services could be changed by a plugin | A read-only mapping; tested |
 
-**M1.12b built**, subject to the owner's merge. Momentum v1 keeps running on the installed IKARS.
+**M1.12b done:** PR #28 merged as `3f0f8bd` (2026-10-28), CI and CodeQL green on `main`. Momentum v1 keeps
+running on the installed IKARS.
+
+### 1.12c The terminal side of momentum (plan proposed 2026-10-28)
+
+The third slice of M1.12 (approved in 1.12): the Overview's recommendation list, the Recommendation drill-down
+and the alert tier (D20 H). **Owner (2026-10-28): proceed as recommended**: momentum v1 makes about 7 to 20
+recommendations a minute, so a notification for each is out; a ranked list instead, and notifications for only
+the strongest few. Branch `m1/12c`, after M1.12b (PR #28, `3f0f8bd`).
+
+**Engine**
+- **Views:** `/v1/recommendations` takes `state=active` and returns the active ones ranked;
+  `/v1/recommendations/{id}` returns one of any age (the list stops at the newest 200). Each view gains the market's
+  title, the return on capital at the rule's target and per day, the worst case (the side ends at $0: the cost and
+  the entry fee) and the owner's response.
+- **Ranking:** by return per day of capital tied up, at the rule's target and after fees (D20 D; the mock-up's
+  order). Momentum's validity is fixed at 30 minutes, so this orders as return on capital does. Its per-day
+  figures look large (a 4c move on 46c over half an hour).
+- **Live list:** a `recommendations` stream event carries the active list (ranked, up to 50) when it changes.
+  The engine checks once a second, so the Overview needs no polling.
+- **The owner's response (G9):** taken, ignored or dismissed, written to the journal (migration 3: the latest
+  answer per recommendation) through `PUT /v1/recommendations/{id}/response`. "Taken" is only the owner's word:
+  IKARS places nothing (D6).
+- **Scorecard:** for each strategy and version over the last 30 days: how many were scored, the share above
+  zero, and the mean and median after costs at each check. The journal service works it out once a minute and
+  the API serves that copy. At about 10,000 recommendations a day it is never computed per request.
+- **Alerts (H):** for the first time, the engine raises alerts of its own.
+  - `normal` alerts now show outside quiet hours, throttled, and wait for the digest in quiet hours. Nothing
+    raised `normal` before: the watchdog uses high and urgent.
+  - A recommendation alerts only if it ranks first among the active ones when it is made, and the hourly budget
+    (3) is not spent. The rest appear only on the Overview, never in the alert log.
+  - The text is the market, the side, the price and the move. As before, no amounts.
+  - The engine's alert desk keeps its own state file, because each watchdog pass rewrites the watchdog's. It
+    appends to the same alert log under a lock, and shows notifications on a worker thread, never on the event
+    loop.
+
+**Terminal**
+- **Overview, "Top recommendations"** (replacing the placeholder):
+  - columns: market (its title and the why), action, size, P&L at the target after costs, return per day,
+    strategy and version, and expiry (counting down);
+  - active ones only, ranked, up to 50 (scrolling), with the active count;
+  - a row opens the drill-down.
+- **Overview, "Journal scorecard (30 days)"** (replacing the placeholder): one line per strategy version.
+- **Recommendation drill-down** (`/recommendations/:id`), from the approved M1.3 mock-up, limited to what exists:
+  - the headline (Buy YES 10 @ $0.46), with the strategy, version, state and expiry;
+  - P&L at the target, return per day, and the worst case;
+  - **Mark taken / Ignore / Dismiss** (`T`/`I`/`D`), and **Copy order** (`C`: ticker, side, size and price to
+    the clipboard); both hotkeys were promised for M1.12 in 1.8b-1;
+  - **Why:** the summary and the inputs, with received times;
+  - the **checks** at 30 and 60 minutes: bid and ask, and the score after fees or at settlement;
+  - **provenance:** the engine version, the rule and its registered version, the number of inputs, and "LLM not
+    used".
+- **Left out, because nothing yet feeds them:**
+  - on the drill-down: fill chance (D20 C), size and limits (the risk layer), the bracket (watch orders), the
+    settings hash, and Replay (M1.13);
+  - on the Overview: the Fill column. Its "EV after costs" column becomes "P&L at target" (momentum has no
+    probability estimate);
+  - "Live movers" stays a placeholder: it needs a scan of every market, not the journal. It is relabelled for M2.
+- **demo-api:** made-up recommendations and a scorecard, for the screen tests and `pnpm load`.
+
+**Machine:** journal migration 3 (backed up first, as before), and the engine's alert state file
+(`alert-desk-engine.json` in the data folder). **Packages:** none.
+
+**Tests:** ranking, worst case and return per day by hand; the response round trip and the migration; the
+scorecard against a hand-built journal; the hourly budget, quiet hours and the throttle; the lock on the shared
+log; the screens in Vitest and Playwright (the list live, the drill-down, `T`/`I`/`D`/`C`).
+
+**Live checks** (on a test pre-release, published on the owner's word):
+- the Overview's list updates live and ranked, and a row opens the drill-down;
+- `T`/`I`/`D` are kept across a restart, and `C` copies the order;
+- at most 3 recommendation notifications an hour, and none in quiet hours;
+- the scorecard matches the journal read directly;
+- no order is ever sent.
+
+**Open questions:** the hourly budget for notifications; whether the response and Copy order come now; whether
+the scorecard comes now; and whether the mock-up's relabel and omissions need a redraw first.
