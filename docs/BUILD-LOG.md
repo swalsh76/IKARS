@@ -2555,3 +2555,63 @@ M1.12b's live check (no plugin exists before it, so the journal stays empty).
   | 10 | Recommendations made in the same instant listed in a changing order | A stable tie-break |
 
 **M1.12a built**, subject to the owner's merge.
+
+#### 1.12b built (2026-10-28)
+
+**Built** on `m1/12b`: `4a0e180` (the signal, P&L after fees, tradability), `e463699` (the merge-review fixes),
+`f810687` (settlement scoring, after the live check). After M1.12a (PR #27, `099b94b`). **No new packages.**
+
+**Owner's answers during the slice:** SPARQ's guard lapsed with S1.1b (2026-10-27; CLAUDE.md, PLAN); momentum may use
+any market the ticker feed covers, with a depth check; after the live hour (2026-10-28): **v1 keeps running a week
+unchanged**, then its record decides (pre-registration: no tuning after one evening), and a check on a closed market
+is **scored at its settlement**.
+
+- **The signal** (`signals/momentum.py`, registered under `ikars.plugins`): continuation, as registered (4c in 5
+  minutes on 50 contracts traded; buy the side it moved toward; valid 30 minutes; marked at 30 and 60; 10
+  contracts). Its parameters hashed into its version (G4): **v1 `0d648804a13a`**. The window keeps the price at its
+  start (Kalshi sends a ticker only on a change). One recommendation per market at a time, across restarts (the
+  journal says what is still active).
+- **Tradability (D20 E):** trading ("active" or "open") and closing after the validity; spread 3c or less; mid 10c
+  to 90c; the side's best ask holds the 10 contracts; the series' fee modelled.
+- **P&L after fees (D7, `pnl.py`):** the one place for the fee rule (both legs' taker fees, a cent per order; the
+  portfolio uses it too) and a side's buy and sell prices (no bid is no price, never a price of nothing). A
+  recommendation carries its P&L at the rule's target; each journal mark is scored after fees, or **at the
+  market's settlement** ($1 or $0, the entry fee only) when it had stopped trading then and has since settled
+  (journal migration 2: settlements, learned once a minute from the market index, and whether each mark's market
+  was closed).
+- **Plugins get read-only services** from the host (a mapping proxy): a ticker's details, a series' fees, and
+  whether a strategy's recommendation is still active.
+
+**Verified.** Python 1,525 tests (the P&L checked by hand: $0.04 on 10 contracts bought at 46c, sold at 50c; $5.22
+held to a winning settlement); Vitest 214; lint, types, audit and the data guard clean. **Live, on the owner's
+workstation (v0.1.7, 2026-10-28 05:31 to 06:32 UTC; counts and states only):**
+- the engine ran the plugin on the owner's key; nothing failed to load, nothing rejected or dropped; one version
+  (v1); one recommendation per market;
+- **374 recommendations in the first hour** (about 20 a minute at first, mostly in-play NBA spreads and points and
+  tennis); 228 expired on time; every mark within 1 second of its due time;
+- **30-minute marks: 237; 131 (55%) found no bid** (the games had ended and the markets closed): the settlement
+  scoring above follows from it; of 106 scored, 47 above zero, median -$0.28 and mean -$0.42 per 10 contracts
+  after fees (the standard fee; one evening, far too few to judge the rule). **60-minute marks:** 32, 6 scored;
+- 9 recommendations shown superseded by one made the second they expired: fixed (only a still-valid one is
+  superseded);
+- no order was ever sent (IKARS has no order code; its key reads only).
+- **The M1.6 auto-start check passed:** after the owner's restart the installed IKARS started at sign-in.
+
+**Review.**
+- **Per commit:** `4a0e180` none; `f810687` 1 found and fixed before committing (an empty book while the market
+  still traded would have been scored at the later settlement: each mark now records whether it was closed).
+- **Merge review (medium), 9 findings, all fixed in `e463699`:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | A fractional contract count could make the recommendations route fail (scoring raised) | Exact arithmetic in `pnl`; the journal takes whole contracts; tested |
+  | 2 | A side with no bid was scored as a sale at nothing (a full loss) | No bid is no price: unscored (and later, at settlement); tested |
+  | 3 | Markets in the "open" status were never recommended | Both trading statuses count |
+  | 4 | After a quiet spell a real move was measured from the newest price | The window keeps the price at its start; tested both ways |
+  | 5 | After a restart a second recommendation could come while the first was valid | The journal's "still active", as a host service; tested |
+  | 6 | A new market record on every feed item; markets never forgotten | Made only when new; idle for an hour, dropped |
+  | 7 | The fee rule in two places | `pnl.taker_fee_e6`, used by the portfolio |
+  | 8 | `pnl` depended on the ledger importer and the portfolio | It depends on neither |
+  | 9 | The services could be changed by a plugin | A read-only mapping; tested |
+
+**M1.12b built**, subject to the owner's merge. Momentum v1 keeps running on the installed IKARS.

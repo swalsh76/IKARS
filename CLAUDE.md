@@ -111,7 +111,7 @@ slice still needs its own approved plan before code.
   `CodeQL` (strict; CodeQL added at the owner's request 2026-10-27); `web` joins once that job exists.
   **M1.R Base hardening** (owner 2026-10-27: a whole-code-base review before the web terminal; items 1 to 26
   approved): **done** (PR #14 merged as `fca7941`, CI green on `main`; BUILD-LOG 1.R). Resting orders checked live 2026-10-27 (Kalshi's
-  balance does not hold back a resting buy; reconciliation exact). Pending from the owner: the M1.6 auto-start sign-out check.
+  balance does not hold back a resting buy; reconciliation exact). The M1.6 auto-start check passed 2026-10-27.
   **Web review and security posture decided** (owner 2026-10-27; BUILD-LOG 1.8w-sec): browser hardening and npm
   rules fold into M1.8a-web; **CodeQL** added (PR #15 merged as `179dd8c`; green on `main`; required since 2026-10-27).
   **Platform review 1.R2 done** (owner approved placement 2026-10-27): items 1 to 5 go into M1.8a-web (stable
@@ -140,16 +140,19 @@ slice still needs its own approved plan before code.
   owner's click, the rollback drill, signing (unsigned now, apply to SignPath). **M1.9a done** (PR #25
   merged as `31a992a`, CI green on `main`; BUILD-LOG 1.9a; CodeQL now scans C# too). **M1.9b done** (PR #26 merged as `d11165d`, CI green on `main`; BUILD-LOG
   1.9b; test pre-releases v0.1.0 to v0.1.6; the rollback drill passed; IKARS runs installed on the workstation).
-  **M1.9 is complete.** Pending from the owner: `install-autostart` from the installed program; the SignPath
-  application (docs/CODE-SIGNING.md). **M1.12 plan APPROVED** (owner 2026-10-27, all as recommended; BUILD-LOG
+  **M1.9 is complete.** Start at sign-in points at the installed IKARS (the owner ran `install-autostart`).
+  Pending from the owner: the SignPath application (docs/CODE-SIGNING.md). **M1.12 plan APPROVED** (owner 2026-10-27, all as recommended; BUILD-LOG
   1.12): a engine (plugins in the live runner, recording, received time, the journal), b momentum (continuation,
   4c in 5 min on 50 contracts, spread <= 3c, 10c..90c, valid 30 min, scored at 30 and 60 min; 10 contracts;
   registered by hash), c terminal (Overview list, Recommendation drill-down, normal throttled toast). **M1.12a
   done** (PR #27 merged as `099b94b`). **M1.12b built** on `m1/12b` (pushed, `e463699`: momentum plugin
   version `0d648804a13a`, pnl.py, merge review 9 fixed; owner: SPARQ guard lapsed; any market with a depth check).
-  **Next:** the owner says "publish 0.1.7" (a test pre-release from `m1/12b`), updates the installed IKARS, then
-  the live check (recommendations journalled and marked; counts only); then BUILD-LOG 1.12b and the PR. Paused
-  2026-10-27 for a workstation restart. Then M1.12c, M1.11 (M1.13 any time before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+  **Live check passed** on v0.1.7 (2026-10-28; BUILD-LOG 1.12b): about 20 recommendations a minute at first on
+  in-play sports, half the 30-minute checks found the market closed. **Owner:** v1 keeps running a week
+  unchanged (until about 2026-11-04), then its record decides; a closed market's check is scored at settlement
+  (built, `f810687`). The M1.6 auto-start check passed (the installed IKARS started at sign-in after a restart).
+  PR open, waiting for the owner's merge. Then M1.12c (the alert flood is its first question), M1.11 (M1.13 any
+  time before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 

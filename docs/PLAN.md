@@ -718,7 +718,8 @@ M1.11. M1.10 can run any time after M1.2; M1.13 any time after M1.12 and before 
 | M1.7 Loopback API and contracts | **done** (BUILD-LOG 1.7; PR #10 merged as `0ba5d83`) |
 | M1.R Base hardening (owner, 2026-10-27) | **built** on `m1/r-hardening` (BUILD-LOG 1.R): a whole-code-base review's items 1 to 26 fixed, plus 10 merge-review findings; **done** (PR #14, `fca7941`) |
 | M1.8a-web-1a Engine side of the web terminal | **done** (PR #16, `d70cb83`; BUILD-LOG 1.8a-web-1a): file serving with the browser hardening, cookie sign-in that survives restarts, `ikars open`, contracts 2.0, `demo-api`; security review (1 finding, fixed) and merge review (8, fixed) |
-| M1.12a Plugins in the engine, the journal | **built** on `m1/12a` (BUILD-LOG 1.12a): the live runner loads the plugins and records what they emit; the host stamps received time; the recommendation journal with its lifecycle and marks; `GET /v1/recommendations`; merge review (10, fixed); PR pending |
+| M1.12b Momentum, P&L after fees | **built** on `m1/12b` (BUILD-LOG 1.12b): the registered momentum rule (v1 `0d648804a13a`), tradability, `pnl.py`, scores after fees and at settlement; live on v0.1.7 (a week's run decides the rule); merge review (9, fixed); PR pending |
+| M1.12a Plugins in the engine, the journal | **done** (PR #27, `099b94b`), built on `m1/12a` (BUILD-LOG 1.12a): the live runner loads the plugins and records what they emit; the host stamps received time; the recommendation journal with its lifecycle and marks; `GET /v1/recommendations`; merge review (10, fixed) |
 | M1.9b Releases, updates, rollback, signing | **built** on `m1/9b` (BUILD-LOG 1.9b): the release workflow (a tag publishes a pre-release; v0.1.0 to v0.1.6); updates on the owner's click with the IKARS Update window; the pre-upgrade snapshot and `ikars rollback`; the drill on the workstation passed (0.1.1 back to 0.1.0, the ledger verified and reconciled exactly); the code signing policy (SignPath pending); merge review (10, fixed); **done** (PR #26, `d11165d`) |
 | M1.9a Build, install, uninstall | **done**, built on `m1/9a` (BUILD-LOG 1.9a): the `ikars` command; `IKARS.exe` (C#, .NET Framework 4.8); Velopack's `Setup.exe` and portable zip with a standalone Python; setup mode for a machine without a key; clean-machine checks in Windows Sandbox passed (install, wizard, uninstall keeps the data, portable); merge review (10: 8 fixed, 1 part parked, 1 no change); **done** (PR #25, `31a992a`) |
 | M1.8c New window (approved addition, 2026-10-27) | **done** (PR #24, `b336930`), built on `m1/8c` (BUILD-LOG 1.8c): a New window item in the side navigation opens a popup on the same screen, signed in; merge review (10: 8 fixed, 1 parked, 1 the docs) |
@@ -741,6 +742,8 @@ M1.11. M1.10 can run any time after M1.2; M1.13 any time after M1.12 and before 
   when the ledger reaches tens of thousands.
 - One `times` module for the duplicated time helpers (`api.utc_text` and `ledger.iso_utc`; `alerts._ns` and
   `ledger_import.ns_of`): with the next slice that touches those files (2026-10-27 platform review, item 10).
+- Momentum v1's record after a week (about 2026-11-04) decides whether a v2 is registered (owner, 2026-10-28):
+  read through the Strategy review (G19); M1.12c must cope with its volume (about 7 to 20 a minute).
 - A rollback keeps the newer version's own `app` records (IKARS's events, not Kalshi's) only in the ledger copy set
   aside in `backups\rolled-back\`: M5's per-year tax package should include such copies (M1.9b drill).
 - A fresh engine refreshes only the standard key variable names (`IKARS_KALSHI_*`) from Windows: with custom
