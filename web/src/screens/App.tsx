@@ -14,6 +14,7 @@ import { Link, Shell } from "./Shell";
 // the grid and chart libraries load only when their screens first open (a lighter start)
 const Markets = lazy(() => import("./Markets").then((m) => ({ default: m.Markets })));
 const Market = lazy(() => import("./Market").then((m) => ({ default: m.Market })));
+const Recommendation = lazy(() => import("./Recommendation").then((m) => ({ default: m.Recommendation })));
 
 function Screen() {
   const route = useRoute();
@@ -29,6 +30,8 @@ function Screen() {
       return <Markets query={route.query} category={route.category} />;
     case "market":
       return <Market ticker={route.ticker} />;
+    case "recommendation":
+      return <Recommendation id={route.id} />;
     case "ledger":
       return <Ledger />;
     case "alerts":
@@ -52,6 +55,7 @@ function Screen() {
 
 /** The screen a route shows: a search typed on the Markets screen keeps the same screen. */
 function screenKey(route: Route): string {
+  if (route.screen === "recommendation") return `recommendation:${route.id}`;
   return route.screen === "market" ? `market:${route.ticker}` : route.screen;
 }
 

@@ -4,19 +4,21 @@
 // change in flight at a time; a failed change is retried). Screens read it through React's
 // useSyncExternalStore, so a value keeps its identity until it changes.
 
-import type { AlertView, BookView, HealthView, PortfolioView, QuoteUpdate } from "./contracts";
+import type { AlertView, BookView, HealthView, PortfolioView, QuoteUpdate, RecommendationPage } from "./contracts";
 import type { StreamMessage, StreamState } from "./stream";
 
 export const FLUSH_MS = 100;
 export const RETRY_MS = 1_000;
 export const ALERTS_PER_PRIORITY = 200;
 
-export type Key = "health" | "portfolio" | "alerts" | "connection" | `quote:${string}` | `book:${string}`;
+export type Key = "health" | "portfolio" | "alerts" | "recommendations" | "connection" | `quote:${string}` | `book:${string}`;
 
 export interface Values {
   health: HealthView | null;
   portfolio: PortfolioView | null;
   alerts: readonly AlertView[];
+  /** The active recommendations, ranked by the engine (M1.12c); null until the stream sends them. */
+  recommendations: RecommendationPage | null;
   connection: StreamState;
 }
 
@@ -52,6 +54,7 @@ export class Hub {
     ["health", null],
     ["portfolio", null],
     ["alerts", []],
+    ["recommendations", null],
     ["connection", "connecting"],
   ]);
   private readonly pending = new Map<Key, unknown>();
@@ -137,6 +140,9 @@ export class Hub {
         break;
       case "alert":
         this.addAlerts([message.data]);
+        break;
+      case "recommendations":
+        this.set("recommendations", message.data);
         break;
       case "error":
         break;

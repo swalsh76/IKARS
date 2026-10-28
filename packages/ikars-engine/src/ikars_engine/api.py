@@ -338,6 +338,7 @@ def recommendation_view(
         source=entry.source, outlay_e6=None if found is None else found.outlay_e6,
         return_e6=None if found is None else found.return_e6,
         per_day_e6=None if found is None else found.per_day_e6, response=entry.response,
+        horizons_s=list(rec.horizons_s),
     )  # fmt: skip
 
 

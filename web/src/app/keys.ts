@@ -9,6 +9,8 @@ export type Action =
   | { kind: "close" }
   | { kind: "book" }
   | { kind: "linked" }
+  | { kind: "respond"; answer: "taken" | "ignored" | "dismissed" }
+  | { kind: "copy" }
   | { kind: "alert" };
 
 export interface Press {
@@ -39,8 +41,8 @@ export const HOTKEYS: readonly Hotkey[] = [
   { keys: "Alt+Left / Alt+Right", does: "Back and forward" },
   { keys: "X", does: "Show or hide the Linked panel (Market)" },
   { keys: "B", does: "The order book (Market)" },
-  { keys: "T / I / D", does: "Mark the open recommendation taken, ignored or dismissed", arrives: "M1.12" },
-  { keys: "C", does: "Copy the order (ticker, side, price, size) for Kalshi", arrives: "M1.12" },
+  { keys: "T / I / D", does: "Mark the open recommendation taken, ignored or dismissed (Recommendation)" },
+  { keys: "C", does: "Copy the order (ticker, side, size, price) for Kalshi (Recommendation)" },
   { keys: "Ctrl+Shift+L", does: "Light or dark theme" },
   { keys: "?", does: "This list" },
   { keys: "Esc", does: "Close this list" },
@@ -68,6 +70,18 @@ export function actionFor(p: Press): Action | null {
     case "x":
     case "X":
       return { kind: "linked" };
+    case "t":
+    case "T":
+      return { kind: "respond", answer: "taken" };
+    case "i":
+    case "I":
+      return { kind: "respond", answer: "ignored" };
+    case "d":
+    case "D":
+      return { kind: "respond", answer: "dismissed" };
+    case "c":
+    case "C":
+      return { kind: "copy" };
     default:
       return null;
   }

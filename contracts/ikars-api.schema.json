@@ -1246,6 +1246,12 @@
         "expires_utc": {
           "type": "string"
         },
+        "horizons_s": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
         "id": {
           "type": "string"
         },
@@ -1368,7 +1374,8 @@
         "outlay_e6",
         "return_e6",
         "per_day_e6",
-        "response"
+        "response",
+        "horizons_s"
       ],
       "title": "RecommendationView",
       "type": "object"

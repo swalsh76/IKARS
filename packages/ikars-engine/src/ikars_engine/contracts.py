@@ -219,6 +219,7 @@ class RecommendationView(msgspec.Struct, kw_only=True):
     return_e6: int | None  # at the target after fees, in millionths of the outlay
     per_day_e6: int | None  # that, per day of its validity: the ranking (D20 D)
     response: str | None  # the owner's: taken, ignored or dismissed
+    horizons_s: list[int]  # when it is checked after it is made (marks come at these)
 
 
 class RecommendationPage(msgspec.Struct, kw_only=True):
@@ -445,7 +446,7 @@ SMALL_INTEGERS = frozenset({
     "id", "interval_minutes", "line", "offset", "open_gaps", "records", "seq", "total",
     "watched_markets", "throttle_minutes", "digest_minutes", "watched_max_markets",
     "read_share_percent", "storage_budget_gb", "port", "session_days", "x", "y", "width",
-    "height", "progress", "size_bytes", "horizon_s", "checks", "scored", "above_zero",
+    "height", "progress", "size_bytes", "horizon_s", "horizons_s", "checks", "scored", "above_zero",
 })  # fmt: skip
 
 CONTRACTS: tuple[type[msgspec.Struct], ...] = (
@@ -503,7 +504,7 @@ def examples() -> dict[str, Any]:
         superseded_by=None, entry_price_e6=420_000, count_e2=1_000,
         expires_utc="2026-01-01T00:30:00Z", pnl_e6=20_000, inputs=["market:KXDEMO-26JAN01-T50"],
         marks=[mark], title="Made-up market above 50", source="momentum", outlay_e6=4_270_000,
-        return_e6=4_683, per_day_e6=224_784, response=None,
+        return_e6=4_683, per_day_e6=224_784, response=None, horizons_s=[1800, 3600],
     )  # fmt: skip
     line = ScoreLineView(strategy="momentum", version="9f2ce1a0", horizon_s=1800, checks=12,
                          scored=10, above_zero=4, mean_e6=-42_000, median_e6=-28_000)  # fmt: skip

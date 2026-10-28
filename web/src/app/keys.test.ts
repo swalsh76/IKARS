@@ -23,6 +23,12 @@ describe("hotkeys", () => {
     expect(actionFor(press("Enter"))).toEqual({ kind: "alert" });
     expect(actionFor(press("b"))).toEqual({ kind: "book" });
     expect(actionFor(press("X"))).toEqual({ kind: "linked" });
+    expect(actionFor(press("t"))).toEqual({ kind: "respond", answer: "taken" });
+    expect(actionFor(press("I"))).toEqual({ kind: "respond", answer: "ignored" });
+    expect(actionFor(press("d"))).toEqual({ kind: "respond", answer: "dismissed" });
+    expect(actionFor(press("C"))).toEqual({ kind: "copy" });
+    for (const key of ["t", "i", "d", "c"]) expect(actionFor(press(key, { typing: true }))).toBeNull();
+    expect(HOTKEYS.filter((h) => h.arrives)).toEqual([]); // M1.12c brought the last ones
   });
 
   it("leave single keys to a text box, but not Ctrl combinations or Esc", () => {
@@ -49,10 +55,6 @@ describe("hotkeys", () => {
     expect(isControl(el("SECTION"))).toBe(false);
     expect(isControl(el("BODY", { tabIndex: 0 }))).toBe(false);
     expect(isControl(null)).toBe(false);
-  });
-
-  it("list what arrives later as such", () => {
-    expect(HOTKEYS.filter((h) => h.arrives).map((h) => h.keys)).toEqual(["T / I / D", "C"]);
   });
 
   it("know a text box", () => {

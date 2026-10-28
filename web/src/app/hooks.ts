@@ -111,6 +111,16 @@ export function useMeterReading(everyMs = 1_000): Reading {
   return reading;
 }
 
+/** The time now (milliseconds), read again every ``everyMs``: for countdowns. */
+export function useNow(everyMs = 1_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), everyMs);
+    return () => clearInterval(timer);
+  }, [everyMs]);
+  return now;
+}
+
 export function useRoute(): Route {
   const { navigator } = useTerminal();
   return useSyncExternalStore(navigator.listen, navigator.current);

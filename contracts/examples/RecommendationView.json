@@ -4,6 +4,10 @@
   "entry_price_e6": 420000,
   "event_ticker": "KXDEMO-26JAN01",
   "expires_utc": "2026-01-01T00:30:00Z",
+  "horizons_s": [
+    1800,
+    3600
+  ],
   "id": "momentum-KXDEMO-26JAN01-T50-1",
   "inputs": [
     "market:KXDEMO-26JAN01-T50"

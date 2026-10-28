@@ -7,6 +7,7 @@ export type Route =
   | { screen: "health" }
   | { screen: "markets"; query: string; category?: string }
   | { screen: "market"; ticker: string }
+  | { screen: "recommendation"; id: string }
   | { screen: "ledger" }
   | { screen: "alerts" }
   | { screen: "settings" }
@@ -24,6 +25,7 @@ const TITLES: Record<Exclude<Route["screen"], "missing">, string> = {
   health: "Health",
   markets: "Markets",
   market: "Market",
+  recommendation: "Recommendation",
   ledger: "Ledger",
   alerts: "Alerts",
   settings: "Settings",
@@ -50,6 +52,7 @@ export function parse(pathname: string, search = ""): Route {
     return category ? { screen: "markets", query: params.get("q") ?? "", category } : { screen: "markets", query: params.get("q") ?? "" };
   }
   if (parts.length === 2 && first === "market" && second) return { screen: "market", ticker: second };
+  if (parts.length === 2 && first === "recommendation" && second) return { screen: "recommendation", id: second };
   if (parts.length === 1 && first === "update") return { screen: "update", to: new URLSearchParams(search).get("to") ?? "" };
   return { screen: "missing", path: pathname };
 }
@@ -68,6 +71,8 @@ export function href(route: Route): string {
     }
     case "market":
       return `/market/${encodeURIComponent(route.ticker)}`;
+    case "recommendation":
+      return `/recommendation/${encodeURIComponent(route.id)}`;
     case "update":
       return `/update?to=${encodeURIComponent(route.to)}`;
     case "missing":

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hub } from "../api/hub";
 import { Meter } from "../api/meter";
 import type { Route } from "../nav/route";
-import { TerminalContext, useMarkets, useMeterReading, useQuoteChanges, useRoute, useSnapshot, useTerminal, useValue } from "./hooks";
+import { TerminalContext, useMarkets, useMeterReading, useNow, useQuoteChanges, useRoute, useSnapshot, useTerminal, useValue } from "./hooks";
 import { Guarded } from "../screens/Guarded";
 import type { Terminal } from "./terminal";
 
@@ -201,6 +201,23 @@ describe("the meter's reading", () => {
       await vi.advanceTimersByTimeAsync(500);
     });
     expect(container.textContent).toBe("1");
+  });
+});
+
+describe("the time now", () => {
+  it("moves on its timer, for countdowns", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    const { terminal } = fakeTerminal();
+    function View() {
+      return <p>{useNow(1_000)}</p>;
+    }
+    await show(terminal, <View />);
+    expect(container.textContent).toBe("10000");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(container.textContent).toBe("11000");
   });
 });
 

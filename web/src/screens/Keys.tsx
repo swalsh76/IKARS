@@ -6,6 +6,8 @@ import { applyTheme, currentTheme, toggled } from "../app/theme";
 
 export const LINKED_EVENT = "ikars:linked"; // X: the Market screen shows or hides its Linked panel
 export const BOOK_ID = "order-book"; // B: the Market screen's order book
+export const RESPOND_EVENT = "ikars:respond"; // T, I, D: the Recommendation screen's answer
+export const COPY_EVENT = "ikars:copy"; // C: the Recommendation screen copies its order
 
 /** The hotkeys, for the whole terminal, and the list `?` shows (a dialog; Esc or a click outside closes). */
 export function Hotkeys() {
@@ -60,6 +62,12 @@ export function Hotkeys() {
         }
         case "linked":
           window.dispatchEvent(new CustomEvent(LINKED_EVENT));
+          break;
+        case "respond":
+          window.dispatchEvent(new CustomEvent(RESPOND_EVENT, { detail: action.answer }));
+          break;
+        case "copy":
+          window.dispatchEvent(new CustomEvent(COPY_EVENT));
           break;
         case "alert":
           navigator.go("/alerts");

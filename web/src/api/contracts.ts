@@ -321,6 +321,7 @@ count_e2: number
 entry_price_e6: number
 event_ticker: string
 expires_utc: string
+horizons_s: number[]
 id: string
 inputs: string[]
 marks: MarkView[]
