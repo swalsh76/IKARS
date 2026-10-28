@@ -77,6 +77,7 @@ class HealthView(msgspec.Struct, kw_only=True):
     gpu: str | None
     api_streams: int | None
     port_fallback: bool | None  # the fixed port was taken: a terminal cannot reconnect by itself
+    setup_reason: str | None  # setup mode (M1.9a): why the Kalshi key cannot be used; None: in full
     plugins: dict[str, str]
     detail: dict[str, Any]
 
@@ -499,6 +500,7 @@ def examples() -> dict[str, Any]:
             gpu="Made-up GPU",
             api_streams=1,
             port_fallback=False,
+            setup_reason=None,
             plugins={"demo": "running"},
             detail={"kalshi": {"frames": {"ticker": 10}}},
         ),  # fmt: skip

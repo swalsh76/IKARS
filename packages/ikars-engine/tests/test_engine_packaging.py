@@ -73,3 +73,19 @@ def test_a_plain_start_opens_the_terminal_and_a_failure_is_shown(
 
     monkeypatch.setattr(open_terminal, "open_terminal", fails)
     assert launcher.main([]) == 1 and "Edge was not found" in shown[0]
+
+
+def test_an_update_stops_the_engine_but_keeps_start_at_sign_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = Paths(tmp_path).create()
+    running = [True, False]
+    monkeypatch.setattr(runmode, "engine_running", lambda folder: running.pop(0))
+    launcher.stop_engine(paths, sleep=lambda s: None)
+    assert runmode.stop_requested(paths.data)  # nothing removed: only uninstalling removes
+
+
+def test_the_engine_runs_isolated_from_the_user_s_python_settings() -> None:
+    from ikars_engine.watchdog import engine_command
+
+    assert engine_command(None)[1:4] == ["-I", "-m", "ikars_engine"]

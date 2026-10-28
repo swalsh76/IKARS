@@ -119,7 +119,7 @@ def install(registry: Registry, run: Run, python: str, root: Path | None = None)
     """``root``: a data folder other than the usual, passed to both the engine and the watchdog,
     so the watchdog looks where the engine runs."""
     rooted = ["--root", str(root)] if root is not None else []
-    engine = _quoted([python, "-m", "ikars_engine", "serve", *rooted])
+    engine = _quoted([python, "-I", "-m", "ikars_engine", "serve", *rooted])  # isolated
     registry.set(RUN_KEY, RUN_VALUE, engine)
     registry.set(APP_KEY, "DisplayName", "IKARS")
     watchdog = _quoted([python, "-m", "ikars_engine", "watchdog", *rooted])

@@ -738,6 +738,8 @@ M1.11. M1.10 can run any time after M1.2; M1.13 any time after M1.12 and before 
   when the ledger reaches tens of thousands.
 - One `times` module for the duplicated time helpers (`api.utc_text` and `ledger.iso_utc`; `alerts._ns` and
   `ledger_import.ns_of`): with the next slice that touches those files (2026-10-27 platform review, item 10).
+- A fresh engine refreshes only the standard key variable names (`IKARS_KALSHI_*`) from Windows: with custom
+  names in the settings, a key set since the old engine started needs a sign-out (M1.9a merge review 4).
 - A layout saved from a New window popup keeps the popup's outer size, which includes Edge's address strip: reopened
   as an app window (no strip), its content is that strip taller (M1.8c merge review 8). Small; revisit if it shows.
 - Panes docked, floated and moved within an IKARS window (the Layout mock-up's caption): M1.8b's layouts are

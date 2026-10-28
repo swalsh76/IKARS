@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILD = ROOT / "build"
@@ -34,7 +35,9 @@ APP = BUILD / "IKARS-App"
 RELEASES = BUILD / "releases"
 PACK_ID = "IKARS-App"
 # left out of the bundled Python: its own tests, IDLE, Tk and the pip bootstrap (about 40 MB)
-LEFT_OUT = {"test", "idlelib", "tkinter", "turtledemo", "ensurepip", "tcl", "__pycache__"}
+# and anything installed into the machine's managed Python by hand: only locked packages ship
+LEFT_OUT = {"test", "idlelib", "tkinter", "turtledemo", "ensurepip", "tcl", "__pycache__",
+            "site-packages"}  # fmt: skip
 SEMVER = re.compile(r"\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?")
 
 
@@ -46,8 +49,11 @@ def uv() -> list[str]:
 
 def run(*command: str | Path, cwd: Path = ROOT) -> str:
     print(">", " ".join(str(c) for c in command), flush=True)
-    done = subprocess.run([str(c) for c in command], cwd=cwd, check=True,  # noqa: S603
+    done = subprocess.run([str(c) for c in command], cwd=cwd,  # noqa: S603
                           capture_output=True, text=True)  # fmt: skip
+    if done.returncode != 0:  # say why (merge review 6)
+        print(done.stdout[-4000:], done.stderr[-4000:], sep="\n", file=sys.stderr)
+        raise SystemExit(f"failed ({done.returncode}): {command[0]} {command[1:3]}")
     return done.stdout
 
 
@@ -121,7 +127,8 @@ def sandbox() -> Path:
     config = BUILD / "IKARS-test.wsb"
     mapped = [(RELEASES, r"C:\IKARS-releases"), (checks, r"C:\IKARS-checks")]
     folders = "".join(
-        f"    <MappedFolder><HostFolder>{host}</HostFolder><SandboxFolder>{inside}</SandboxFolder>"
+        f"    <MappedFolder><HostFolder>{escape(str(host))}</HostFolder>"
+        f"<SandboxFolder>{inside}</SandboxFolder>"
         "<ReadOnly>true</ReadOnly></MappedFolder>\n"
         for host, inside in mapped
     )

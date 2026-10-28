@@ -338,6 +338,7 @@ def health_view(health: dict[str, Any]) -> c.HealthView:
         clock_offset_ms=_typed(at(health, "clock", "offset_ms"), float),
         gpu=_typed(at(health, "gpu", "device"), str),
         api_streams=_typed(at(health, "api", "streams"), int),
+        setup_reason=_typed(at(health, "setup", "reason"), str),
         port_fallback=_typed(at(health, "api", "port_fallback"), bool),
         plugins={str(k): str(v) for k, v in plugins.items()} if isinstance(plugins, dict) else {},
         detail=health,

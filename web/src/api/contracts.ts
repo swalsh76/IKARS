@@ -153,6 +153,7 @@ plugins: {
 [k: string]: string
 }
 port_fallback: (boolean | null)
+setup_reason: (string | null)
 storage_state: (string | null)
 }
 export interface LedgerHealth {

@@ -196,7 +196,8 @@ def save_state(path: Path, state: State) -> None:
 
 def engine_command(root: Path | None) -> list[str]:
     """``pythonw -m ikars_engine serve`` (no console) from this interpreter's folder."""
-    command = [windowless_python(), "-m", "ikars_engine", "serve"]
+    # -I: no PYTHON* variables, no user site and not the working folder on the path (merge review 3)
+    command = [windowless_python(), "-I", "-m", "ikars_engine", "serve"]
     return command + (["--root", str(root)] if root is not None else [])
 
 

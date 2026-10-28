@@ -12,6 +12,7 @@ const health = {
   gpu: null,
   api_streams: 0,
   port_fallback: false,
+  setup_reason: null,
   plugins: {},
   detail: {},
 };

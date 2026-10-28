@@ -475,6 +475,16 @@
             }
           ]
         },
+        "setup_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "storage_state": {
           "anyOf": [
             {
@@ -497,6 +507,7 @@
         "gpu",
         "api_streams",
         "port_fallback",
+        "setup_reason",
         "plugins",
         "detail"
       ],
