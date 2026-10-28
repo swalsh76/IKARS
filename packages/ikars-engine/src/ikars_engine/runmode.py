@@ -189,6 +189,7 @@ def snapshot_of(health: dict[str, Any], now_ns: int) -> dict[str, Any]:
         },
         "gpu": at(health, "gpu", "device"),
         "port_fallback": at(health, "api", "port_fallback"),
+        "setup": at(health, "setup", "reason"),  # setup mode: why the key cannot be used
     }
 
 

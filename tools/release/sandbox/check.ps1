@@ -33,7 +33,13 @@ switch ($Step) {
         Say "Start-menu entry IKARS" (Test-Path $menu)
         Say "no desktop shortcut" (-not (Test-Path (Join-Path ([Environment]::GetFolderPath("Desktop")) "IKARS.lnk")))
         # the first start after installing opens the engine and the terminal (the wizard: no settings)
-        Say "the engine started (its data folder appeared)" (WaitFor { Test-Path (Join-Path $data "data\api.json") } 180)
+        $started = WaitFor { Test-Path (Join-Path $data "data\api.json") } 180
+        Say "the engine started (its data folder appeared)" $started
+        $log = Join-Path $data "logs\ikars.jsonl"
+        if (Test-Path $log) {  # a clean machine has no key or account: its log holds nothing private
+            Add-Content -Path $report -Value "-- the engine log's last lines --"
+            Get-Content $log -Tail 8 | Add-Content -Path $report
+        }
         Say "the data folder is apart from the program's" (-not (Test-Path (Join-Path $program "IKARS-data")))
         Write-Host "Now: walk the wizard in the Edge window, then uninstall IKARS from Settings > Apps, then run: check.ps1 uninstalled"
     }

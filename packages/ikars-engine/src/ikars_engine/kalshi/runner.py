@@ -22,7 +22,7 @@ from pathlib import Path
 
 import msgspec
 from ikars_core.account import Account
-from ikars_core.auth import AccountSigner, DataSigner
+from ikars_core.auth import AccountSigner, AuthError, DataSigner
 from ikars_core.clock import ClockCheckError, sample_from_response
 from ikars_core.config import Environment, KalshiConfig
 from ikars_core.endpoints import MarketData
@@ -328,6 +328,10 @@ async def run(
         max_bytes=settings.logs.max_bytes,
         files_kept=settings.logs.files_kept,
     )
+    problem = key_problem()
+    if problem is not None:  # no usable key: the terminal only, to set IKARS up (M1.9a)
+        log.warning("setup mode: the Kalshi key cannot be used", extra={"problem": problem})
+        return await run_setup(paths, settings, problem, should_stop, on_minute, root)
     live = await build(paths, settings, root, restartable=should_stop is not None)
     engine = live.engine
     health: dict[str, object] = {}
@@ -373,6 +377,84 @@ async def run(
                     out(summary(engine.health()))
                 break
     return health
+
+
+def key_problem() -> str | None:
+    """Why IKARS's Kalshi key cannot be used, in words (never its id or path), or None."""
+    try:
+        AccountSigner.from_environment()
+    except AuthError as exc:
+        return str(exc)
+    return None
+
+
+async def run_setup(
+    paths: Paths,
+    settings: Settings,
+    problem: str,
+    should_stop: Callable[[], bool] | None = None,
+    on_minute: Callable[[dict[str, object]], None] | None = None,
+    root: Path | None = None,
+    minutes: float | None = None,
+) -> dict[str, object]:
+    """Setup mode (M1.9a; owner, 2026-10-27): the key cannot be used (a fresh machine has none),
+    so no feed, no ledger import and no call to Kalshi; only the API and the terminal, so the
+    first-run wizard and Settings can set IKARS up. Health says why; the watchdog tells the owner
+    and does not restart it; once the key is set, Settings' Restart the engine starts it in full."""
+    zone = taxzone.resolve(settings.tax_time_zone)
+    clock = WallClock()
+    # what the ledger holds, for the terminal; a migration copies it to the share first, as always
+    ledger = Ledger(
+        paths.ledger / "ledger.sqlite",
+        zone.zone,
+        migration_copier(configured(settings.backup.share)),
+    )
+    held = PortfolioHealth(ledger, {}, lambda ticker: None, lambda ticker: None)
+    sessions = Sessions(paths.data, settings.terminal.session_days)
+    restartable = should_stop is not None
+    servers: list[ApiServer] = []
+
+    def health() -> dict[str, object]:
+        report: dict[str, object] = {
+            "setup": {"reason": problem, "next": "set the key, then restart the engine"},
+            "kalshi": {"feed": {"connected": False}},
+        }
+        if servers:
+            report["api"] = servers[0].health()
+        return report
+
+    def api_context(token: str) -> ApiContext:
+        return ApiContext(
+            token=token, health=health, index=MarketIndex(), quotes={}, last_price={},
+            changed_ns={}, book_changed_ns={}, books={}, book_version={}, watched=set,
+            ledger=ledger, ledger_health=dict, portfolio=held.portfolio,
+            alert_log=paths.data / ALERT_LOG, metrics=Metrics(), now_ns=clock.now_ns,
+            sessions=sessions, web_root=terminal_root(),
+            config=TerminalConfig(paths, settings, root, restartable=restartable),
+        )  # fmt: skip
+
+    api = ApiServer(api_context, paths.data, port=settings.terminal.port)
+    servers.append(api)
+    try:
+        await api.start()
+        if on_minute is not None:
+            on_minute(health())
+        started = last = time.monotonic()
+        while True:
+            await asyncio.sleep(TICK_S)
+            now = time.monotonic()
+            if now - last >= MINUTE_S:
+                last = now
+                if on_minute is not None:
+                    on_minute(health())
+            if (should_stop is not None and should_stop()) or (
+                minutes is not None and now - started >= minutes * 60
+            ):
+                break
+    finally:
+        await api.stop()
+        ledger.close()
+    return health()
 
 
 class EngineStopped(RuntimeError):

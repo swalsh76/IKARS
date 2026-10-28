@@ -71,9 +71,13 @@ def build(version: str) -> None:
     web = ROOT / "web" / "dist"
     if not (web / "index.html").is_file():
         raise SystemExit("web/dist is not built: run pnpm build in web/ first")
-    for folder in (APP, RELEASES, BUILD / "wheels"):
+    for folder in (APP, BUILD / "wheels"):
         if folder.exists():
             shutil.rmtree(folder)
+    # emptied, not removed: an open Windows Sandbox holds the folder itself (it is mapped there)
+    RELEASES.mkdir(parents=True, exist_ok=True)
+    for old in RELEASES.iterdir():
+        shutil.rmtree(old) if old.is_dir() else old.unlink()
     python = APP / "python"
     shutil.copytree(python_home(), python, ignore=left_out)
     exe = python / "python.exe"
