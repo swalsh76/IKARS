@@ -326,9 +326,9 @@ Patterns to measure. Each one is a **hypothesis**, scored in the journal before 
 - **Data:** the 77-day history and SPARQ's live copies (Parquet on the analytics node) are copied to the workstation
   for back-tests, with no database credential needed. A read-only database role for IKARS on the KAPS database (as
   SPARQ has) is optional and would need the owner to create it.
-- **Guard: do not contaminate SPARQ's forward test.** Until SPARQ's S1.1b verdict, IKARS computes no edge to
-  settlement on events opened from 2026-10-26 that close before 2026-11-23 (the window closes 2026-11-23; the
-  verdict is due from about 2026-11-26). Book measures and short markouts are allowed, as in SPARQ's D11.
+- ~~**Guard: do not contaminate SPARQ's forward test.**~~ **Lapsed (owner, 2026-10-27):** SPARQ's S1.1b forward test
+  was dropped unopened and SPARQ's D11 guard lapsed with it, so this guard (no edge to settlement on events opened
+  from 2026-10-26 that close before 2026-11-23) no longer applies (M1.12b).
 
 ### D7. P&L model, net of costs (APPROVED 2026-10-26: the cost-basis factors as listed)
 

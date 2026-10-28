@@ -194,6 +194,7 @@ async def build(
         queue_size=plugin_defaults.queue_size, call_timeout=plugin_defaults.call_timeout_seconds,
         restart_base=plugin_defaults.restart_base_seconds,
         restart_max=plugin_defaults.restart_max_seconds, settings=settings.plugin_settings,
+        services={"market": index.markets.get, "fees": index.fees.get},  # read only (M1.12b)
     )  # fmt: skip
     engine = Engine(clock, source, metrics=metrics, skew=skew, host_options=options)
     # the plugins (review 1.R2 item 8): one that cannot load is said in health, never a stop

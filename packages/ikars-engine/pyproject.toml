@@ -23,6 +23,10 @@ dependencies = [
 [project.scripts]
 ikars = "ikars_engine.__main__:entry"
 
+# the signals IKARS ships, found by the engine like any other plugin (M1.12b)
+[project.entry-points."ikars.plugins"]
+momentum = "ikars_engine.signals.momentum:Momentum"
+
 [tool.uv.sources]
 ikars-core = { workspace = true }
 

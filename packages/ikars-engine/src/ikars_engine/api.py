@@ -39,6 +39,7 @@ from typing import Any
 
 import msgspec
 from ikars_core.book import OrderBook
+from ikars_core.fees import FeeSchedule
 from ikars_core.models import Candlestick
 from ikars_core.winacl import other_readers
 from starlette.applications import Starlette
@@ -54,6 +55,7 @@ from ikars_engine.journal import Entry, Journal
 from ikars_engine.kalshi.discovery import OPEN_STATUSES, MarketIndex, MarketInfo
 from ikars_engine.ledger import KINDS, Ledger
 from ikars_engine.metrics import Metrics
+from ikars_engine.pnl import round_trip_e6, sell_price_e6
 from ikars_engine.portfolio import Portfolio
 from ikars_engine.runmode import at
 from ikars_engine.session import COOKIE, Sessions
@@ -297,10 +299,23 @@ def candle_view(row: Candlestick) -> c.Candle:
     )  # fmt: skip
 
 
-def recommendation_view(entry: "Entry") -> c.RecommendationView:
+def recommendation_view(
+    entry: "Entry", fees: "Callable[[str], FeeSchedule | None]" = lambda ticker: None
+) -> c.RecommendationView:
+    """``fees`` gives a ticker's fee schedule: each mark is scored as if sold at the side's bid
+    then, after both legs' fees (M1.12b; None without a bid or a fee model)."""
     rec = entry.recommendation
+    schedule = fees(rec.ticker)
+
+    def score(bid: int | None, ask: int | None) -> int | None:
+        sold = sell_price_e6(rec.side, bid, ask)
+        if schedule is None or sold is None:
+            return None
+        return round_trip_e6(schedule, rec.count_e2, rec.entry_price_e6, sold)
+
     marks = [c.MarkView(horizon_s=m.horizon_s, at_utc=utc_text(m.at_ns), yes_bid_e6=m.yes_bid_e6,
-                        yes_ask_e6=m.yes_ask_e6) for m in entry.marks]  # fmt: skip
+                        yes_ask_e6=m.yes_ask_e6, score_e6=score(m.yes_bid_e6, m.yes_ask_e6))
+             for m in entry.marks]  # fmt: skip
     return c.RecommendationView(
         id=entry.id, ticker=rec.ticker, event_ticker=rec.event_ticker, side=rec.side,
         summary=rec.summary, at_utc=utc_text(entry.received_ns), strategy=rec.strategy,
@@ -627,9 +642,13 @@ def create_app(ctx: ApiContext) -> ASGIApp:
     async def recommendations(request: Request) -> Response:
         if ctx.journal is None:
             return _json(c.RecommendationPage(items=[]))
-        return _json(
-            c.RecommendationPage(items=[recommendation_view(e) for e in ctx.journal.recent()])
-        )
+
+        def fees(ticker: str) -> FeeSchedule | None:
+            info = ctx.index.markets.get(ticker)
+            return None if info is None else ctx.index.fees.get(info.series_ticker)
+
+        entries = ctx.journal.recent()
+        return _json(c.RecommendationPage(items=[recommendation_view(e, fees) for e in entries]))
 
     async def stream(request: Request) -> Response:
         after = _int(request, "after_alert", None, 0, 2**62)

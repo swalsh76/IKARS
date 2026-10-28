@@ -43,8 +43,8 @@ slice still needs its own approved plan before code.
   - D11: quality gates, plus a mini review per commit and merge (R14).
   - D12: a **portable zip and a user-space installer**.
   - D13 to D17: strategies, custom order types (watch/paper now, live in M7), GPU, order-book analysis, SPARQ reuse.
-- **Guard:** no edge to settlement on SPARQ's forward-test events (closing before 2026-11-23) until SPARQ's S1.1b
-  verdict.
+- **Guard lapsed (owner, 2026-10-27):** SPARQ's S1.1b forward test was dropped unopened and SPARQ's guard lapsed
+  with it, so IKARS's matching guard (no edge to settlement on its events before 2026-11-23) lapsed too.
 - **Also approved:** D4 option C (SQLite state, Parquet raw feeds, DuckDB queries); D12 Velopack.
 - **Owner requirement R15 (2026-10-26):** an audit log fit to keep with a Form 1040. Designed as **D18**:
   - an append-only, hash-chained ledger built from Kalshi's own account records, manual trades included,

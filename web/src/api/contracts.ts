@@ -244,6 +244,7 @@ verified: (boolean | null)
 export interface MarkView {
 at_utc: string
 horizon_s: number
+score_e6: (number | null)
 yes_ask_e6: (number | null)
 yes_bid_e6: (number | null)
 }
