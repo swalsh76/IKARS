@@ -2295,3 +2295,12 @@ or a private key block. **Pending (the owner):** two windows on two monitors sav
   | 10 | No BUILD-LOG entry or resume point for this slice yet | This entry, PLAN section 5 and the resume point |
 
 **M1.8b-2 built**, subject to the owner's merge and two-monitor check.
+
+### 1.8c New window (approved 2026-10-27; its own slice after PR #23)
+
+The owner asked for a "New window" menu item (opening a second window by command line was awkward:
+PowerShell drops an empty `--layout ""`). A scope addition, approved: **a browser popup** (the page opens it with
+`window.open`; same Edge profile, so already signed in; terminal only, no engine change), on the same screen as the
+window it came from, slightly offset; at the foot of the side navigation. Edge shows a thin read-only address strip on
+a popup, unlike `ikars open`'s app windows (accepted). Offered and not chosen: the engine starting a bare app window
+on request from the page. Built after PR #23 merges, as its own slice.
