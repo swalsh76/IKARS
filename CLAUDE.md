@@ -137,8 +137,9 @@ slice still needs its own approved plan before code.
   CI green on `main`; merge review 10 itemized). **M1.9 plan APPROVED** (owner 2026-10-27, all as
   recommended; BUILD-LOG 1.9): **M1.9a** build, install, uninstall (program in `%LOCALAPPDATA%\IKARS-App`, data
   untouched; Windows Sandbox for the clean test, the owner enables it), **M1.9b** CI releases, updates on the
-  owner's click, the rollback drill, signing (unsigned now, apply to SignPath). **Now: M1.9a** on
-  `m1/9a`. Then M1.12, M1.13, M1.11. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+  owner's click, the rollback drill, signing (unsigned now, apply to SignPath). **M1.9a built** on
+  `m1/9a` (BUILD-LOG 1.9a; Sandbox checks passed; merge review 10 itemized): PR open, waiting for the
+  owner's merge. Then **M1.9b**. Then M1.12, M1.13, M1.11. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 
