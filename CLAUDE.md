@@ -138,10 +138,14 @@ slice still needs its own approved plan before code.
   recommended; BUILD-LOG 1.9): **M1.9a** build, install, uninstall (program in `%LOCALAPPDATA%\IKARS-App`, data
   untouched; Windows Sandbox for the clean test, the owner enables it), **M1.9b** CI releases, updates on the
   owner's click, the rollback drill, signing (unsigned now, apply to SignPath). **M1.9a done** (PR #25
-  merged as `31a992a`, CI green on `main`; BUILD-LOG 1.9a; CodeQL now scans C# too). **M1.9b built** on `m1/9b` (BUILD-LOG 1.9b; test pre-releases v0.1.0 to
-  v0.1.6; the rollback drill passed; IKARS now runs installed on the workstation; merge review 10 itemized): PR
-  open, waiting for the owner's merge. Pending from the owner: `install-autostart` from the installed program; the
-  SignPath application (docs/CODE-SIGNING.md). That completes M1.9. Then M1.12, M1.13, M1.11. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+  merged as `31a992a`, CI green on `main`; BUILD-LOG 1.9a; CodeQL now scans C# too). **M1.9b done** (PR #26 merged as `d11165d`, CI green on `main`; BUILD-LOG
+  1.9b; test pre-releases v0.1.0 to v0.1.6; the rollback drill passed; IKARS runs installed on the workstation).
+  **M1.9 is complete.** Pending from the owner: `install-autostart` from the installed program; the SignPath
+  application (docs/CODE-SIGNING.md). **M1.12 plan APPROVED** (owner 2026-10-27, all as recommended; BUILD-LOG
+  1.12): a engine (plugins in the live runner, recording, received time, the journal), b momentum (continuation,
+  4c in 5 min on 50 contracts, spread <= 3c, 10c..90c, valid 30 min, scored at 30 and 60 min; 10 contracts;
+  registered by hash), c terminal (Overview list, Recommendation drill-down, normal throttled toast). **Now:
+  M1.12a** on `m1/12a`. Then M1.12b, M1.12c, M1.11 (M1.13 any time before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 

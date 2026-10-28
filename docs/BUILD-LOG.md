@@ -2490,3 +2490,25 @@ CodeQL (C# included) clean. **Live, on the workstation:**
   | 10 | No BUILD-LOG entry for the slice | This entry, PLAN section 5 and the resume point |
 
 **M1.9b built**, subject to the owner's merge. **M1.9 is then complete.**
+
+### 1.12 End-to-end momentum (plan APPROVED 2026-10-27; three slices)
+
+PLAN M1.12 (D21-2; platform review 1.R2 items 8 and 9). **Owner's answers (2026-10-27): all as recommended.**
+
+| Slice | Builds |
+|---|---|
+| **M1.12a** | the live runner loads the plugins (`discover`), records what they emit (the generic recording schema, D20 A) and hands recommendations to the API and the stream through a listener; the host, not the plugin, stamps `received_ns`; the **journal** (`journal.sqlite` in the data folder, apart from the tax ledger): each recommendation with its provenance (F) and lifecycle (G9: active, expired, superseded), scored after a fixed time |
+| **M1.12b** | the momentum plugin, its rule and parameters **registered by hash** (G4); P&L after fees on entry and exit (D7, `ikars-core` fees); tradability filters (D20 E) |
+| **M1.12c** | the Overview's recommendation list, the Recommendation drill-down (the approved M1.3 mock-up, to the parts that exist now), the alert tier (H) |
+
+- **The rule (pre-registered):** continuation on watched markets: the YES mid moves 4c or more within 5 minutes on at
+  least 50 contracts traded, the spread 3c or less, the price from 10c to 90c: recommend the same direction, valid 30
+  minutes; scored at 30 and 60 minutes after fees. A change makes a new version with its own record.
+- **Size:** a fixed 10 contracts (paper only; no orders; recommend-only until M7, D6).
+- **Alerts:** a normal-priority Windows notification, throttled, quiet hours and the digest applying; the Overview and
+  Alerts screens too.
+- **Guard:** no recommendations on SPARQ's forward-test events closing before 2026-11-23 (their list read from SPARQ,
+  read only) until SPARQ's S1.1b verdict.
+- **Machine:** `journal.sqlite` in the data folder, backed up with the state. **Packages:** none expected.
+- **Live checks:** the engine runs the plugin on the owner's key; recommendations reach the Overview; the journal
+  scores them; no order is ever sent.
