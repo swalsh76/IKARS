@@ -145,8 +145,11 @@ slice still needs its own approved plan before code.
   1.12): a engine (plugins in the live runner, recording, received time, the journal), b momentum (continuation,
   4c in 5 min on 50 contracts, spread <= 3c, 10c..90c, valid 30 min, scored at 30 and 60 min; 10 contracts;
   registered by hash), c terminal (Overview list, Recommendation drill-down, normal throttled toast). **M1.12a
-  built** on `m1/12a` (BUILD-LOG 1.12a; merge review 10 itemized): PR open, waiting for the owner's merge; its
-  live check folds into M1.12b's. Then M1.12b, M1.12c, M1.11 (M1.13 any time before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+  done** (PR #27 merged as `099b94b`). **M1.12b built** on `m1/12b` (pushed, `e463699`: momentum plugin
+  version `0d648804a13a`, pnl.py, merge review 9 fixed; owner: SPARQ guard lapsed; any market with a depth check).
+  **Next:** the owner says "publish 0.1.7" (a test pre-release from `m1/12b`), updates the installed IKARS, then
+  the live check (recommendations journalled and marked; counts only); then BUILD-LOG 1.12b and the PR. Paused
+  2026-10-27 for a workstation restart. Then M1.12c, M1.11 (M1.13 any time before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 
