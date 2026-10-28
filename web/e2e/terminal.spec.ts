@@ -173,3 +173,15 @@ test("hotkeys: the screens, the list, the theme and the Linked panel", async ({ 
   expect(refused).toEqual([]);
 });
 
+
+test("New window opens this screen in another window, already signed in (M1.8c)", async ({ page }) => {
+  const refused = watchPolicy(page);
+  await page.goto(await signInUrl());
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Ledger" }).click();
+  const opened = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "+ New window" }).click();
+  const other = await opened;
+  await expect(other).toHaveURL(/\/ledger$/); // no sign-in code: the shared profile's cookie
+  await expect(other.getByRole("region", { name: "Ledger status" })).toContainText("chain verified");
+  expect(refused).toEqual([]);
+});

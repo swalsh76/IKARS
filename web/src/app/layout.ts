@@ -104,3 +104,21 @@ export async function allowPlacement(view: object = window): Promise<boolean> {
     return false;
   }
 }
+
+export const NEW_WINDOW_OFFSET = 30; // pixels right and down, so the new window does not hide this one
+
+type Opener = Pick<Window, "open" | "location" | "screenX" | "screenY" | "innerWidth" | "innerHeight">;
+
+/** Another IKARS window on this screen, the same size and a little offset (M1.8c). It shares Edge's
+ * profile, so it is signed in already; it answers layout asks like any other window. */
+export function openNewWindow(view: Opener = window): void {
+  const features = [
+    "popup",
+    `left=${Math.round(view.screenX) + NEW_WINDOW_OFFSET}`,
+    `top=${Math.round(view.screenY) + NEW_WINDOW_OFFSET}`,
+    `width=${Math.round(view.innerWidth)}`,
+    `height=${Math.round(view.innerHeight)}`,
+    "noopener", // nothing ties the two windows together but the engine and the layout channel
+  ].join(",");
+  view.open(view.location.pathname + view.location.search, "_blank", features);
+}

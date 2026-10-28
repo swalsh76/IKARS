@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LayoutWindow } from "../api/contracts";
-import { allowPlacement, answerAsks, gather, here, placeFrom, type Channel } from "./layout";
+import { allowPlacement, answerAsks, gather, here, openNewWindow, placeFrom, type Channel } from "./layout";
 
 /** Channels joined like BroadcastChannel: a message reaches every other one, never its sender. */
 function bus(): () => Channel & { closed: boolean } {
@@ -54,6 +54,15 @@ describe("placing a layout's window", () => {
     expect(await allowPlacement({ getScreenDetails: () => Promise.resolve({}) })).toBe(true);
     expect(await allowPlacement({ getScreenDetails: () => Promise.reject(new Error("refused")) })).toBe(false);
     expect(await allowPlacement({})).toBe(false);
+  });
+});
+
+describe("a new window", () => {
+  it("opens this screen as a popup the same size, a little offset, tied to nothing", () => {
+    const open = vi.fn();
+    const view = { open, location: { pathname: "/market/KXDEMO", search: "?tab=book" }, screenX: -1920.2, screenY: 10, innerWidth: 1280, innerHeight: 760 };
+    openNewWindow(view as unknown as Window);
+    expect(open).toHaveBeenCalledWith("/market/KXDEMO?tab=book", "_blank", "popup,left=-1890,top=40,width=1280,height=760,noopener");
   });
 });
 

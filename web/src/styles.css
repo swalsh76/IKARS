@@ -125,6 +125,8 @@ h2 { margin: 0; font-size: 16px; }
 .side { flex: 0 0 196px; padding: 16px 12px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
 .side a { display: block; padding: 8px 12px; border-radius: 6px; color: var(--text); }
 .side a.on { background: var(--nav-on); font-weight: 600; }
+.side .side-new { margin-top: auto; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 6px; background: none; color: var(--sub); font: inherit; text-align: left; cursor: pointer; }
+.side .side-new:hover { color: var(--text); border-color: var(--accent); }
 .main { flex: 999 1 560px; min-width: 0; padding: 20px; }
 
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-content: start; }
