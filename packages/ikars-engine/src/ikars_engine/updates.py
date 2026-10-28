@@ -12,6 +12,7 @@ A development checkout (no ``Update.exe`` above the engine's Python) has no upda
 import asyncio
 import contextlib
 import logging
+import re
 import sys
 import threading
 from collections import deque
@@ -38,6 +39,7 @@ UP_TO_DATE = "up to date"
 CHECKING = "checking"
 DOWNLOADING = "downloading"
 READY = "ready"  # downloaded: Restart to update installs it
+INSTALLING = "installing"  # handed to Velopack: the engine stops for it
 FAILED = "failed"
 
 
@@ -76,10 +78,12 @@ def program_version() -> str | None:
     where = locator()
     if where is None:
         return None
-    try:
-        return str(github_manager(where).get_current_version())
-    except Exception:  # a broken install: no version, so no snapshot is keyed to a wrong one
+    try:  # Velopack's manifest (a nuspec): no update manager for a version (merge review 9)
+        text = Path(where.ManifestPath).read_text(encoding="utf-8")
+    except OSError:  # a broken install: no version, so no snapshot is keyed to a wrong one
         return None
+    found = re.search(r"<version>\s*([^<\s]+)\s*</version>", text)
+    return found.group(1) if found else None
 
 
 def downgrade_manager(version: str, where: Any) -> Any:
@@ -147,6 +151,10 @@ class Updater:
         """Look for a newer release and download it (blocking: run it in a thread)."""
         if self.manager is None or not self._turn.acquire(blocking=False):
             return self.view()  # nothing to check, or a check already running
+        if self.state == INSTALLING:  # handed to Velopack already
+            self._turn.release()
+            return self.view()
+        ready = self._pending if self.state == READY else None  # kept if this check fails
         try:
             self.state, self.problem = CHECKING, None
             self._event("checking GitHub for a newer version")
@@ -165,8 +173,10 @@ class Updater:
                 self._pending, self.progress, self.state = found, 100, READY
                 self._event(f"downloaded {self.available}")
         except Exception as exc:  # offline, rate-limited, a bad package: said, retried tomorrow
-            self.state, self.problem = FAILED, f"{type(exc).__name__}: {exc}"[:300]
+            self.problem = f"{type(exc).__name__}: {exc}"[:300]
             self._event(f"failed: {self.problem}")
+            # a release already downloaded stays ready to install (merge review 4)
+            self.state, self._pending = (READY, ready) if ready is not None else (FAILED, None)
             log.warning("update check failed", extra={"error": self.problem})
         finally:
             self.checked_at = self.now()
@@ -184,6 +194,7 @@ class Updater:
             self.manager.wait_exit_then_apply_updates(
                 self._pending, silent=True, restart=True, restart_args=[AFTER_UPDATE]
             )
+            self.state = INSTALLING  # a second click finds nothing to hand over (merge review 7)
         finally:
             self._turn.release()
         self._event(f"installing {self.available}: the engine stops for it")
@@ -199,6 +210,9 @@ class Updater:
             return
         await asyncio.sleep(FIRST_CHECK_S)
         while True:
+            if self.state in (READY, INSTALLING):  # waiting for the owner: nothing new to fetch
+                await asyncio.sleep(CHECK_EVERY_S)
+                continue
             try:
                 await asyncio.wait_for(in_daemon_thread(self.check), CHECK_WAIT_S)
             except TimeoutError:

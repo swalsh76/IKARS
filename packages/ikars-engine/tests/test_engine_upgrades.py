@@ -214,3 +214,59 @@ def test_the_newest_snapshot_of_a_version_is_restored_and_a_failed_swap_is_undon
     monkeypatch.setattr(shutil, "copy2", real_copy)
     upgrades.restore(paths, "0.1.0", "0.1.1", now=AT + timedelta(hours=3))
     assert heads(paths.ledger / "ledger.sqlite") == 3  # the newer snapshot's
+
+
+def test_a_failed_move_undoes_only_what_was_moved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = engine_data(tmp_path)
+    upgrades.before_start(paths, "0.1.0")
+    upgrades.before_start(paths, "0.1.1")
+    real_move = shutil.move
+
+    def held(source: Any, target: Any) -> Any:
+        if str(source).endswith("ledger.sqlite"):
+            raise PermissionError("another program holds the ledger")
+        return real_move(source, target)
+
+    monkeypatch.setattr(shutil, "move", held)
+    with pytest.raises(RollbackRefused, match="nothing changed"):
+        upgrades.restore(paths, "0.1.0", "0.1.1", now=AT)
+    monkeypatch.setattr(shutil, "move", real_move)
+    # everything back where it was, and nothing the swap never touched is gone (merge review 1)
+    assert paths.settings.is_file() and (paths.data / "state.sqlite").is_file()
+    assert (paths.ledger / "ledger.sqlite").is_file()
+    assert (paths.ledger / "checkpoints" / "real.json").is_file()
+
+
+def test_a_failed_snapshot_never_stops_the_start_and_is_never_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = engine_data(tmp_path)
+    upgrades.before_start(paths, "0.1.0")
+    monkeypatch.setattr("ikars_engine.updates.program_version", lambda: "0.1.1")
+
+    def full(*args: Any, **kw: Any) -> Path:
+        raise OSError("the disk is full")
+
+    monkeypatch.setattr(upgrades, "snapshot", full)
+    assert upgrades.on_start(paths) is None  # logged; the engine starts
+    assert upgrades.last_version(paths) == "0.1.1"  # never a later snapshot of migrated data
+    with pytest.raises(RollbackRefused, match="no pre-upgrade snapshot of 0.1.0"):
+        upgrades.require_snapshot(paths, "0.1.0")
+
+
+def test_a_rollback_never_swaps_data_under_a_running_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ikars_engine import runmode
+
+    paths = engine_data(tmp_path)
+    upgrades.before_start(paths, "0.1.0")
+    upgrades.before_start(paths, "0.1.1")
+    managers = Managers()
+    monkeypatch.setattr(launcher, "stop_engine", lambda p: managers.steps.append("stop"))
+    monkeypatch.setattr(runmode, "engine_running", lambda folder: True)  # it would not stop
+    with pytest.raises(RollbackRefused, match="did not stop"):
+        rollback(paths, "0.1.0", managers)
+    assert upgrades.last_version(paths) == "0.1.1" and "apply" not in " ".join(managers.steps)

@@ -184,3 +184,27 @@ def test_the_version_is_read_once_so_a_check_never_breaks_the_view() -> None:
     finally:
         updater._turn.release()
     assert refused.done is False and "try again" in refused.detail
+
+
+def test_the_program_s_version_is_read_from_velopack_s_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = tmp_path / "sq.version"
+    manifest.write_text("<package><metadata><version>0.1.6</version></metadata></package>")
+    monkeypatch.setattr(updates, "locator", lambda: type("W", (), {"ManifestPath": manifest})())
+    assert updates.program_version() == "0.1.6"
+    manifest.unlink()
+    assert updates.program_version() is None
+
+
+def test_a_downloaded_update_stays_ready_and_is_handed_over_once() -> None:
+    manager = FakeManager(found=Found(Release("0.1.1")))
+    updater = Updater(manager=manager, state=UP_TO_DATE, now=lambda: AT)
+    assert updater.check().state == READY
+    manager.fails = OSError("offline")  # the daily recheck fails (merge review 4)
+    view = updater.check()
+    assert view.state == READY and "offline" in (view.problem or "")
+    assert updater.apply(lambda: None).done is True
+    assert updater.state == "installing"
+    assert updater.apply(lambda: None).done is False  # a second click (merge review 7)
+    assert len(manager.applied) == 1

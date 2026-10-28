@@ -99,9 +99,7 @@ def rollback(paths: Paths, version: str, managers: Any = None) -> dict[str, obje
     current = str(make(where).get_current_version())
     if version == current:
         raise upgrades.RollbackRefused(f"{version} is the version installed now")
-    if upgrades.snapshot_of(paths, version) is None:
-        found = ", ".join(sorted({m["from"] for m in upgrades.snapshots(paths).values()})) or "none"
-        raise upgrades.RollbackRefused(f"no pre-upgrade snapshot of {version} (there are: {found})")
+    upgrades.require_snapshot(paths, version)
     back = (updates.downgrade_manager if managers is None else managers.back)(version, where)
     try:
         found_release = back.check_for_updates()
@@ -111,6 +109,10 @@ def rollback(paths: Paths, version: str, managers: Any = None) -> dict[str, obje
         raise upgrades.RollbackRefused(f"release v{version} was not found on GitHub")
     back.download_updates(found_release)
     launcher.stop_engine(paths)
+    if runmode.engine_running(paths.data):  # never a swap under a running engine (merge review 2)
+        raise upgrades.RollbackRefused(
+            "the engine did not stop in time: nothing changed, try again"
+        )
     done = upgrades.restore(paths, version, current)
     back.wait_exit_then_apply_updates(found_release, silent=True, restart=True)
     return {"rolled_back": True, "installing": version, **done}

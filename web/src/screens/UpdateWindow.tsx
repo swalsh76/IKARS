@@ -81,6 +81,14 @@ export function UpdateWindow({ to }: { to: string }) {
         }, POLL_MS / 2);
         try {
           current = await change("/v1/update/check", "UpdateView", {}, { method: "POST", timeoutMs: CHECK_WAIT_MS });
+          // a check was already running (the daily one, or Check now): it answers at once, so
+          // wait for that one to finish instead (merge review 5)
+          const waited = Date.now();
+          while ((current.state === "checking" || current.state === "downloading") && Date.now() - waited < CHECK_WAIT_MS) {
+            await sleep(POLL_MS);
+            current = await get("/v1/update", "UpdateView");
+            setView(current);
+          }
         } catch (error) {
           return fail("download", `the download failed: ${words(error)}`);
         } finally {

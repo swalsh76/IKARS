@@ -13,8 +13,10 @@ Kalshi what was recorded since; the owner's annotations made since are counted f
 aside, to be entered again.
 """
 
+import contextlib
 import json
 import logging
+import secrets
 import shutil
 import sqlite3
 from contextlib import closing
@@ -75,7 +77,11 @@ def snapshot(paths: Paths, previous: str, to: str, share: Any = None,
     folder = paths.backups / "pre-upgrade" / previous
     if folder.exists():  # the same version again (a reinstall): never over an earlier snapshot
         folder = folder.with_name(f"{previous}-{at:%Y%m%dT%H%M%SZ}")
-    folder.mkdir(parents=True)
+    try:
+        folder.mkdir(parents=True)
+    except FileExistsError:  # two starts at once (merge review 6): each keeps its own
+        folder = folder.with_name(f"{folder.name}-{secrets.token_hex(2)}")
+        folder.mkdir(parents=True)
     copied: list[str] = []
     if paths.settings.is_file():
         shutil.copy2(paths.settings, folder / paths.settings.name)
@@ -122,6 +128,30 @@ def before_start(paths: Paths, version: str | None, share: Any = None) -> Path |
     return made
 
 
+def on_start(paths: Paths) -> Path | None:
+    """Every start of the installed program (``serve``, ``run``, ``IKARS.exe``) calls this before
+    the settings are first read, which migrates them (merge review 3). A snapshot that fails is
+    logged and the version recorded anyway: the next start must never snapshot data the new
+    version has migrated under the old version's name; a rollback to it is then refused."""
+    from ikars_engine.settings import SettingsError, read
+    from ikars_engine.share import configured, migration_copier
+    from ikars_engine.updates import program_version
+
+    version = program_version()
+    try:  # read, never rewritten: nothing may change before the snapshot
+        share = migration_copier(configured(read(paths.settings).backup.share))
+    except SettingsError:
+        share = None
+    try:
+        return before_start(paths, version, share)
+    except (OSError, sqlite3.Error) as exc:  # merge review 6: never a start that cannot happen
+        log.error("pre-upgrade snapshot failed", extra={"error": f"{type(exc).__name__}: {exc}"})
+        if version is not None:
+            paths.data.mkdir(parents=True, exist_ok=True)
+            write_text_atomic(paths.data / VERSION_FILE, version + "\n")
+        return None
+
+
 def snapshots(paths: Paths) -> dict[str, dict[str, Any]]:
     """The pre-upgrade snapshots by folder name, with their manifests."""
     folder = paths.backups / "pre-upgrade"
@@ -154,6 +184,16 @@ def snapshot_of(paths: Paths, version: str) -> str | None:
     return max(found)[1] if found else None
 
 
+def require_snapshot(paths: Paths, version: str) -> tuple[str, dict[str, Any]]:
+    """That snapshot's folder name and manifest; refused in words when there is none."""
+    found = snapshots(paths)
+    name = snapshot_of(paths, version)
+    if name is None:
+        listed = ", ".join(sorted({m["from"] for m in found.values()})) or "none"
+        raise RollbackRefused(f"no pre-upgrade snapshot of {version} (there are: {listed})")
+    return name, found[name]
+
+
 def _places(paths: Paths) -> dict[str, Path]:
     return {paths.settings.name: paths.settings, **_databases(paths),
             "checkpoints": paths.ledger / "checkpoints"}  # fmt: skip
@@ -164,17 +204,14 @@ def restore(
 ) -> dict[str, Any]:
     """Set the current data aside and put back the snapshot taken when leaving ``version`` (the
     engine must be stopped). A failure part way puts the current data back as it was."""
-    name = snapshot_of(paths, version)
-    if name is None:
-        listed = ", ".join(sorted({m["from"] for m in snapshots(paths).values()})) or "none"
-        raise RollbackRefused(f"no pre-upgrade snapshot of {version} (there are: {listed})")
-    manifest = snapshots(paths)[name]
+    name, manifest = require_snapshot(paths, version)
     at = now or datetime.now(UTC)
     source = paths.backups / "pre-upgrade" / name
     aside = paths.backups / "rolled-back" / f"{current}-{at:%Y%m%dT%H%M%SZ}"
     aside.mkdir(parents=True)
     places = _places(paths)
-    moved: list[tuple[Path, Path]] = []
+    moved: list[tuple[Path, Path]] = []  # (where it is kept, where it was)
+    copied: list[Path] = []  # what the snapshot put back
     try:
         for name_in, place in places.items():
             for extra in ("", "-wal", "-shm"):  # a database's journal goes with it
@@ -186,15 +223,15 @@ def restore(
             target = places[name_in]
             target.parent.mkdir(parents=True, exist_ok=True)
             copy = source / name_in
+            copied.append(target)
             shutil.copytree(copy, target) if copy.is_dir() else shutil.copy2(copy, target)
-    except Exception as exc:  # undo: the current data back where it was, nothing half restored
-        for place in places.values():
-            if place.is_dir():
-                shutil.rmtree(place)
-            elif place.exists():
-                place.unlink()
-        for kept, live in moved:
-            shutil.move(kept, live)
+    except Exception as exc:  # undo exactly what was done, nothing else (merge review 1)
+        for target in copied:
+            with contextlib.suppress(OSError):
+                shutil.rmtree(target) if target.is_dir() else target.unlink(missing_ok=True)
+        for kept, live in reversed(moved):
+            with contextlib.suppress(OSError):
+                shutil.move(kept, live)
         problem = f"the snapshot could not be restored ({exc}); nothing changed"
         raise RollbackRefused(problem) from exc
     write_text_atomic(paths.data / VERSION_FILE, version + "\n")

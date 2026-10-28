@@ -98,15 +98,8 @@ def before_start(paths: "Paths") -> None:
     """Before the settings are first read (which migrates them): the pre-upgrade snapshot when the
     installed program's version changed (M1.9b)."""
     from ikars_engine import upgrades
-    from ikars_engine.settings import SettingsError, read
-    from ikars_engine.share import configured, migration_copier
-    from ikars_engine.updates import program_version
 
-    try:  # read, never rewritten: nothing may change before the snapshot
-        share = migration_copier(configured(read(paths.settings).backup.share))
-    except SettingsError:
-        share = None
-    upgrades.before_start(paths, program_version(), share)
+    upgrades.on_start(paths)
 
 
 def main(argv: list[str]) -> int:
