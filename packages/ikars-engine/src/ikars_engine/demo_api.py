@@ -160,7 +160,9 @@ def made_up_recommendations(market: Market, service: JournalService, now_ns: int
         ref = Ref("recommendation", f"momentum-{ticker}-{made}")
         items.append(Item(ref=ref, source="momentum", received_ns=made,
                           payload=msgspec.to_builtins(rec), hops=1))  # fmt: skip
-    service._write(items)
+    for made_up in items:  # as the engine hands them over (merge review 10)
+        service.listen(made_up)
+    service.flush()
     old = items[-1]
     service.journal.mark(
         old.ref.id, 1_800, old.received_ns + 1_800 * 10**9, 520_000, 540_000, False

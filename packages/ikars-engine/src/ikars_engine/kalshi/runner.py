@@ -402,9 +402,11 @@ async def run(
         # and written to the journal before it closes, after the API that reads it has stopped
         stack.callback(live.recorder.close)
         stack.callback(live.journal.close)
-        stack.callback(live.journal_service.flush)
-        if live.journal_service.notices is not None:  # a notification still showing is let go
+        if (
+            live.journal_service.notices is not None
+        ):  # after the flush, which may offer one (review 1)
             stack.callback(live.journal_service.notices.close)
+        stack.callback(live.journal_service.flush)
         stack.callback(live.ledger.close)
         stack.callback(lambda: health.update(engine.health()))
         stack.push_async_callback(_finish, running)

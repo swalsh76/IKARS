@@ -53,6 +53,7 @@ QUOTE_WAIT_NS = 600 * 1_000_000_000  # a missing quote: the mark waits this long
 SETTLE_EVERY_NS = 60 * 1_000_000_000  # how often settlements are looked up
 FEES_WAIT_NS = 3_600 * 1_000_000_000  # a check whose fees are not known waits this long
 SCORE_BATCH = 500  # the most checks scored in one pass (a backlog is worked off a second at a time)
+SCORE_PAGES = 4  # the most pages of waiting checks one pass reads past (merge review 3)
 ANSWERS = ("taken", "ignored", "dismissed")  # the owner's response (G9)
 # bounds every integer the terminal reads exactly (JavaScript: 2^53) and a price can take
 Price = Annotated[int, Meta(ge=1, le=1_000_000)]  # one contract: 1 millionth of a dollar to $1
@@ -135,7 +136,7 @@ JOURNAL_MIGRATIONS = (
     ALTER TABLE mark ADD COLUMN scored INTEGER;
     ALTER TABLE mark ADD COLUMN score_e6 INTEGER;
     ALTER TABLE mark ADD COLUMN at_settlement INTEGER;
-    CREATE INDEX mark_unscored ON mark (id) WHERE scored IS NULL;
+    CREATE INDEX mark_unscored ON mark (at_ns) WHERE scored IS NULL;
     """,
 )
 # an entry with its settlement and response; the WHERE and ORDER come from this module only
@@ -266,29 +267,36 @@ class Journal:
         """Keeps the score of each check not scored yet, as the API scores it (``fees`` by ticker).
         A closed market's check waits for its settlement; one whose fees are not known waits too,
         up to an hour (a gap in the index), then is kept unscored (its market has left the index).
-        Returns how many were kept."""
-        rows = self._db.execute(
-            "SELECT m.id, m.horizon_s, m.yes_bid_e6, m.yes_ask_e6, m.closed, r.payload, s.result,"
-            " m.at_ns"
-            " FROM mark m JOIN recommendation r ON r.id = m.id"
-            " LEFT JOIN settlement s ON s.ticker = r.ticker"
-            " WHERE m.scored IS NULL AND NOT (m.closed = 1 AND s.ticker IS NULL) LIMIT ?",
-            (limit,),
-        ).fetchall()
+        Returns how many were kept. Pages through in order of when each was made, so checks that
+        wait never hold back the rest (merge review 3)."""
         done: list[tuple[int | None, int, str, int]] = []
-        for rid, horizon, bid, ask, closed, payload, settled, at in rows:
-            rec = _decode(payload)
-            schedule = fees(rec.ticker)
-            if schedule is None:  # not known now: tried again, or given up after an hour (review)
-                if now_ns - at >= FEES_WAIT_NS:
-                    done.append((None, 0, rid, horizon))
-                continue
-            value, at_settlement = mark_score_e6(
-                schedule, rec.side, rec.count_e2, rec.entry_price_e6, bid, ask,
-                None if closed is None else bool(closed), settled,
-            )  # fmt: skip
-            done.append((value, int(at_settlement), rid, horizon))
+        after = (-1, -1)
+        for _ in range(SCORE_PAGES):
+            rows = self._db.execute(
+                "SELECT m.id, m.horizon_s, m.yes_bid_e6, m.yes_ask_e6, m.closed, r.payload,"
+                " s.result, m.at_ns, m.rowid FROM mark m JOIN recommendation r ON r.id = m.id"
+                " LEFT JOIN settlement s ON s.ticker = r.ticker"
+                " WHERE m.scored IS NULL AND NOT (m.closed = 1 AND s.ticker IS NULL)"
+                " AND (m.at_ns, m.rowid) > (?, ?) ORDER BY m.at_ns, m.rowid LIMIT ?",
+                (*after, limit),
+            ).fetchall()
+            for rid, horizon, bid, ask, closed, payload, settled, at, row in rows:
+                after = (at, row)
+                rec = _decode(payload)
+                schedule = fees(rec.ticker)
+                if schedule is None:  # not known now: tried again, or given up after an hour
+                    if now_ns - at >= FEES_WAIT_NS:
+                        done.append((None, 0, rid, horizon))
+                    continue
+                value, at_settlement = mark_score_e6(
+                    schedule, rec.side, rec.count_e2, rec.entry_price_e6, bid, ask,
+                    None if closed is None else bool(closed), settled,
+                )  # fmt: skip
+                done.append((value, int(at_settlement), rid, horizon))
+            if len(rows) < limit or len(done) >= limit:
+                break
         if done:
+            self.changes += 1  # a shown check's score (merge review 6)
             with self._transaction():
                 self._db.executemany(
                     "UPDATE mark SET scored = 1, score_e6 = ?, at_settlement = ?"
@@ -320,6 +328,7 @@ class Journal:
             self._db.execute(
                 "DELETE FROM pending_mark WHERE id = ? AND horizon_s = ?", (rid, horizon_s)
             )
+        self.changes += 1  # a shown recommendation's checks (merge review 6)
 
     def active(self, strategy: str, ticker: str, now_ns: int) -> bool:
         """Whether ``strategy`` has a recommendation on ``ticker`` still valid at ``now_ns``."""
@@ -405,6 +414,7 @@ class JournalService:
     board: Board = field(default_factory=Board)
     card: list[ScoreLine] = field(default_factory=list)
     card_at_ns: int = 0
+    card_task: "asyncio.Task[None] | None" = None
     settled_at_ns: int = 0
     queue: asyncio.Queue[Item] = field(default_factory=lambda: asyncio.Queue(QUEUE_SIZE))
     dropped: int = 0
@@ -425,10 +435,11 @@ class JournalService:
         for entry in self.journal.active_entries():
             self._place(entry.id, entry.recommendation, entry.received_ns)
             self.board.hide(entry.id, entry.response == "dismissed")
+        self.journal.changes += 1  # a page built before this is built again (merge review 2)
 
     def _place(self, rid: str, rec: Recommendation, made_ns: int) -> bool:
         found = figures(rec, made_ns, self.fees(rec.ticker))
-        return self.board.put(rid, rec, None if found is None else found.per_day_e6)
+        return self.board.put(rid, rec, None if found is None else found.per_day_e6, made_ns)
 
     def respond(self, rid: str, answer: str | None) -> bool:
         """The owner's response; False: no such recommendation. A dismissed one leaves the list."""
@@ -450,7 +461,7 @@ class JournalService:
                 continue
             self.recorded += 1
             if self._place(item.ref.id, rec, item.received_ns) and self.notices is not None:
-                self.notices.offer(rec)
+                self.notices.offer(item.ref.id, rec)
         now = self.now_ns()
         self.journal.expire(now)
         self.board.prune(now)
@@ -476,28 +487,38 @@ class JournalService:
         self.card_at_ns = now
         self.card = await in_daemon_thread(scorecard, self.journal.path, now - CARD_DAYS * DAY_NS)
 
+    async def _card(self) -> None:
+        try:
+            await self.refresh_card()
+        except Exception as exc:  # said in health; tried again in a minute
+            self.failures += 1
+            log.warning("scorecard failed", extra={"error": f"{type(exc).__name__}: {exc}"})
+
     async def run(self) -> None:
         try:
             self.load()
         except Exception as exc:  # the list starts empty and fills as recommendations come
             self.failures += 1
             log.warning("journal board not loaded", extra={"error": f"{type(exc).__name__}: {exc}"})
-        while True:
-            await asyncio.sleep(EVERY_S)
-            if self.now_ns() - self.card_at_ns >= SETTLE_EVERY_NS:
+        try:
+            while True:
+                await asyncio.sleep(EVERY_S)
+                running = self.card_task is not None and not self.card_task.done()
+                if not running and self.now_ns() - self.card_at_ns >= SETTLE_EVERY_NS:
+                    # beside the loop: a slow query never holds up writing and marking (review 4)
+                    self.card_task = asyncio.create_task(self._card(), name="scorecard")
+                items: list[Item] = []
+                while not self.queue.empty():
+                    items.append(self.queue.get_nowait())
                 try:
-                    await self.refresh_card()
-                except Exception as exc:  # said in health; tried again in a minute
+                    self._write(items)
+                except Exception as exc:  # expiring or marking: never stops the engine; next second
                     self.failures += 1
-                    log.warning("scorecard failed", extra={"error": f"{type(exc).__name__}: {exc}"})
-            items: list[Item] = []
-            while not self.queue.empty():
-                items.append(self.queue.get_nowait())
-            try:
-                self._write(items)
-            except Exception as exc:  # expiring or marking: never stops the engine; next second
-                self.failures += 1
-                log.warning("journal pass failed", extra={"error": f"{type(exc).__name__}: {exc}"})
+                    log.warning("journal pass failed",
+                                extra={"error": f"{type(exc).__name__}: {exc}"})  # fmt: skip
+        finally:
+            if self.card_task is not None:
+                self.card_task.cancel()
 
     def flush(self) -> None:
         """At shutdown, once the plugins have stopped: what is still queued is written."""

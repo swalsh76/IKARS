@@ -138,7 +138,7 @@ class ApiContext:
     # their service: the ranking, the responses and the scorecard (M1.12c); None: none
     recommendations: "JournalService | None" = None
     # the ranked active page, the journal change it was built at, and its encoding
-    active_cache: "tuple[int, c.RecommendationPage, bytes] | None" = None
+    active_cache: "tuple[tuple[int, int], c.RecommendationPage, bytes] | None" = None
 
 
 @dataclass
@@ -366,12 +366,13 @@ def active_page(ctx: "ApiContext") -> "tuple[c.RecommendationPage, bytes]":
         empty = c.RecommendationPage(items=[], total=0)
         return empty, msgspec.json.encode(empty)
     cached = ctx.active_cache
-    if cached is None or cached[0] != service.journal.changes:
+    key = (service.journal.changes, ctx.index.version)  # titles and fees too (merge review 6)
+    if cached is None or cached[0] != key:
         fees, title = market_fees(ctx.index), market_title(ctx.index)
         entries = service.journal.entries(service.board.top())
         page = c.RecommendationPage(items=[recommendation_view(e, fees, title) for e in entries],
                                     total=service.board.shown())  # fmt: skip
-        cached = ctx.active_cache = (service.journal.changes, page, msgspec.json.encode(page))
+        cached = ctx.active_cache = (key, page, msgspec.json.encode(page))
     return cached[1], cached[2]
 
 

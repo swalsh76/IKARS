@@ -70,20 +70,29 @@ def test_the_figures_by_hand() -> None:
 
 def test_the_board_ranks_by_return_per_day() -> None:
     board = Board()
-    assert board.put("a", made("KXA"), 100) is True  # alone: first
-    assert board.put("b", made("KXB"), 50) is False
-    assert board.put("c", made("KXC"), None) is False  # nothing after costs: last, never first
-    assert board.put("d", made("KXD"), 200) is True
+    assert board.put("a", made("KXA"), 100, T0) is True  # alone: first
+    assert board.put("b", made("KXB"), 50, T0) is False
+    assert board.put("c", made("KXC"), None, T0) is False  # nothing after costs: last, never first
+    assert board.put("d", made("KXD"), 200, T0) is True
     assert board.top() == ["d", "a", "b", "c"] and board.top(2) == ["d", "a"]
     board.hide("d", True)  # dismissed
     assert board.top() == ["a", "b", "c"] and board.shown() == 3
-    assert board.put("e", made("KXE"), 150) is True  # first among those shown
-    board.put("a2", made("KXA"), 10)  # the strategy's newer one on KXA takes its place
+    assert board.put("e", made("KXE"), 150, T0) is True  # first among those shown
+    board.put("a2", made("KXA"), 10, T0)  # the strategy's newer one on KXA takes its place
     assert board.top() == ["e", "b", "a2", "c"]
     board.hide("d", False)
     assert board.top()[0] == "d"
     board.prune(T0 + 1800 * S)  # all expire
     assert board.top() == [] and board.hidden == set() and board.shown() == 0
+    # merge review 7: one expired but not yet pruned does not outrank a new one
+    assert board.put("old", made("KXA"), 900, T0) is True
+    assert board.put("new", made("KXB"), 100, T0 + 1800 * S) is True
+    # merge review 8: only one on the board stays hidden; a replaced one's dismissal goes with it
+    board.hide("gone", True)
+    board.hide("new", True)
+    assert board.hidden == {"new"}
+    board.put("newer", made("KXB"), 100, T0)
+    assert board.hidden == set()
 
 
 # --- the journal: responses, kept scores, the scorecard ------------------------------------------
@@ -120,7 +129,9 @@ def test_checks_are_scored_once_and_kept(tmp_path: Path) -> None:
     journal.mark("r1", 1800, at, 500_000, 510_000, False)  # sold at 50c
     journal.mark("r2", 1800, at, None, None, True)  # closed: waits for its settlement
     journal.mark("r3", 1800, at, None, None, False)  # an empty book while trading: no score
+    before = journal.changes
     assert journal.score(lambda ticker: FEES, at) == 2
+    assert journal.changes == before + 1  # a shown score changed (merge review 6)
     assert journal.score(lambda ticker: FEES, at) == 0  # nothing new
     journal.settle("KXB", "yes", at)
     assert journal.score(lambda ticker: FEES, at) == 1
@@ -131,7 +142,14 @@ def test_checks_are_scored_once_and_kept(tmp_path: Path) -> None:
     journal.add(item("r4", made("KXD")))
     journal.mark("r4", 1800, at, 500_000, 510_000, False)
     assert journal.score(lambda ticker: None, at) == 0  # fees not known yet: it waits (review)
-    assert journal.score(lambda ticker: FEES, at) == 1  # and is scored once they are
+    for n in range(5):  # waiting checks made first never hold back a later one (merge review 3)
+        journal.add(item(f"w{n}", made(f"KXW{n}")))
+        journal.mark(f"w{n}", 1800, at - 10 + n, 500_000, 510_000, False)
+    known = {"KXD"}
+    assert journal.score(lambda ticker: FEES if ticker in known else None, at, limit=2) == 1
+    assert (
+        journal.score(lambda ticker: FEES, at) == 5
+    )  # the waiting ones, once their fees are known
     journal.add(item("r5", made("KXE")))
     journal.mark("r5", 1800, at, 500_000, 510_000, False)
     hour = at + 3_600 * S
@@ -196,7 +214,7 @@ class FakeNotices:
     def __init__(self) -> None:
         self.offered: list[str] = []
 
-    def offer(self, rec: Recommendation) -> bool:
+    def offer(self, rid: str, rec: Recommendation) -> bool:
         self.offered.append(rec.ticker)
         return True
 
@@ -213,8 +231,10 @@ async def test_the_service_ranks_offers_the_first_and_answers(tmp_path: Path) ->
     assert service.respond("r3", "dismissed") and service.board.top() == ["r1", "r2"]
     assert service.respond("nope", "taken") is False
     fresh = JournalService(service.journal, {}, lambda: now[0], fees=lambda ticker: FEES)
+    changes = fresh.journal.changes
     fresh.load()  # a restart: the dismissed one still left out
     assert fresh.board.top() == ["r1", "r2"]
+    assert fresh.journal.changes == changes + 1  # a page built before the load is redone (review 2)
     await service.refresh_card()  # on a worker thread
     assert service.card == [] and service.card_at_ns == now[0]
     now[0] = T0 + 1800 * S
@@ -239,12 +259,16 @@ def test_notices_three_an_hour_and_none_at_night(tmp_path: Path) -> None:
     desk = AlertDesk(toasts, tmp_path, QuietHours.parse("22:00", "07:00"), state_name=ENGINE_DESK)
     now = [NOON]
     notices = Notices(desk, lambda ticker: "Made-up market", lambda: now[0])
-    assert [notices.offer(made(f"KX{n}")) for n in range(4)] == [True, True, True, False]
+    # the same market twice: each recommendation its own key, so the desk shows both (review 5)
+    offered = [notices.offer(f"r{n}", made("KXA")) for n in range(4)]
+    assert offered == [True, True, True, False]
     now[0] = NOON + timedelta(minutes=61)  # the hour is up
-    assert notices.offer(made("KX9")) is True
+    assert notices.offer("r9", made("KX9")) is True
     now[0] = NIGHT  # quiet hours: none (it would be stale by morning)
-    assert notices.offer(made("KXN")) is False
+    assert notices.offer("rN", made("KXN")) is False
     notices.close(wait=True)
+    now[0] = NOON + timedelta(hours=3)
+    assert notices.offer("late", made("KXL")) is False  # closed (the engine stopping): review 1
     assert len(toasts.shown) == 4
     assert toasts.shown[0] == ("IKARS: Buy YES at 46c", "Made-up market: made up: up 5c in 5 min",
                                False)  # fmt: skip

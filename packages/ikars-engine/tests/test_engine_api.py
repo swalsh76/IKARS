@@ -914,6 +914,10 @@ async def test_the_ranked_list_one_recommendation_the_response_and_the_scorecard
     first = page.items[0]
     assert (first.title, first.source, first.outlay_e6) == ("Made up KXB", "momentum", 4_780_000)
     assert first.per_day_e6 is not None and first.per_day_e6 > page.items[1].per_day_e6
+    ctx.index.markets["KXB"] = replace(ctx.index.markets["KXB"], title="Renamed")
+    ctx.index.version += 1  # an index change rebuilds the page (merge review 6)
+    page = await get(ctx, "/v1/recommendations?state=active", c.RecommendationPage)
+    assert page.items[0].title == "Renamed"
     one = await get(ctx, "/v1/recommendations/r1", c.RecommendationView)
     assert one.id == "r1" and one.response is None and one.return_e6 == 8_368
     assert (await call(ctx, "GET", "/v1/recommendations/nope")).status_code == 404

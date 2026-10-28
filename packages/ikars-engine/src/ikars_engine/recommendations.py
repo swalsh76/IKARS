@@ -75,12 +75,16 @@ class Board:
     places: dict[tuple[str, str], tuple[str, int, int | None]] = field(default_factory=dict)
     hidden: set[str] = field(default_factory=set)  # dismissed by the owner
 
-    def put(self, rid: str, rec: "Recommendation", per_day: int | None) -> bool:
+    def put(self, rid: str, rec: "Recommendation", per_day: int | None, made_ns: int) -> bool:
         """Places ``rid`` (replacing the strategy's earlier one on that market); whether it ranks
-        first among the shown ones."""
+        first among the shown ones still valid when it was made (merge review 7)."""
         key = (rec.strategy, rec.ticker)
-        others = [p for k, (i, _, p) in self.places.items()
-                  if k != key and i not in self.hidden and p is not None]  # fmt: skip
+        others = [p for k, (i, expires, p) in self.places.items()
+                  if k != key and i not in self.hidden and p is not None
+                  and expires > made_ns]  # fmt: skip
+        replaced = self.places.get(key)
+        if replaced is not None:  # its dismissal goes with it (merge review 8)
+            self.hidden.discard(replaced[0])
         self.places[key] = (rid, rec.expires_ns, per_day)
         return per_day is not None and all(per_day > p for p in others)
 
@@ -90,7 +94,8 @@ class Board:
             self.hidden.discard(self.places.pop(key)[0])
 
     def hide(self, rid: str, hidden: bool) -> None:
-        if hidden:
+        """Only one on the board is kept hidden: an expired or replaced one is gone (review 8)."""
+        if hidden and any(i == rid for i, _, _ in self.places.values()):
             self.hidden.add(rid)
         else:
             self.hidden.discard(rid)
@@ -170,8 +175,9 @@ class Notices:
         self._sent: deque[datetime] = deque()
         self._pool = ThreadPoolExecutor(1, thread_name_prefix="notices")
 
-    def offer(self, rec: "Recommendation") -> bool:
-        """``rec`` ranks first: notify unless it is quiet or the hour's budget is spent."""
+    def offer(self, rid: str, rec: "Recommendation") -> bool:
+        """``rec`` ranks first: notify unless it is quiet or the hour's budget is spent. Keyed by
+        the recommendation, so the desk's throttle never spends the budget on nothing (review 5)."""
         now = self._now()
         if self._desk.quiet(now):
             return False
@@ -179,12 +185,15 @@ class Notices:
             self._sent.popleft()
         if len(self._sent) >= self._budget:
             return False
-        self._sent.append(now)
         title = self._title(rec.ticker) or rec.ticker
-        alert = Alert(f"recommendation:{rec.ticker}", NORMAL,
+        alert = Alert(f"recommendation:{rid}", NORMAL,
                       f"Buy {rec.side.upper()} at {cents_text(rec.entry_price_e6)}",
                       f"{title}: {rec.summary}")  # fmt: skip
-        self._pool.submit(self._show, alert, now)
+        try:
+            self._pool.submit(self._show, alert, now)
+        except RuntimeError:  # closed (the engine is stopping): stale by the next start (review 1)
+            return False
+        self._sent.append(now)
         return True
 
     def _show(self, alert: Alert, now: datetime) -> None:
