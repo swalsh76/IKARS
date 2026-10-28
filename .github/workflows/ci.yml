@@ -122,6 +122,9 @@ jobs:
       - name: Data guard
         run: python tools/ci/data_guard.py
 
+      - name: The launcher builds (IKARS.exe, M1.9a)
+        run: dotnet build tools/launcher -c Release -nologo
+
       - name: Install gitleaks (pinned release, checksum verified)
         shell: pwsh
         run: |

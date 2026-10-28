@@ -133,12 +133,12 @@ slice still needs its own approved plan before code.
   only). **M1.8b-1 done** (PR #21 merged as `db0bf9a`; the settings race fix PR #22 as `e6a29f3`).
   **M1.8b-2 done** (PR #23 merged as `47984db`, CI green on `main`; BUILD-LOG 1.8b-2; layouts and the support
   bundle). **M1.8 is complete.** Pending from the owner: the two-monitor layout check.
-  **M1.8c New window** (approved addition, owner 2026-10-27; BUILD-LOG 1.8c): **built** on `m1/8c` (merge review
-  10 itemized), **PR #24** open, waiting for the owner's merge. **M1.9 plan APPROVED** (owner 2026-10-27, all as
+  **M1.8c New window** (approved addition, owner 2026-10-27; BUILD-LOG 1.8c): **done** (PR #24 merged as `b336930`,
+  CI green on `main`; merge review 10 itemized). **M1.9 plan APPROVED** (owner 2026-10-27, all as
   recommended; BUILD-LOG 1.9): **M1.9a** build, install, uninstall (program in `%LOCALAPPDATA%\IKARS-App`, data
   untouched; Windows Sandbox for the clean test, the owner enables it), **M1.9b** CI releases, updates on the
-  owner's click, the rollback drill, signing (unsigned now, apply to SignPath). M1.9a starts from `main` once
-  PR #24 merges. Then M1.12, M1.13, M1.11. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+  owner's click, the rollback drill, signing (unsigned now, apply to SignPath). **Now: M1.9a** on
+  `m1/9a`. Then M1.12, M1.13, M1.11. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 

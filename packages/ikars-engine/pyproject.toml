@@ -17,7 +17,11 @@ dependencies = [
     "tomli-w>=1.2",
     "tzdata>=2025.2",
     "uvicorn>=0.37",
+    "velopack>=1.2.161",
 ]
+
+[project.scripts]
+ikars = "ikars_engine.__main__:entry"
 
 [tool.uv.sources]
 ikars-core = { workspace = true }

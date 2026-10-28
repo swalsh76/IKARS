@@ -158,5 +158,10 @@ def main(argv: list[str]) -> int:
     return 2
 
 
-if __name__ == "__main__":
+def entry() -> None:
+    """The ``ikars`` command (M1.9a)."""
     sys.exit(main(sys.argv))
+
+
+if __name__ == "__main__":
+    entry()
