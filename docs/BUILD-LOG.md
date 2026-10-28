@@ -2691,3 +2691,60 @@ log; the screens in Vitest and Playwright (the list live, the drill-down, `T`/`I
 **Owner's answers (2026-10-28): all as recommended.** Notifications: top-ranked only, at most 3 an hour; the
 response and Copy order come now; the scorecard comes now; no mock-up redraw (the relabel and omissions as
 listed).
+
+#### 1.12c built (2026-10-28)
+
+**Built** on `m1/12c`: `cd72d8f` (the engine side), `c1fb678` (the terminal side), `7a4592a` (the merge-review
+fixes). After M1.12b (PR #28, `3f0f8bd`). **No new packages.** API 2.1 (contracts and the web types regenerated).
+
+- **Figures and ranking** (`recommendations.py`): the outlay (the contracts and the entry fee; also the worst case),
+  the return at the rule's target after fees, and that per day of validity (D20 D), all integers (millionths). The
+  **board** keeps the active ones ranked as they come and go; the API serves the top 50
+  (`/v1/recommendations?state=active`) and the stream sends them as a `recommendations` event when they change.
+  `/v1/recommendations/{id}` returns one of any age.
+- **The owner's response (G9):** `PUT /v1/recommendations/{id}/response` (taken, ignored, dismissed; the same
+  again takes it back); a dismissed one leaves the list. Journal migration 3.
+- **Kept scores:** each check's score is kept with it once known (at once, at the market's settlement, or, when the
+  fees stay unknown for an hour, kept unscored), so an old check keeps its score after its market leaves the index,
+  and the **scorecard** (`/v1/scorecard`: each strategy version over 30 days: checks, scored, above zero, mean,
+  median) is a query on a worker thread once a minute.
+- **Notifications (H):** only a recommendation that ranks first when it is made, at most 3 an hour, none in quiet
+  hours; the engine's own alert desk state (`alert-desk-engine.json`); the alert log written under a lock shared
+  with the watchdog; `normal` alerts now show by day (nothing raised them before).
+- **Terminal:** the Overview's "Top recommendations" (live, ranked, countdowns) and "Journal scorecard (30 days)";
+  "Live movers" relabelled for M2. The **Recommendation screen** (`/recommendation/<id>`), from the approved
+  mock-up to what exists: the headline, P&L at the target, return per day, the outlay and worst case; Mark taken,
+  Ignore, Dismiss (`T`/`I`/`D`) and Copy order (`C`); why, the checks made and to come, the provenance. Left out
+  as planned: fill chance, size and limits, the bracket, the settings hash, Replay; the Overview's Fill column.
+- **demo-api:** six made-up active recommendations and one with its check, for the screen tests and `pnpm load`.
+
+**Verified.** Python 1,537 tests (the figures by hand: 10 at 46c lay out $4.78; +$0.04 is 0.8368%, 40.17% a day
+over half an hour; held to a win, +$5.22; the scorecard's mean and median by hand); Vitest 228 (functions 91.6%);
+Playwright 19 in Edge against demo-api (the list ranked, the drill-down, `T` and back, `C`); lint, types, audit,
+the generated-types check and the data guard clean.
+
+**Live checks: pending.** They need a test pre-release (published on the owner's word): the list live and ranked
+on the owner's workstation, a row opening the drill-down, `T`/`I`/`D` kept across a restart, `C` copying, at most
+3 notifications an hour and none in quiet hours, the scorecard matching the journal read directly, no order ever
+sent.
+
+**Review.**
+- **Per commit:** `cd72d8f` 1 found and fixed before committing (a check whose fees were not known yet was kept
+  unscored for good: it now waits, up to an hour); `c1fb678` 2 found and fixed before committing (the rule label
+  and the headline duplicated their formatting: one helper each).
+- **Merge review (medium), 10 findings: 9 fixed in `7a4592a`, 1 no change:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | At stop the notices closed before the journal's last flush; an offer then raised and lost the batch | Closed after the flush; an offer after closing is refused; tested |
+  | 2 | A page built before the board loaded stayed empty until the next change | The load counts as a change; tested |
+  | 3 | Checks waiting for fees could fill every scoring batch and hold back the rest | Paged in order of made time; tested |
+  | 4 | The scorecard query was awaited inside the journal loop | Its own task beside the loop |
+  | 5 | The desk's per-market throttle could spend the hourly budget on nothing | Keyed by the recommendation; tested |
+  | 6 | The ranked page's cache missed marks, scores and index changes | They count as changes; the index version is in the key; tested |
+  | 7 | "Ranks first" compared with ones expired but not yet pruned | Only those still valid when it was made; tested |
+  | 8 | Dismissals of replaced or expired recommendations stayed in memory for good | Only one on the board stays hidden; tested |
+  | 9 | Normal alerts now pop up for every caller, not only recommendations | No change: approved in this slice's plan (normal shows by day, nothing else raises it) |
+  | 10 | demo-api called the journal service's private `_write` | It uses `listen` and `flush` |
+
+**M1.12c built**, subject to the live checks and the owner's merge.
