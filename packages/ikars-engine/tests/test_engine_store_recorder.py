@@ -389,3 +389,10 @@ def test_a_row_later_than_the_grace_never_reopens_a_closed_hour(tmp_path: Path) 
     files = hours(tmp_path, "trade")
     assert [p.name for p in files] == ["00.parquet", "01.parquet"]
     assert read_rows(files[1:], "trade").column("trade_id").to_pylist() == ["late"]
+
+
+def test_the_gap_log_is_read_by_its_end_through_an_index(tmp_path: Path) -> None:
+    db = open_store(tmp_path / "s.sqlite", STATE_MIGRATIONS)
+    names = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+    assert "gap_end" in names
+    db.close()
