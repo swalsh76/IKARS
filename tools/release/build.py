@@ -126,7 +126,9 @@ def sandbox() -> Path:
         for host, inside in mapped
     )
     config.write_text(
-        "<Configuration>\n  <MappedFolders>\n" + folders + "  </MappedFolders>\n"
+        "<Configuration>\n  <MemoryInMB>4096</MemoryInMB>\n  <MappedFolders>\n"
+        + folders
+        + "  </MappedFolders>\n"
         f"  <LogonCommand><Command>cmd /c start {start}</Command></LogonCommand>\n"
         "</Configuration>\n",
         encoding="utf-8",

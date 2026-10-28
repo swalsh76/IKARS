@@ -59,7 +59,10 @@ switch ($Step) {
     }
     "portable" {
         $folder = Join-Path ([Environment]::GetFolderPath("Desktop")) "IKARS portable"
-        Expand-Archive (Join-Path $releases "IKARS-App-win-Portable.zip") -DestinationPath $folder -Force
+        # Windows' tar, not Expand-Archive: tens of thousands of files crashed the Sandbox that way
+        New-Item -ItemType Directory -Force $folder | Out-Null
+        tar -xf (Join-Path $releases "IKARS-App-win-Portable.zip") -C $folder
+        Say "the portable zip unpacked" (Test-Path (Join-Path $folder "IKARS.exe"))
         Start-Process -FilePath (Join-Path $folder "IKARS.exe")
         Say "the portable data folder appeared beside it" (WaitFor { Test-Path (Join-Path $folder "IKARS-data\data\api.json") } 180)
         Say "nothing written inside its program folder (current)" (-not (Test-Path (Join-Path $folder "current\IKARS-data")))
