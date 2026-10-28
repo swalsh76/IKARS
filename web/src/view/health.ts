@@ -49,12 +49,17 @@ export function healthCards(h: HealthView): Card[] {
   const clockLevel: Level = h.clock_status === null || h.clock_status === "unmeasured" ? "unknown" : h.clock_status === "ok" ? "ok" : "watch";
   const plugins = Object.entries(h.plugins);
   const paused = plugins.filter(([, state]) => state !== "running").length;
+  // setup mode (M1.9a): no usable key, so no feed at all; the card says why and what to do
+  const feedCard =
+    h.setup_reason !== null
+      ? card("Kalshi feed", "problem", "Setup mode", [h.setup_reason, "set the key in Windows, then restart the engine (Settings)"], "SETUP")
+      : card("Kalshi feed", feedLevel, feed.connected ? "Live" : feed.connected === null ? "Starting" : "Disconnected", [
+          seconds(feed.seconds_since_last_frame),
+          feed.trading_active === null ? "exchange state not read yet" : feed.trading_active ? "trading is open" : "trading is closed",
+          `${feed.open_gaps ?? "?"} open gaps`,
+        ], feedLevel === "ok" ? "LIVE" : STATE[feedLevel]);
   return [
-    card("Kalshi feed", feedLevel, feed.connected ? "Live" : feed.connected === null ? "Starting" : "Disconnected", [
-      seconds(feed.seconds_since_last_frame),
-      feed.trading_active === null ? "exchange state not read yet" : feed.trading_active ? "trading is open" : "trading is closed",
-      `${feed.open_gaps ?? "?"} open gaps`,
-    ], feedLevel === "ok" ? "LIVE" : STATE[feedLevel]),
+    feedCard,
     card("Order books", feed.books_ready === null ? "unknown" : "ok", `${feed.books_ready ?? "?"} ready`, [
       `${feed.watched_markets ?? "?"} markets watched`,
     ]),
@@ -95,7 +100,9 @@ export function strip(h: HealthView | null, connection: StreamState): StripItem[
   const level = (title: string): Level => levels.get(title) ?? "unknown";
   const since = h.feed.seconds_since_last_frame;
   const feed: StripItem =
-    h.feed.connected === null
+    h.setup_reason !== null
+      ? { label: "Setup mode: no Kalshi key", level: "problem" }
+      : h.feed.connected === null
       ? { label: "Feed starting", level: "unknown" }
       : h.feed.connected
         ? { label: `Feed live · ${since === null ? "–" : `${since.toFixed(1)} s`}`, level: level("Kalshi feed") }

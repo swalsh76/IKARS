@@ -23,6 +23,7 @@ import logging
 import os
 import subprocess
 import sys
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -105,6 +106,9 @@ def evaluate(obs: Observation, rules: Rules) -> list[Problem]:
             problems.append(Problem("backup", f"the last backup is {hours} hours old", urgent=True))
     if at(snap, "storage_state") in ("warn", "pruned"):
         problems.append(Problem("storage", "recordings are near their storage budget"))
+    if at(snap, "setup") is not None:  # no usable key: the terminal works, nothing else (M1.9a)
+        unset = "the Kalshi key is not set up: set it, then restart the engine (Settings)"
+        problems.append(Problem("setup", unset))
     if at(snap, "port_fallback") is True:  # an open terminal cannot find the engine again
         taken = "the terminal's port is taken: reopen it with ikars open, or change the port"
         problems.append(Problem("terminal-port", taken))
@@ -192,8 +196,25 @@ def save_state(path: Path, state: State) -> None:
 
 def engine_command(root: Path | None) -> list[str]:
     """``pythonw -m ikars_engine serve`` (no console) from this interpreter's folder."""
-    command = [windowless_python(), "-m", "ikars_engine", "serve"]
+    # -I: no PYTHON* variables, no user site and not the working folder on the path (merge review 3)
+    command = [windowless_python(), "-I", "-m", "ikars_engine", "serve"]
     return command + (["--root", str(root)] if root is not None else [])
+
+
+def engine_environment(
+    environ: Mapping[str, str] | None = None, windows: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """A fresh engine's environment: this process's, with the key's variables as Windows has them
+    now. A variable set since this process started (the wizard's key, then Restart the engine)
+    must reach the new engine, or it starts in setup mode again (M1.9a)."""
+    from ikars_engine.settings import KalshiSettings
+    from ikars_engine.settings_api import user_environment
+
+    names = (KalshiSettings().key_id_variable, KalshiSettings().key_path_variable)
+    env = dict(os.environ if environ is None else environ)
+    now = user_environment(names) if windows is None else windows
+    env.update({name: value for name, value in now.items() if value})
+    return env
 
 
 def start_engine(command: list[str]) -> None:
@@ -203,6 +224,7 @@ def start_engine(command: list[str]) -> None:
     subprocess.Popen(  # noqa: S603 (our own interpreter and module)
         command, creationflags=flags, close_fds=True, stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=os.path.expanduser("~"),
+        env=engine_environment(),
     )  # fmt: skip
 
 

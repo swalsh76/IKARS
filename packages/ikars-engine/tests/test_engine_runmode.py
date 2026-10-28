@@ -339,7 +339,7 @@ def test_a_notification_that_fails_is_tried_again(tmp_path: Path) -> None:
 
 def test_the_engine_command_is_windowless_and_rooted(tmp_path: Path) -> None:
     command = engine_command(tmp_path)
-    assert command[1:4] == ["-m", "ikars_engine", "serve"]
+    assert command[1:5] == ["-I", "-m", "ikars_engine", "serve"]
     assert command[-2:] == ["--root", str(tmp_path)]
     assert engine_command(None)[-1] == "serve"
 
@@ -362,7 +362,7 @@ def test_install_and_remove_are_user_space_and_symmetric() -> None:
         "autostart": True, "notification_name": True, "watchdog_task": True,
     }  # fmt: skip
     engine = registry.get(autostart.RUN_KEY, autostart.RUN_VALUE)
-    assert engine == f'"{python}" -m ikars_engine serve'
+    assert engine == f'"{python}" -I -m ikars_engine serve'
     assert registry.get(autostart.APP_KEY, "DisplayName") == "IKARS"
     create = commands[0]
     assert create[:3] == ["schtasks", "/Create", "/F"] and "/RU" not in create  # the user's own

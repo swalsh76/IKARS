@@ -15,6 +15,8 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
+import sqlite3
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -22,7 +24,7 @@ from pathlib import Path
 
 import msgspec
 from ikars_core.account import Account
-from ikars_core.auth import AccountSigner, DataSigner
+from ikars_core.auth import AccountSigner, AuthError, DataSigner
 from ikars_core.clock import ClockCheckError, sample_from_response
 from ikars_core.config import Environment, KalshiConfig
 from ikars_core.endpoints import MarketData
@@ -138,13 +140,13 @@ async def build(
     clock = WallClock()
     metrics = Metrics()
     skew = SkewMonitor()
-    account_signer = AccountSigner.from_environment()
+    account_signer = AccountSigner.from_environment(signer_environment(settings))
     bucket, budget = await request_bucket(config, settings.feed.read_share_percent, account_signer)
     log.info("request budget", extra=budget)
     client = KalshiPublicClient(config, bucket=bucket, observe=clock_observer(skew))
     data = MarketData(client)
     state = StateStore(paths.data / "state.sqlite")
-    signer = DataSigner.from_environment()
+    signer = DataSigner.from_environment(signer_environment(settings))
     feed = KalshiFeed(signer, FeedConfig(url=config.ws_url))
     watched = WatchedSet(
         max_markets=settings.feed.watched_max_markets,
@@ -328,6 +330,15 @@ async def run(
         max_bytes=settings.logs.max_bytes,
         files_kept=settings.logs.files_kept,
     )
+    problem = key_problem(settings)
+    if problem is not None:
+        if has_history(paths.ledger / "ledger.sqlite"):
+            # an install with records: a key that fails is a fault to fix, not a first run; the
+            # engine stops, so the watchdog restarts it and raises an urgent alert (merge review 2)
+            raise AuthError(problem)
+        # a fresh install: the terminal only, to set IKARS up (M1.9a)
+        log.warning("setup mode: the Kalshi key cannot be used", extra={"problem": problem})
+        return await run_setup(paths, settings, problem, should_stop, on_minute, root, minutes)
     live = await build(paths, settings, root, restartable=should_stop is not None)
     engine = live.engine
     health: dict[str, object] = {}
@@ -373,6 +384,107 @@ async def run(
                     out(summary(engine.health()))
                 break
     return health
+
+
+def signer_environment(
+    settings: Settings, environ: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """The key's variables as the signers read them, from the names the settings give (merge
+    review 4: the wizard and Settings read those names too)."""
+    env = os.environ if environ is None else environ
+    return {
+        "IKARS_KALSHI_KEY_ID": env.get(settings.kalshi.key_id_variable, ""),
+        "IKARS_KALSHI_PRIVATE_KEY_PATH": env.get(settings.kalshi.key_path_variable, ""),
+    }
+
+
+def key_problem(settings: Settings, environ: Mapping[str, str] | None = None) -> str | None:
+    """Why IKARS's Kalshi key cannot be used, in words (never its id or path), or None."""
+    try:
+        AccountSigner.from_environment(signer_environment(settings, environ))
+    except AuthError as exc:
+        return str(exc)
+    return None
+
+
+def has_history(ledger: Path) -> bool:
+    """Whether the real ledger holds any record (read only): an install that has run in full."""
+    if not ledger.is_file():
+        return False
+    try:
+        with contextlib.closing(sqlite3.connect(f"{ledger.as_uri()}?mode=ro", uri=True)) as db:
+            return db.execute("SELECT 1 FROM record LIMIT 1").fetchone() is not None
+    except sqlite3.Error:
+        return False
+
+
+async def run_setup(
+    paths: Paths,
+    settings: Settings,
+    problem: str,
+    should_stop: Callable[[], bool] | None = None,
+    on_minute: Callable[[dict[str, object]], None] | None = None,
+    root: Path | None = None,
+    minutes: float | None = None,
+) -> dict[str, object]:
+    """Setup mode (M1.9a; owner, 2026-10-27): the key cannot be used (a fresh machine has none),
+    so no feed, no ledger import and no call to Kalshi; only the API and the terminal, so the
+    first-run wizard and Settings can set IKARS up. Health says why; the watchdog tells the owner
+    and does not restart it; once the key is set, Settings' Restart the engine starts it in full."""
+    zone = taxzone.resolve(settings.tax_time_zone)
+    clock = WallClock()
+    # what the ledger holds, for the terminal; a migration copies it to the share first, as always
+    ledger = Ledger(
+        paths.ledger / "ledger.sqlite",
+        zone.zone,
+        migration_copier(configured(settings.backup.share)),
+    )
+    held = PortfolioHealth(ledger, {}, lambda ticker: None, lambda ticker: None)
+    sessions = Sessions(paths.data, settings.terminal.session_days)
+    restartable = should_stop is not None
+    servers: list[ApiServer] = []
+
+    def health() -> dict[str, object]:
+        report: dict[str, object] = {
+            "setup": {"reason": problem, "next": "set the key, then restart the engine"},
+            "kalshi": {"feed": {"connected": False}},
+        }
+        if servers:
+            report["api"] = servers[0].health()
+        return report
+
+    def api_context(token: str) -> ApiContext:
+        return ApiContext(
+            token=token, health=health, index=MarketIndex(), quotes={}, last_price={},
+            changed_ns={}, book_changed_ns={}, books={}, book_version={}, watched=set,
+            ledger=ledger, ledger_health=dict, portfolio=held.portfolio,
+            alert_log=paths.data / ALERT_LOG, metrics=Metrics(), now_ns=clock.now_ns,
+            sessions=sessions, web_root=terminal_root(),
+            config=TerminalConfig(paths, settings, root, restartable=restartable),
+        )  # fmt: skip
+
+    api = ApiServer(api_context, paths.data, port=settings.terminal.port)
+    servers.append(api)
+    try:
+        await api.start()
+        if on_minute is not None:
+            on_minute(health())
+        started = last = time.monotonic()
+        while True:
+            await asyncio.sleep(TICK_S)
+            now = time.monotonic()
+            if now - last >= MINUTE_S:
+                last = now
+                if on_minute is not None:
+                    on_minute(health())
+            if (should_stop is not None and should_stop()) or (
+                minutes is not None and now - started >= minutes * 60
+            ):
+                break
+    finally:
+        await api.stop()
+        ledger.close()
+    return health()
 
 
 class EngineStopped(RuntimeError):

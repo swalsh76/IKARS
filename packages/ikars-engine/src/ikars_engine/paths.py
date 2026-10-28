@@ -13,6 +13,10 @@ from pathlib import Path
 
 PORTABLE_MARKER = "portable.marker"
 APP_NAME = "IKARS"
+# Velopack's portable zip (M1.9a): <root>\.portable, <root>\current\python\pythonw.exe. An update
+# replaces current\, so the data goes beside it, never inside it
+VELOPACK_PORTABLE = ".portable"
+PORTABLE_DATA = "IKARS-data"
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +65,10 @@ def resolve(program: Path | None = None, environ: dict[str, str] | None = None) 
     folder = program or program_folder()
     if (folder / PORTABLE_MARKER).is_file():
         return Paths(folder / "data-portable")
+    if folder.name.lower() == "python" and folder.parent.name.lower() == "current":
+        root = folder.parent.parent
+        if (root / VELOPACK_PORTABLE).is_file():
+            return Paths(root / PORTABLE_DATA)
     base = env.get("LOCALAPPDATA")
     if base:
         return Paths(Path(base) / APP_NAME)

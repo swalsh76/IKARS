@@ -14,6 +14,7 @@ const HEALTH: HealthView = {
   gpu: "Made-up GPU",
   api_streams: 1,
   port_fallback: false,
+  setup_reason: null,
   plugins: { momentum: "running" },
   detail: {},
 };
@@ -23,6 +24,13 @@ function cards(h: HealthView) {
 }
 
 describe("health cards", () => {
+  it("say setup mode, why and what to do, when the engine has no usable key (M1.9a)", () => {
+    const setup = { ...HEALTH, setup_reason: "IKARS_KALSHI_KEY_ID and IKARS_KALSHI_PRIVATE_KEY_PATH must both be set" };
+    expect(cards(setup)["Kalshi feed"]).toMatchObject({ level: "problem", state: "SETUP", big: "Setup mode" });
+    expect(cards(setup)["Kalshi feed"]?.lines[0]).toContain("must both be set");
+    expect(strip(setup, "open")[0]).toEqual({ label: "Setup mode: no Kalshi key", level: "problem" });
+  });
+
   it("say OK when all is well", () => {
     const c = cards(HEALTH);
     expect(c["Kalshi feed"]).toMatchObject({ level: "ok", state: "LIVE", big: "Live" });

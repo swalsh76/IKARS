@@ -34,5 +34,6 @@
     "demo": "running"
   },
   "port_fallback": false,
+  "setup_reason": null,
   "storage_state": "ok"
 }

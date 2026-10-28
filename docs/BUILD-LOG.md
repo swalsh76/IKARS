@@ -2354,3 +2354,61 @@ PLAN M1.9, D12, G, G12. **Owner's answers (2026-10-27): all as recommended.**
 - **Packages:** `velopack` (PyPI, the launcher) and `vpk` (Velopack's .NET packing tool, builds only); both MIT, to
   be confirmed in the slice.
 - **Machine:** Windows Sandbox enabled once (the owner; admin, one restart); test installs go into the Sandbox only.
+
+#### 1.9a built (2026-10-27)
+
+**Built** on `m1/9a`: `401dad6` (the `ikars` command, `IKARS.exe`, the build), `7e98d2a` (setup mode), `6e17772`
+and `d4f3aba` (the Sandbox checks), `e4ec0cc` (the merge-review fixes). After M1.8c (PR #24, `b336930`).
+
+**Owner's answers during the slice (2026-10-27):** the launcher is a tiny C# program (not a PyInstaller freeze, which
+D12 rules out); setup mode for a machine without a usable key.
+
+- **`ikars`**: the engine's command line as a console script (`.venv\Scripts\ikars` in development).
+- **`IKARS.exe`** (`tools/launcher`): about 40 lines of C# for **.NET Framework 4.8**, part of every Windows 11, so
+  7 KB, no runtime shipped and no C++ tools to build it (NativeAOT, first planned, needs Visual C++'s linker, which
+  this workstation lacks). It starts the bundled `pythonw.exe -I -m ikars_engine.launcher` with its arguments.
+- **`ikars_engine.launcher`**: answers Velopack's steps first (updates wait for the owner's click; before an update,
+  the engine stops; before uninstalling, the engine stops and start at sign-in, the watchdog's task and the
+  notification name are removed, never the data), else opens the terminal; a failure shows a message box.
+- **The build** (`tools/release/build.py`): uv's standalone CPython 3.13.16 (never the project's `.venv`, which uv
+  otherwise prefers; its own `site-packages` never copied), the locked packages with hashes and IKARS's two wheels,
+  compiled; `web/dist`; `IKARS.exe`; `vpk pack` (program id `IKARS-App`, the Start menu only,
+  `--skipVeloAppCheck` since Python answers the steps). **`Setup.exe` 69 MB, portable zip 65 MB** (installed:
+  about 190 MB, most of it pyarrow). It also writes `build/IKARS-test.wsb` (this machine's folders: never committed).
+- **Folders:** installed, the program is `%LOCALAPPDATA%\IKARS-App` and the data `%LOCALAPPDATA%\IKARS`; the portable
+  zip keeps its data in `<its folder>\IKARS-data`, beside Velopack's `current\` (which an update replaces).
+- **Setup mode** (owner): found by the first Sandbox run, where a machine without a key never reached the wizard
+  (the engine raised at start). With no usable key on a fresh install (no ledger records), the engine serves the API
+  and the terminal only (no feed, no ledger import, no call to Kalshi); `HealthView.setup_reason` and the Health
+  feed card and strip say why and what to do; the watchdog tells the owner and does not restart it. A fresh engine
+  gets the key's variables as Windows has them now, so Restart the engine after setting the key starts it in full.
+  With ledger records, a failing key stops the engine as before (the watchdog restarts it, urgently).
+
+**Verified.** Python 1,456 tests; Vitest 203; Playwright 17 in Edge; lint, types, audit, data guard and gitleaks
+clean; CI builds the launcher. **Bundle:** its Python uses only its own packages and the bundled terminal, and starts
+the bundled engine isolated; the bundled engine without a key starts in setup mode (a scratch folder). **Clean machine
+(Windows Sandbox, the owner, three runs):** no Python there; installed to `%LOCALAPPDATA%\IKARS-App`; the Start-menu
+entry, no desktop shortcut; started from the Start menu in setup mode with the wizard in Edge; uninstalled: the
+program and the Start-menu entry gone, **the data and the settings kept**, start at sign-in and the watchdog task
+removed; the portable zip ran from its own folder with its data beside it, nothing written inside `current\`.
+Found on the way: a silent install starts nothing (the check now starts IKARS from the Start menu); `Expand-Archive`
+on the portable zip crashed the Sandbox (`tar` now, with 4 GB).
+
+**Review.**
+- **Per commit:** `401dad6`, `7e98d2a` none.
+- **Merge review (medium), 10 findings:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | `ikars run --minutes N` without a key never ended (minutes not passed to setup mode) | Passed on; tested |
+  | 2 | On an install with history, any key error left the engine in setup mode for good, with backups and ledger checks quiet | Setup mode only without ledger records; otherwise the engine stops and the watchdog restarts it urgently; tested |
+  | 3 | The engine, the watchdog's start and start at sign-in ran Python without `-I` (PYTHON* variables, the working folder) | `-I` everywhere; tested |
+  | 4 | The engine's key check read the standard names while the wizard read the settings' names | The signers read the settings' names; tested. Refreshing custom names on a restart parked (PLAN section 9) |
+  | 5 | A key variable cleared in Windows kept its old value in a restarted engine | No change: a key set only for a session must survive a restart; clearing one takes a sign-out |
+  | 6 | A failed build step showed only an exit code | Its output is printed |
+  | 7 | The managed Python's own `site-packages` (anything installed by hand) would ship | Never copied: locked packages only |
+  | 8 | Nothing stopped the engine before Velopack replaces the program on an update | A before-update step stops it; tested |
+  | 9 | Setup mode was visible only in Health's untyped details | `HealthView.setup_reason`, shown on the feed card and the strip; tested |
+  | 10 | The Sandbox config did not escape its folder paths | Escaped as XML |
+
+**M1.9a built**, subject to the owner's merge.

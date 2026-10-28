@@ -17,6 +17,9 @@ replaced) in its slice plan, with its licence checked then.
 | gitleaks | current | development and CI | MIT | Needed by the pre-commit hook (`winget install gitleaks`). |
 | Node.js | 24.22.1 LTS | development and CI | MIT | Builds the web terminal; not shipped. Per user, no admin: the official `node-v24.22.1-win-x64.zip`, checked against Node's `SHASUMS256.txt`, unpacked to `%LOCALAPPDATA%\Programs\nodejs` and added to the user `PATH` (winget's package is a machine-wide MSI). CI: `actions/setup-node`. |
 | pnpm | 12.14.0 (`packageManager` in `web/package.json`) | development and CI | MIT | Through Corepack (`corepack enable`, part of Node 24). Settings in `web/pnpm-workspace.yaml`: a release is used only once 7 days old; install scripts run for none. |
+| .NET SDK | 8 or later | builds only (M1.9a) | MIT | Builds `IKARS.exe` (`tools/launcher`, for .NET Framework 4.8, which is part of Windows 11, so nothing is shipped; the reference assemblies come with the SDK) and runs `vpk`. CI's Windows runner has it. |
+| vpk (Velopack) | 1.2.161 (`dotnet-tools.json`) | builds only (M1.9a) | MIT | `dotnet tool restore` in the repository; packs `Setup.exe`, the portable zip and the update packages. |
+| Windows Sandbox | part of Windows 11 Pro | testing only (M1.9a) | — | The clean-machine install checks; turned on once by an admin (`Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM -All`, one restart). |
 
 ### Python packages (engine)
 
@@ -32,6 +35,7 @@ replaced) in its slice plan, with its licence checked then.
 | `tzdata` | the time-zone database `zoneinfo` needs on Windows (the tax zone, M1.5a) | Apache-2.0 |
 | `starlette` | the loopback API (M1.7, D3) | BSD-3-Clause |
 | `uvicorn` | the API's server, inside the engine's event loop (M1.7); with `h11` (MIT), `click` (BSD-3-Clause) | BSD-3-Clause |
+| `velopack` | the installed program's install, update and uninstall steps (`ikars_engine.launcher`, M1.9a); updates in M1.9b | MIT |
 
 Development only: `ruff`, `mypy`, `pytest` (with `pytest-asyncio`, `pytest-cov`, `hypothesis`), `pip-audit`; the
 exact set and versions are in `uv.lock`.
@@ -82,5 +86,4 @@ in use since M1.8a-web-2a (above).
 | XGBoost (CUDA) or LightGBM; PyTorch (cu128) for sequence models; CuPy for sweeps | M3 to M5 (D15, D16) | optional extra | Apache-2.0; MIT; BSD-3; MIT | CUDA wheels run to gigabytes: optional, on demand. CPU fallbacks for each. |
 | Other-venue prices (exchange WebSockets, odds APIs) | later milestones (D19 G7) | plugin | per source | A paid odds API counts against the cost ceiling. |
 | **Microsoft Edge** | in use since M1.8a-web-1a (`ikars open`) | base | built into Windows 11 | Shows the terminal as an app window with its own IKARS profile under `%LOCALAPPDATA%\IKARS\browser`. |
-| Velopack | M1.9 (D12) | build only | MIT | Builds `Setup.exe` and the portable zip; the user installs nothing extra. |
 | Code signing (SignPath free plan or Azure Trusted Signing) | M1.9 (D12) | build only | service | Removes SmartScreen warnings; chosen in the packaging slice. |

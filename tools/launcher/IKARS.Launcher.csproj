@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- IKARS.exe: the installed program's main exe (M1.9a). For .NET Framework 4.8, which is part of
+       Windows 11, so no runtime is shipped and no C++ tools are needed to build it (BUILD-LOG 1.9a). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>IKARS</AssemblyName>
+    <RootNamespace>Ikars.Launcher</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <Product>IKARS</Product>
+    <Company>IKARS</Company>
+    <Copyright>MIT licence</Copyright>
+    <!-- set by the build script from the release's version -->
+    <Version>0.0.0</Version>
+  </PropertyGroup>
+
+</Project>
