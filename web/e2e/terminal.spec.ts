@@ -183,5 +183,7 @@ test("New window opens this screen in another window, already signed in (M1.8c)"
   const other = await opened;
   await expect(other).toHaveURL(/\/ledger$/); // no sign-in code: the shared profile's cookie
   await expect(other.getByRole("region", { name: "Ledger status" })).toContainText("chain verified");
+  // a popup window (no tabs or toolbar), not a tab, and not tied back to this window
+  expect(await other.evaluate(() => [window.toolbar.visible, window.opener === null])).toEqual([false, true]);
   expect(refused).toEqual([]);
 });

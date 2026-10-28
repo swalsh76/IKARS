@@ -132,11 +132,10 @@ slice still needs its own approved plan before code.
   (sets of windows) and the support bundle. Mock-ups approved; skins added by the owner (built-in palettes
   only). **M1.8b-1 done** (PR #21 merged as `db0bf9a`; the settings race fix PR #22 as `e6a29f3`).
   **M1.8b-2 done** (PR #23 merged as `47984db`, CI green on `main`; BUILD-LOG 1.8b-2; layouts and the support
-  bundle). **M1.8 is complete.** Pending from the owner: the two-monitor layout check. **Now: M1.8c** on `m1/8c`.
-  **Approved addition (owner, 2026-10-27): M1.8c New window**, its own small slice after PR #23 merges: a
-  "New window" item at the foot of the side navigation opens a browser popup on the same screen (signed in by
-  the shared profile); terminal only. **Next:** M1.8c, then M1.9 (packaging), M1.12, M1.13, M1.11. The owner allows `gh pr merge` by a local
-  permission rule; merge only when asked.
+  bundle). **M1.8 is complete.** Pending from the owner: the two-monitor layout check.
+  **M1.8c New window** (approved addition, owner 2026-10-27; BUILD-LOG 1.8c): **built** on `m1/8c` (merge review
+  10 itemized), PR open, waiting for the owner's merge. **Next after it:** M1.9 (packaging), then M1.12, M1.13,
+  M1.11. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 

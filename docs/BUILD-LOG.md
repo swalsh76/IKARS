@@ -2304,3 +2304,35 @@ PowerShell drops an empty `--layout ""`). A scope addition, approved: **a browse
 window it came from, slightly offset; at the foot of the side navigation. Edge shows a thin read-only address strip on
 a popup, unlike `ikars open`'s app windows (accepted). Offered and not chosen: the engine starting a bare app window
 on request from the page. Built after PR #23 merges, as its own slice.
+
+#### 1.8c built (2026-10-27)
+
+**Built** on `m1/8c`: `aaa768c` (New window), then the merge-review fixes. After M1.8b-2 (PR #23, `47984db`).
+**No new packages; terminal only.**
+
+- **New window** at the foot of the side navigation (hidden on the first-run wizard): a browser popup on the same
+  screen as the window it came from, 30 px right and down, the same size (smaller than a window that fills the
+  screen, so it never hides it whole). Edge's shared profile signs it in; the link back to its opener is cut once it
+  is open; it answers layout asks like any other window, so it can be saved in a layout.
+
+**Verified.** Vitest 202 (98% lines, 91% functions); Playwright 17 screen tests in Edge (New window opens the Ledger
+in a popup, signed in, with no toolbar and no opener); lint, types, audit, data guard and gitleaks clean.
+
+**Review.**
+- **Per commit:** `aaa768c` none.
+- **Merge review (medium), 10 findings:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | `noopener` with the popup's size and place may make Edge open a tab instead | Dropped; the opener is cut after opening; the screen test checks it is a popup with no opener |
+  | 2 | The new window copied a maximised window's whole size, so it hid it | At most the screen less twice the offset; tested |
+  | 3 | New window on the first-run wizard opened a second wizard saving alongside the first | Hidden on the wizard |
+  | 4 | The screen test checked only the address, never that it is a popup | It checks no toolbar and no opener (Edge's headless size is the test's own, so not the size) |
+  | 5 | The resume point named M1.8c as both current and next | Rewritten |
+  | 6 | No BUILD-LOG entry or PLAN section 5 row | This entry and the row |
+  | 7 | The M1.8b-2 row said both built and done | Rewritten as done |
+  | 8 | A layout saved from a popup keeps its outer size, address strip included, so an app window reopens that much taller | Parked (PLAN section 9): small |
+  | 9 | The unit test's stub was cast to `Window`, hiding a missing field | Cast to the opener's own type (`Opener`), with the screen's size |
+  | 10 | `Math.round` on values the browser gives as whole numbers | Removed |
+
+**M1.8c built**, subject to the owner's merge.

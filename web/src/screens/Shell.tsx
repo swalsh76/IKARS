@@ -89,9 +89,11 @@ export function Shell({ children }: { children: ReactNode }) {
               {item.label}
             </Link>
           ))}
-          <button type="button" className="side-new" onClick={() => openNewWindow()}>
-            + New window
-          </button>
+          {route.screen !== "welcome" && ( // a second wizard would save settings alongside the first
+            <button type="button" className="side-new" onClick={() => openNewWindow()}>
+              + New window
+            </button>
+          )}
         </nav>
         <main className="main">{children}</main>
       </div>

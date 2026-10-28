@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LayoutWindow } from "../api/contracts";
-import { allowPlacement, answerAsks, gather, here, openNewWindow, placeFrom, type Channel } from "./layout";
+import { allowPlacement, answerAsks, gather, here, openNewWindow, placeFrom, type Channel, type Opener } from "./layout";
 
 /** Channels joined like BroadcastChannel: a message reaches every other one, never its sender. */
 function bus(): () => Channel & { closed: boolean } {
@@ -58,11 +58,31 @@ describe("placing a layout's window", () => {
 });
 
 describe("a new window", () => {
-  it("opens this screen as a popup the same size, a little offset, tied to nothing", () => {
-    const open = vi.fn();
-    const view = { open, location: { pathname: "/market/KXDEMO", search: "?tab=book" }, screenX: -1920.2, screenY: 10, innerWidth: 1280, innerHeight: 760 };
-    openNewWindow(view as unknown as Window);
-    expect(open).toHaveBeenCalledWith("/market/KXDEMO?tab=book", "_blank", "popup,left=-1890,top=40,width=1280,height=760,noopener");
+  const stub = (other: { opener: unknown } | null, inner = { innerWidth: 1280, innerHeight: 760 }) => {
+    const open = vi.fn(() => other);
+    const view = {
+      open,
+      location: { pathname: "/market/KXDEMO", search: "?tab=book" },
+      screenX: -1920,
+      screenY: 10,
+      ...inner,
+      screen: { availWidth: 1920, availHeight: 1040 },
+    } as unknown as Opener; // a stub of exactly Opener's fields
+    return { open, view };
+  };
+
+  it("opens this screen as a popup the same size, a little offset, and cuts the link back", () => {
+    const other = { opener: "this window" };
+    const { open, view } = stub(other);
+    openNewWindow(view);
+    expect(open).toHaveBeenCalledWith("/market/KXDEMO?tab=book", "_blank", "popup,left=-1890,top=40,width=1280,height=760");
+    expect(other.opener).toBeNull();
+  });
+
+  it("is smaller than a window that fills the screen, so it never hides it whole", () => {
+    const { open, view } = stub(null, { innerWidth: 1920, innerHeight: 1040 });
+    openNewWindow(view); // a refused popup (null) is no error
+    expect(open).toHaveBeenCalledWith("/market/KXDEMO?tab=book", "_blank", "popup,left=-1890,top=40,width=1860,height=980");
   });
 });
 

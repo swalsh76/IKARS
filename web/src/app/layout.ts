@@ -107,18 +107,24 @@ export async function allowPlacement(view: object = window): Promise<boolean> {
 
 export const NEW_WINDOW_OFFSET = 30; // pixels right and down, so the new window does not hide this one
 
-type Opener = Pick<Window, "open" | "location" | "screenX" | "screenY" | "innerWidth" | "innerHeight">;
+export type Opener = Pick<Window, "open" | "location" | "screenX" | "screenY" | "innerWidth" | "innerHeight"> & {
+  screen: Pick<Screen, "availWidth" | "availHeight">;
+};
 
-/** Another IKARS window on this screen, the same size and a little offset (M1.8c). It shares Edge's
- * profile, so it is signed in already; it answers layout asks like any other window. */
+/** Another IKARS window on this screen, a little offset and the same size, less the offset when this
+ * one fills the screen (so it never hides this one whole) (M1.8c). It shares Edge's profile, so it
+ * is signed in already; it answers layout asks like any other window. */
 export function openNewWindow(view: Opener = window): void {
+  const room = (inner: number, avail: number) => Math.min(inner, avail - 2 * NEW_WINDOW_OFFSET);
   const features = [
     "popup",
-    `left=${Math.round(view.screenX) + NEW_WINDOW_OFFSET}`,
-    `top=${Math.round(view.screenY) + NEW_WINDOW_OFFSET}`,
-    `width=${Math.round(view.innerWidth)}`,
-    `height=${Math.round(view.innerHeight)}`,
-    "noopener", // nothing ties the two windows together but the engine and the layout channel
+    `left=${view.screenX + NEW_WINDOW_OFFSET}`,
+    `top=${view.screenY + NEW_WINDOW_OFFSET}`,
+    `width=${room(view.innerWidth, view.screen.availWidth)}`,
+    `height=${room(view.innerHeight, view.screen.availHeight)}`,
   ].join(",");
-  view.open(view.location.pathname + view.location.search, "_blank", features);
+  // not "noopener": with it Edge may ignore the size and place and open a tab instead (merge review
+  // 1); the link back is cut once it is open, so nothing ties the windows together but the engine
+  const other = view.open(view.location.pathname + view.location.search, "_blank", features);
+  if (other) other.opener = null;
 }
