@@ -50,6 +50,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from ikars_engine import contracts as c
 from ikars_engine import runmode, support
 from ikars_engine.files import write_text_atomic
+from ikars_engine.journal import Entry, Journal
 from ikars_engine.kalshi.discovery import OPEN_STATUSES, MarketIndex, MarketInfo
 from ikars_engine.ledger import KINDS, Ledger
 from ikars_engine.metrics import Metrics
@@ -129,6 +130,7 @@ class ApiContext:
     web_root: Path | None = None  # the terminal's files; None: none served
     config: TerminalConfig | None = None  # the settings and their actions (M1.8b-1); None: none
     updates: "Updater | None" = None  # the program's updates (M1.9b); None: none
+    journal: "Journal | None" = None  # the recommendations (M1.12a); None: none (setup mode)
 
 
 @dataclass
@@ -292,6 +294,20 @@ def candle_view(row: Candlestick) -> c.Candle:
         open_e6=row.price.open_e6, high_e6=row.price.high_e6, low_e6=row.price.low_e6,
         close_e6=row.price.close_e6, bid_close_e6=row.yes_bid.close_e6,
         ask_close_e6=row.yes_ask.close_e6, volume_e2=row.volume_e2,
+    )  # fmt: skip
+
+
+def recommendation_view(entry: "Entry") -> c.RecommendationView:
+    rec = entry.recommendation
+    marks = [c.MarkView(horizon_s=m.horizon_s, at_utc=utc_text(m.at_ns), yes_bid_e6=m.yes_bid_e6,
+                        yes_ask_e6=m.yes_ask_e6) for m in entry.marks]  # fmt: skip
+    return c.RecommendationView(
+        id=entry.id, ticker=rec.ticker, event_ticker=rec.event_ticker, side=rec.side,
+        summary=rec.summary, at_utc=utc_text(entry.received_ns), strategy=rec.strategy,
+        version=rec.version, state=entry.state, superseded_by=entry.superseded_by,
+        entry_price_e6=rec.entry_price_e6, count_e2=rec.count_e2,
+        expires_utc=utc_text(rec.expires_ns), pnl_e6=rec.pnl_e6,
+        inputs=[str(ref) for ref in rec.inputs], marks=marks,
     )  # fmt: skip
 
 
@@ -609,7 +625,11 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         return _json(c.GapPage(items=[gap_view(g) for g in found]))
 
     async def recommendations(request: Request) -> Response:
-        return _json(c.RecommendationPage(items=[]))  # from M1.12
+        if ctx.journal is None:
+            return _json(c.RecommendationPage(items=[]))
+        return _json(
+            c.RecommendationPage(items=[recommendation_view(e) for e in ctx.journal.recent()])
+        )
 
     async def stream(request: Request) -> Response:
         after = _int(request, "after_alert", None, 0, 2**62)

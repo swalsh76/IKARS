@@ -28,6 +28,7 @@ export declare const LedgerPage: Validator;
 export declare const LedgerRecordView: Validator;
 export declare const LedgerStatusView: Validator;
 export declare const Level: Validator;
+export declare const MarkView: Validator;
 export declare const MarketPage: Validator;
 export declare const MarketView: Validator;
 export declare const PortfolioView: Validator;

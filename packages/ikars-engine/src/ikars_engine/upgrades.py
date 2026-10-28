@@ -41,6 +41,7 @@ class RollbackRefused(RuntimeError):
 def _databases(paths: Paths) -> dict[str, Path]:
     return {
         "state.sqlite": paths.data / "state.sqlite",
+        "journal.sqlite": paths.data / "journal.sqlite",  # M1.12a
         "ledger.sqlite": paths.ledger / "ledger.sqlite",
     }
 

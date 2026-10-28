@@ -107,6 +107,18 @@ SCHEMAS: dict[str, pa.Schema] = {
         ]
     ),  # fmt: skip
 }
+# what plugins emit (M1.12a; D20 A's generic recording schema): every item, its payload as JSON
+SCHEMAS["item"] = pa.schema(
+    [
+        ("received_ns", _I64),  # the host's clock (review 1.R2 item 9), never the plugin's
+        ("published_ns", _I64),
+        ("kind", _STR),
+        ("id", _STR),
+        ("source", _STR),
+        ("hops", _I64),
+        ("payload", _STR),
+    ]
+)  # fmt: skip
 CHANNELS = tuple(SCHEMAS)
 Hour = tuple[str, str]  # (YYYY-MM-DD, HH)
 

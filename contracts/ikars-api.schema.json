@@ -870,6 +870,45 @@
       "title": "Level",
       "type": "object"
     },
+    "MarkView": {
+      "description": "A recommendation's market at one of its horizons (the score after fees comes from it).",
+      "properties": {
+        "at_utc": {
+          "type": "string"
+        },
+        "horizon_s": {
+          "type": "integer"
+        },
+        "yes_ask_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "yes_bid_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "horizon_s",
+        "at_utc",
+        "yes_bid_e6",
+        "yes_ask_e6"
+      ],
+      "title": "MarkView",
+      "type": "object"
+    },
     "MarketPage": {
       "properties": {
         "items": {
@@ -1170,30 +1209,94 @@
       "type": "object"
     },
     "RecommendationView": {
-      "description": "Filled from M1.12; the shape the Overview will show (provenance, PLAN D20 F, comes then).",
+      "description": "A recommendation from the journal (M1.12): what was advised, by which rule (its registered\nversion, G4), from what (provenance, F), its lifecycle (G9) and its marks.",
       "properties": {
         "at_utc": {
+          "type": "string"
+        },
+        "count_e2": {
+          "type": "integer"
+        },
+        "entry_price_e6": {
+          "type": "integer"
+        },
+        "event_ticker": {
+          "type": "string"
+        },
+        "expires_utc": {
           "type": "string"
         },
         "id": {
           "type": "string"
         },
+        "inputs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "marks": {
+          "items": {
+            "$ref": "#/$defs/MarkView"
+          },
+          "type": "array"
+        },
+        "pnl_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "side": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "strategy": {
           "type": "string"
         },
         "summary": {
           "type": "string"
         },
+        "superseded_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "ticker": {
+          "type": "string"
+        },
+        "version": {
           "type": "string"
         }
       },
       "required": [
         "id",
         "ticker",
+        "event_ticker",
         "side",
         "summary",
-        "at_utc"
+        "at_utc",
+        "strategy",
+        "version",
+        "state",
+        "superseded_by",
+        "entry_price_e6",
+        "count_e2",
+        "expires_utc",
+        "pnl_e6",
+        "inputs",
+        "marks"
       ],
       "title": "RecommendationView",
       "type": "object"

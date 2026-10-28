@@ -1,7 +1,27 @@
 {
   "at_utc": "2026-01-01T00:00:00Z",
-  "id": "r-1",
+  "count_e2": 1000,
+  "entry_price_e6": 420000,
+  "event_ticker": "KXDEMO-26JAN01",
+  "expires_utc": "2026-01-01T00:30:00Z",
+  "id": "momentum-KXDEMO-26JAN01-T50-1",
+  "inputs": [
+    "market:KXDEMO-26JAN01-T50"
+  ],
+  "marks": [
+    {
+      "at_utc": "2026-01-01T00:30:00Z",
+      "horizon_s": 1800,
+      "yes_ask_e6": 450000,
+      "yes_bid_e6": 440000
+    }
+  ],
+  "pnl_e6": null,
   "side": "yes",
-  "summary": "made up",
-  "ticker": "KXDEMO-26JAN01-T50"
+  "state": "active",
+  "strategy": "momentum",
+  "summary": "made up: up 5c in 5 min on 120",
+  "superseded_by": null,
+  "ticker": "KXDEMO-26JAN01-T50",
+  "version": "9f2ce1a0"
 }

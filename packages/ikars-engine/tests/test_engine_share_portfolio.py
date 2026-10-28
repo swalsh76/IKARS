@@ -582,3 +582,19 @@ async def test_a_daemon_thread_returns_and_raises() -> None:
 
     with pytest.raises(ShareError, match="refused"):
         await in_daemon_thread(fails)
+
+
+def test_the_journal_is_backed_up_with_the_state(nas: Path, tmp_path: Path) -> None:
+    from ikars_engine.journal import Journal
+
+    share = Share(str(nas))
+    share.init(T0)
+    paths = make_data(tmp_path / "ikars-data")
+    Journal(paths.data / "journal.sqlite").close()
+    back_up(
+        share, ledger=paths.ledger / "ledger.sqlite", state=paths.data / "state.sqlite",
+        settings=paths.settings, checkpoints=paths.ledger / "checkpoints",
+        staging=paths.data / "backup-staging", now_ns=T0, journal=paths.data / "journal.sqlite",
+    )  # fmt: skip
+    day = nas / "ikars" / "state" / "daily" / "2026" / "2026-01-01"
+    assert {p.name for p in day.iterdir()} >= {"state.sqlite", "journal.sqlite", "SHA256SUMS"}
