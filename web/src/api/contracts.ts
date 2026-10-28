@@ -388,8 +388,11 @@ export interface UpdateView {
 available: (string | null)
 checked_at_utc: (string | null)
 current: (string | null)
+events: string[]
 installed: boolean
 problem: (string | null)
+progress: (number | null)
+size_bytes: (number | null)
 state: string
 }
 

@@ -132,4 +132,15 @@ test.describe("layouts and the support bundle", () => {
     await expect(page.getByRole("region", { name: "Program" })).toContainText("Development copy");
     expect(refused).toEqual([]);
   });
+
+  test("the IKARS Update window draws on its own, and says a development copy cannot update", async ({ page }) => {
+    const refused = watchPolicy(page);
+    await page.goto(await signInTo(demo));
+    await page.goto(`http://127.0.0.1:${demo.port}/update?to=0.1.3`);
+    const window = page.getByRole("main", { name: "IKARS Update" });
+    await expect(window.getByRole("heading", { name: "IKARS cannot update here" })).toBeVisible();
+    await expect(window).toContainText("development copy");
+    await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0); // no terminal frame
+    expect(refused).toEqual([]);
+  });
 });

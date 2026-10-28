@@ -363,9 +363,12 @@ class UpdateView(msgspec.Struct, kw_only=True):
     installed: bool  # False: a development checkout, which has no updates
     current: str | None
     available: str | None
-    state: str  # not installed, up to date, checking, ready, failed
+    state: str  # not installed, up to date, checking, downloading, ready, failed
     checked_at_utc: str | None
     problem: str | None
+    progress: int | None  # the download, in percent (Velopack's); None: no download yet
+    size_bytes: int | None  # what the download fetches (a delta when there is one)
+    events: list[str]  # the last steps, "HH:MM:SS text" (UTC), for the Update window's Details
 
 
 class ApiError(msgspec.Struct, kw_only=True):
@@ -380,7 +383,7 @@ SMALL_INTEGERS = frozenset({
     "id", "interval_minutes", "line", "offset", "open_gaps", "records", "seq", "total",
     "watched_markets", "throttle_minutes", "digest_minutes", "watched_max_markets",
     "read_share_percent", "storage_budget_gb", "port", "session_days", "x", "y", "width",
-    "height",
+    "height", "progress", "size_bytes",
 })  # fmt: skip
 
 CONTRACTS: tuple[type[msgspec.Struct], ...] = (
@@ -600,6 +603,9 @@ def examples() -> dict[str, Any]:
             state="ready",
             checked_at_utc="2026-01-01T12:00:00+00:00",
             problem=None,
+            progress=100,
+            size_bytes=4_200_000,
+            events=["12:00:01 downloading 0.1.1 (4.2 MB)", "12:00:09 downloaded 0.1.1"],
         ),
         "ApiError": ApiError(error="not_found", detail="no such market"),
     }

@@ -11,6 +11,7 @@ export type Route =
   | { screen: "alerts" }
   | { screen: "settings" }
   | { screen: "welcome" }
+  | { screen: "update"; to: string }
   | { screen: "missing"; path: string };
 
 export interface Crumb {
@@ -27,6 +28,7 @@ const TITLES: Record<Exclude<Route["screen"], "missing">, string> = {
   alerts: "Alerts",
   settings: "Settings",
   welcome: "Set up IKARS",
+  update: "IKARS Update",
 };
 
 /** The route an address names. */
@@ -48,6 +50,7 @@ export function parse(pathname: string, search = ""): Route {
     return category ? { screen: "markets", query: params.get("q") ?? "", category } : { screen: "markets", query: params.get("q") ?? "" };
   }
   if (parts.length === 2 && first === "market" && second) return { screen: "market", ticker: second };
+  if (parts.length === 1 && first === "update") return { screen: "update", to: new URLSearchParams(search).get("to") ?? "" };
   return { screen: "missing", path: pathname };
 }
 
@@ -65,6 +68,8 @@ export function href(route: Route): string {
     }
     case "market":
       return `/market/${encodeURIComponent(route.ticker)}`;
+    case "update":
+      return `/update?to=${encodeURIComponent(route.to)}`;
     case "missing":
       return route.path;
     default:

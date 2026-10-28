@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LayoutWindow } from "../api/contracts";
-import { allowPlacement, answerAsks, gather, here, openNewWindow, placeFrom, type Channel, type Opener } from "./layout";
+import { allowPlacement, announceReload, answerAsks, gather, here, openNewWindow, openUpdateWindow, placeFrom, type Channel, type Opener } from "./layout";
 
 /** Channels joined like BroadcastChannel: a message reaches every other one, never its sender. */
 function bus(): () => Channel & { closed: boolean } {
@@ -126,5 +126,27 @@ describe("gathering the open windows", () => {
     expect(where).toHaveBeenCalledOnce();
     stop();
     expect(listener.closed).toBe(true);
+  });
+});
+
+describe("the Update window and the reload", () => {
+  it("opens centred over this window and cuts the link back", () => {
+    const other = { opener: "this window" };
+    const open = vi.fn(() => other);
+    const view = { open, screenX: 100, screenY: 50, innerWidth: 1280, innerHeight: 760, location: { pathname: "/", search: "" }, screen: { availWidth: 1920, availHeight: 1040 } } as unknown as Opener;
+    openUpdateWindow("0.1.3", view);
+    expect(open).toHaveBeenCalledWith("/update?to=0.1.3", "ikars-update", "popup,left=470,top=150,width=540,height=460");
+    expect(other.opener).toBeNull();
+  });
+
+  it("makes every other window reload, and nothing else does", () => {
+    const open = bus();
+    const reloaded: string[] = [];
+    const stops = [answerAsks(open(), () => at("/ledger", 0), "a", () => reloaded.push("a")), answerAsks(open(), () => at("/alerts", 0), "b", () => reloaded.push("b"))];
+    const updater = open();
+    announceReload(updater);
+    expect(reloaded.sort()).toEqual(["a", "b"]);
+    expect(updater.closed).toBe(true);
+    stops.forEach((stop) => stop());
   });
 });

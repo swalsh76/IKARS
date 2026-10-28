@@ -2,7 +2,13 @@
   "available": "0.1.1",
   "checked_at_utc": "2026-01-01T12:00:00+00:00",
   "current": "0.1.0",
+  "events": [
+    "12:00:01 downloading 0.1.1 (4.2 MB)",
+    "12:00:09 downloaded 0.1.1"
+  ],
   "installed": true,
   "problem": null,
+  "progress": 100,
+  "size_bytes": 4200000,
   "state": "ready"
 }

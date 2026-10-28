@@ -14,6 +14,7 @@ export const ANSWER_WAIT_MS = 300;
 const MIN = { width: 200, height: 150 };
 
 type Ask = { kind: "ask"; id: string };
+type Reload = { kind: "reload" }; // the Update window: a new version answers (M1.9b)
 type Answer = { kind: "here"; id: string; from: string; window: LayoutWindow };
 
 // a screen's address in the characters the engine takes (its settings_api.SCREEN): any other is
@@ -47,9 +48,15 @@ export type Channel = Pick<BroadcastChannel, "postMessage" | "close"> & {
 const open = (): Channel => new BroadcastChannel(CHANNEL);
 
 /** Answer other windows' asks for as long as this window is open; returns the stop. */
-export function answerAsks(channel: Channel = open(), where: () => LayoutWindow = here, self: string = SELF): () => void {
+export function answerAsks(
+  channel: Channel = open(),
+  where: () => LayoutWindow = here,
+  self: string = SELF,
+  reload: () => void = () => window.location.reload(),
+): () => void {
   channel.onmessage = (event: MessageEvent) => {
-    const ask = event.data as Partial<Ask> | null;
+    const ask = event.data as Partial<Ask | Reload> | null;
+    if (ask?.kind === "reload") reload(); // into the new version's terminal
     if (ask?.kind === "ask" && typeof ask.id === "string") {
       channel.postMessage({ kind: "here", id: ask.id, from: self, window: where() } satisfies Answer);
     }
@@ -126,5 +133,22 @@ export function openNewWindow(view: Opener = window): void {
   // not "noopener": with it Edge may ignore the size and place and open a tab instead (merge review
   // 1); the link back is cut once it is open, so nothing ties the windows together but the engine
   const other = view.open(view.location.pathname + view.location.search, "_blank", features);
+  if (other) other.opener = null;
+}
+
+/** Every other IKARS window reloads (the Update window, once the new version answers). */
+export function announceReload(channel: Channel = open()): void {
+  channel.postMessage({ kind: "reload" } satisfies Reload);
+  channel.close();
+}
+
+export const UPDATE_WINDOW = { width: 540, height: 460 };
+
+/** The IKARS Update window, centred over this one (M1.9b). */
+export function openUpdateWindow(to: string, view: Opener = window): void {
+  const left = view.screenX + Math.max(0, Math.round((view.innerWidth - UPDATE_WINDOW.width) / 2));
+  const top = view.screenY + Math.max(0, Math.round((view.innerHeight - UPDATE_WINDOW.height) / 3));
+  const features = `popup,left=${left},top=${top},width=${UPDATE_WINDOW.width},height=${UPDATE_WINDOW.height}`;
+  const other = view.open(`/update?to=${encodeURIComponent(to)}`, "ikars-update", features);
   if (other) other.opener = null;
 }

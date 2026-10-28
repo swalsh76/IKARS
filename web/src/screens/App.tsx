@@ -6,6 +6,7 @@ import { Alerts } from "./Alerts";
 import { Health } from "./Health";
 import { Ledger } from "./Ledger";
 import { Settings } from "./Settings";
+import { UpdateWindow } from "./UpdateWindow";
 import { Welcome } from "./Welcome";
 import { Overview } from "./Overview";
 import { Link, Shell } from "./Shell";
@@ -36,6 +37,8 @@ function Screen() {
       return <Settings />;
     case "welcome":
       return <Welcome />;
+    case "update":
+      return <UpdateWindow to={route.to} />;
     case "missing":
       return (
         <section className="card">
@@ -54,6 +57,14 @@ function screenKey(route: Route): string {
 
 export function App() {
   const route = useRoute();
+  if (route.screen === "update") {
+    // a small window of its own: no navigation, no status strip (M1.9b)
+    return (
+      <Guarded title="The update window">
+        <Screen />
+      </Guarded>
+    );
+  }
   return (
     <Shell>
       {/* keyed by the screen: one that failed does not keep the next from drawing, and typing a

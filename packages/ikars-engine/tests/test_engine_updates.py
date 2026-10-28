@@ -18,11 +18,13 @@ from ikars_engine.updates import READY, UP_TO_DATE, Updater
 @dataclass
 class Release:
     Version: str
+    Size: int = 64_500_000
 
 
 @dataclass
 class Found:
     TargetFullRelease: Release
+    DeltasToTarget: list[Release] = field(default_factory=list)
 
 
 @dataclass
@@ -42,7 +44,9 @@ class FakeManager:
             raise self.fails
         return self.found
 
-    def download_updates(self, found: Found) -> None:
+    def download_updates(self, found: Found, progress: Any = None) -> None:
+        for percent in (0, 40, 100):
+            progress(percent)
         self.downloaded.append(found)
 
     def wait_exit_then_apply_updates(
@@ -82,6 +86,10 @@ def test_a_newer_release_is_downloaded_and_waits_for_the_owner(tmp_path: Path) -
     assert view.state == READY and view.available == "0.1.1" and view.current == "0.1.0"
     assert manager.downloaded and not manager.applied  # nothing installed until the click
     assert view.checked_at_utc == "2026-10-27T12:00:00+00:00"
+    assert view.progress == 100 and view.size_bytes == 64_500_000
+    assert [e.split(" ", 1)[1] for e in view.events] == [
+        "checking GitHub for a newer version", "downloading 0.1.1 (64.5 MB)", "downloaded 0.1.1",
+    ]  # fmt: skip
     stopped: list[bool] = []
     done = updater.apply(lambda: stopped.append(True))
     assert done.done and "0.1.1" in done.detail
@@ -150,3 +158,12 @@ async def test_the_update_routes(tmp_path: Path) -> None:
 def test_for_this_program_in_development_has_no_manager(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(updates, "locator", lambda executable=None: None)
     assert Updater.for_this_program().manager is None
+
+
+def test_a_delta_s_size_is_what_the_download_fetches() -> None:
+    found = Found(Release("0.1.1"), DeltasToTarget=[Release("0.1.1", Size=4_200_000)])
+    updater = Updater(manager=FakeManager(found=found), state=UP_TO_DATE, now=lambda: AT)
+    assert updater.check().size_bytes == 4_200_000
+    updater._downloaded("not a number")  # never a crash from Velopack's thread
+    updater._downloaded(250)
+    assert updater.progress == 100

@@ -1589,6 +1589,12 @@
             }
           ]
         },
+        "events": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "installed": {
           "type": "boolean"
         },
@@ -1596,6 +1602,26 @@
           "anyOf": [
             {
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "progress": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
             },
             {
               "type": "null"
@@ -1612,7 +1638,10 @@
         "available",
         "state",
         "checked_at_utc",
-        "problem"
+        "problem",
+        "progress",
+        "size_bytes",
+        "events"
       ],
       "title": "UpdateView",
       "type": "object"

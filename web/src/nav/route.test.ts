@@ -11,6 +11,7 @@ describe("addresses", () => {
     ["/alerts", "", { screen: "alerts" }],
     ["/settings", "", { screen: "settings" }],
     ["/welcome", "", { screen: "welcome" }],
+    ["/update", "?to=0.1.3", { screen: "update", to: "0.1.3" }],
     ["/markets", "?q=rain%20nyc", { screen: "markets", query: "rain nyc" }],
     ["/markets", "", { screen: "markets", query: "" }],
     ["/markets", "?q=rain&category=Climate", { screen: "markets", query: "rain", category: "Climate" }],

@@ -1,19 +1,18 @@
 import { useEffect, useState } from "react";
 import { ApiFailure, change, get } from "../api/client";
 import type { UpdateView } from "../api/contracts";
-import { canApply, updateParts, updatedTo } from "../view/updates";
+import { openUpdateWindow } from "../app/layout";
+import { canApply, updateParts } from "../view/updates";
 
 const CHECK_WAIT_MS = 600_000; // a check downloads a new release (about 65 MB)
-const POLL_MS = 2_000; // while updating: is the new version answering yet?
-const GIVE_UP_MS = 180_000;
+const POLL_MS = 500; // while checking: the download's progress
 
 /** The program's version and updates, on Health and Settings (M1.9b; installed only on a click).
- * While an update installs it says so plainly, and reloads this window into the new version. */
+ * Restart to update opens the IKARS Update window, which shows the whole update. */
 export function Updates() {
   const [view, setView] = useState<UpdateView | null>(null);
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState<"" | "checking" | "updating">("");
-  const [target, setTarget] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -25,89 +24,49 @@ export function Updates() {
     return () => controller.abort();
   }, []);
 
-  // updating: ask until the new version answers, then reload into it (its own terminal files)
   useEffect(() => {
-    if (target === null) return;
-    const began = Date.now();
+    if (!checking) return;
     const timer = window.setInterval(() => {
-      if (Date.now() - began > GIVE_UP_MS) {
-        window.clearInterval(timer);
-        setNote("IKARS has not come back yet: open it from the Start menu.");
-        return;
-      }
-      get("/v1/update", "UpdateView", { timeoutMs: POLL_MS })
-        .then((v) => {
-          if (updatedTo(v, target)) window.location.reload();
-        })
-        .catch(() => undefined); // the engine is stopped or starting: ask again
+      get("/v1/update", "UpdateView").then(setView).catch(() => undefined);
     }, POLL_MS);
     return () => window.clearInterval(timer);
-  }, [target]);
+  }, [checking]);
 
-  const failed = (error: unknown) => setNote(error instanceof ApiFailure ? error.message : "not done");
   const check = () => {
-    setBusy("checking");
-    setNote("Checking GitHub for a newer version, and downloading it if there is one (about 65 MB)…");
+    setChecking(true);
+    setNote("");
     change("/v1/update/check", "UpdateView", {}, { method: "POST", timeoutMs: CHECK_WAIT_MS })
-      .then((v) => {
-        setView(v);
-        setNote("");
-      })
-      .catch(failed)
-      .finally(() => setBusy(""));
-  };
-  const apply = () => {
-    if (!view?.available) return;
-    const wanted = view.available;
-    setBusy("updating");
-    change("/v1/update/apply", "Done", {}, { method: "POST" })
-      .then((done) => {
-        if (!done.done) {
-          setBusy("");
-          setNote(done.detail);
-          return;
-        }
-        setTarget(wanted);
-      })
-      .catch((error: unknown) => {
-        setBusy("");
-        failed(error);
-      });
+      .then(setView)
+      .catch((error: unknown) => setNote(error instanceof ApiFailure ? error.message : "the check failed"))
+      .finally(() => setChecking(false));
   };
 
-  if (busy === "updating") {
-    return (
-      <div className="updates updating" role="status" data-testid="update-progress">
-        <div className="update-version">Updating to {view?.available ?? "the new version"}…</div>
-        <ol className="small">
-          <li>The engine stops.</li>
-          <li>The new version installs (the data folder is never touched).</li>
-          <li>IKARS starts again and this window reloads by itself.</li>
-        </ol>
-        <div className="muted small">{note || "About half a minute. Please leave this window open."}</div>
-      </div>
-    );
-  }
   const parts = view ? updateParts(view) : null;
+  const downloading = view?.state === "downloading";
   return (
     <div className="updates">
       <div className="update-version" data-testid="update-line">
         {parts ? parts.version : note || "Reading the version…"}
       </div>
-      {parts && <div className="muted small">{busy === "checking" ? note : parts.status}</div>}
+      {parts && <div className="muted small">{checking && !downloading ? "Checking GitHub for a newer version…" : parts.status}</div>}
+      {downloading && (
+        <div className="bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={view.progress ?? 0}>
+          <div className="fill" style={{ width: `${view.progress ?? 0}%` }} />
+        </div>
+      )}
       {view?.installed && (
         <div className="update-actions">
-          <button type="button" onClick={check} disabled={busy !== ""}>
-            {busy === "checking" ? "Checking…" : "Check now"}
+          <button type="button" onClick={check} disabled={checking}>
+            {checking ? "Checking…" : "Check now"}
           </button>
-          {canApply(view) && (
-            <button type="button" className="primary" onClick={apply} disabled={busy !== ""}>
+          {canApply(view) && view.available && (
+            <button type="button" className="primary" onClick={() => view.available && openUpdateWindow(view.available)} disabled={checking}>
               Restart to update to {view.available}
             </button>
           )}
         </div>
       )}
-      {view && busy === "" && note && <div className="muted small">{note}</div>}
+      {view && note && <div className="muted small">{note}</div>}
     </div>
   );
 }

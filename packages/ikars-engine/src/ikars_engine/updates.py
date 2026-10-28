@@ -10,9 +10,11 @@ A development checkout (no ``Update.exe`` above the engine's Python) has no upda
 """
 
 import asyncio
+import contextlib
 import logging
 import sys
 import threading
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -27,12 +29,14 @@ REPOSITORY = "https://github.com/swalsh76/IKARS"
 FIRST_CHECK_S = 60.0  # after the start: never in the way of a cold start
 CHECK_EVERY_S = 24 * 3600.0
 CHECK_WAIT_S = 600.0  # a check and its download (a full package is about 65 MB)
+EVENTS_KEPT = 20
 # IKARS.exe after an update: the engine only, no new window (the one that asked reconnects)
 AFTER_UPDATE = "--after-update"
 
 NOT_INSTALLED = "not installed"  # a development checkout
 UP_TO_DATE = "up to date"
 CHECKING = "checking"
+DOWNLOADING = "downloading"
 READY = "ready"  # downloaded: Restart to update installs it
 FAILED = "failed"
 
@@ -97,6 +101,9 @@ class Updater:
     available: str | None = None
     checked_at: datetime | None = None
     problem: str | None = None
+    progress: int | None = None
+    size_bytes: int | None = None
+    events: deque[str] = field(default_factory=lambda: deque(maxlen=EVENTS_KEPT))
     _pending: Any = None
     _turn: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -118,7 +125,16 @@ class Updater:
         at = None if self.checked_at is None else self.checked_at.isoformat(timespec="seconds")
         return c.UpdateView(installed=self.manager is not None, current=self.current(),
                             available=self.available, state=self.state, checked_at_utc=at,
-                            problem=self.problem)  # fmt: skip
+                            problem=self.problem, progress=self.progress,
+                            size_bytes=self.size_bytes, events=list(self.events))  # fmt: skip
+
+    def _event(self, text: str) -> None:
+        self.events.append(f"{self.now():%H:%M:%S} {text}")
+
+    def _downloaded(self, percent: Any) -> None:
+        """Velopack's progress, from its download thread (a number from 0 to 100)."""
+        with contextlib.suppress(TypeError, ValueError):  # never a crash from Velopack's thread
+            self.progress = max(0, min(100, int(percent)))
 
     def check(self) -> c.UpdateView:
         """Look for a newer release and download it (blocking: run it in a thread)."""
@@ -126,16 +142,24 @@ class Updater:
             return self.view()  # nothing to check, or a check already running
         try:
             self.state, self.problem = CHECKING, None
+            self._event("checking GitHub for a newer version")
             found = self.manager.check_for_updates()
             if found is None:
                 self.state, self.available, self._pending = UP_TO_DATE, None, None
+                self._event("up to date")
             else:
-                self.manager.download_updates(found)
-                self._pending = found
                 self.available = str(found.TargetFullRelease.Version)
-                self.state = READY
+                deltas = list(found.DeltasToTarget or [])  # a delta when there is one: smaller
+                assets = deltas or [found.TargetFullRelease]
+                self.size_bytes = sum(int(a.Size) for a in assets)
+                self.state, self.progress = DOWNLOADING, 0
+                self._event(f"downloading {self.available} ({self.size_bytes / 1e6:.1f} MB)")
+                self.manager.download_updates(found, self._downloaded)
+                self._pending, self.progress, self.state = found, 100, READY
+                self._event(f"downloaded {self.available}")
         except Exception as exc:  # offline, rate-limited, a bad package: said, retried tomorrow
             self.state, self.problem = FAILED, f"{type(exc).__name__}: {exc}"[:300]
+            self._event(f"failed: {self.problem}")
             log.warning("update check failed", extra={"error": self.problem})
         finally:
             self.checked_at = self.now()
@@ -150,6 +174,7 @@ class Updater:
         self.manager.wait_exit_then_apply_updates(
             self._pending, silent=True, restart=True, restart_args=[AFTER_UPDATE]
         )
+        self._event(f"installing {self.available}: the engine stops for it")
         stop()
         return c.Done(
             done=True,
