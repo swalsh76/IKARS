@@ -2512,3 +2512,46 @@ PLAN M1.12 (D21-2; platform review 1.R2 items 8 and 9). **Owner's answers (2026-
 - **Machine:** `journal.sqlite` in the data folder, backed up with the state. **Packages:** none expected.
 - **Live checks:** the engine runs the plugin on the owner's key; recommendations reach the Overview; the journal
   scores them; no order is ever sent.
+
+#### 1.12a built (2026-10-27)
+
+**Built** on `m1/12a`: `c4d26ab` (plugins, recording, the journal), `e6977ab` (the merge-review fixes). After M1.9b
+(PR #26, `d11165d`). **No new packages.**
+
+- **Plugins in the live engine** (review 1.R2 item 8): the runner loads every registered plugin (`discover`) with the
+  settings' host options; one that cannot load, or that the host refuses (two of one name), is listed in health and
+  never stops the engine. Every item a plugin emits is recorded in the recorder's generic **`item`** channel (D20 A:
+  times, kind, id, source, hops, the payload as JSON); what plugins emit while the engine drains is recorded too.
+- **Received time** (review 1.R2 item 9): the host stamps `received_ns` on every emit (live the wall clock, replayed
+  the replay's), never the plugin's word.
+- **The journal** (`journal.py`, `journal.sqlite` in the data folder, apart from the tax ledger): a `recommendation`
+  item's payload is a `Recommendation` (unknown fields refused; price, count, P&L, horizons and expiry bounded). Each
+  is kept with its provenance and registered version; a newer one of the same rule on the same market supersedes it;
+  it expires at its time; at each horizon the market's YES bid and ask are marked (waiting up to ten minutes for a
+  quote; a mark the engine was down for is still made, its time showing how late). Fed by an engine listener that
+  only queues; written once a second on the event loop; what is queued at shutdown is written. Health: recorded,
+  rejected, dropped, failed passes. In the pre-upgrade snapshot and the share's daily state folder.
+- **`GET /v1/recommendations`**: the journal's newest 200, with their marks (`RecommendationView`, `MarkView`).
+- A flaky privacy test fixed: a log record's creation time could hold an amount's digits by chance.
+
+**Verified.** Python 1,502 tests; Vitest 214; lint, types, audit and the data guard clean. **Live:** folded into
+M1.12b's live check (no plugin exists before it, so the journal stays empty).
+
+**Review.**
+- **Per commit:** `c4d26ab` 1 found and fixed before committing (the journal's counts and a lost batch).
+- **Merge review (medium), 10 findings, all fixed in `e6977ab`:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | The same recommendation id again superseded the newer one and was counted | It changes nothing; tested |
+  | 2 | Two plugins of one name stopped the engine from starting | The second is left out and said in health |
+  | 3 | A horizon that fell due with no quote yet was marked empty for ever | It waits up to ten minutes for one; tested |
+  | 4 | What plugins emitted while the engine drained reached a closed recorder | The recorder closes once more, last |
+  | 5 | What was queued at shutdown never reached the journal | Written before it closes; tested |
+  | 6 | `ikars ledger backup` replaced the share's state folder without the journal | It sends the journal too |
+  | 7 | One out-of-range value from a plugin could break the route for every reader | Bounded and refused; tested |
+  | 8 | The mark check scanned every mark and decoded a day of payloads each second | A table of pending marks, indexed by when they fall due |
+  | 9 | A horizon over a day was never marked; a long outage lost marks silently | No window: still due; tested |
+  | 10 | Recommendations made in the same instant listed in a changing order | A stable tie-break |
+
+**M1.12a built**, subject to the owner's merge.

@@ -144,8 +144,9 @@ slice still needs its own approved plan before code.
   application (docs/CODE-SIGNING.md). **M1.12 plan APPROVED** (owner 2026-10-27, all as recommended; BUILD-LOG
   1.12): a engine (plugins in the live runner, recording, received time, the journal), b momentum (continuation,
   4c in 5 min on 50 contracts, spread <= 3c, 10c..90c, valid 30 min, scored at 30 and 60 min; 10 contracts;
-  registered by hash), c terminal (Overview list, Recommendation drill-down, normal throttled toast). **Now:
-  M1.12a** on `m1/12a`. Then M1.12b, M1.12c, M1.11 (M1.13 any time before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+  registered by hash), c terminal (Overview list, Recommendation drill-down, normal throttled toast). **M1.12a
+  built** on `m1/12a` (BUILD-LOG 1.12a; merge review 10 itemized): PR open, waiting for the owner's merge; its
+  live check folds into M1.12b's. Then M1.12b, M1.12c, M1.11 (M1.13 any time before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 
