@@ -270,6 +270,7 @@ def _backup(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
         share,
         ledger=paths.ledger / "ledger.sqlite",
         state=paths.data / "state.sqlite",
+        journal=paths.data / "journal.sqlite",
         settings=paths.settings,
         checkpoints=paths.ledger / "checkpoints",
         staging=paths.data / "backup-staging",

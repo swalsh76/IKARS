@@ -53,7 +53,7 @@ def test_a_recommendation_is_kept_superseded_by_a_newer_one_and_expires(tmp_path
     assert journal.expire(T0 + 1800 * S) == 2  # r2 and r3: active and past their expiry
     assert {e.id: e.state for e in journal.recent()} == {"r1": SUPERSEDED, "r2": EXPIRED,
                                                         "r3": EXPIRED}  # fmt: skip
-    journal.add(item("r1", T0, rec()))  # the same id again: kept once
+    assert journal.add(item("r1", T0, rec())) is False  # the same id again: nothing changes
     assert len(journal.recent()) == 3
     journal.close()
 
@@ -62,9 +62,9 @@ def test_marks_are_written_once_at_each_horizon(tmp_path: Path) -> None:
     journal = Journal(tmp_path / "journal.sqlite")
     journal.add(item("r1", T0, rec()))
     assert journal.due(T0 + 1799 * S) == []
-    assert journal.due(T0 + 1800 * S) == [("r1", "KXDEMO-26JAN01-T50", 1800)]
+    assert journal.due(T0 + 1800 * S) == [("r1", "KXDEMO-26JAN01-T50", 1800, T0 + 1800 * S)]
     journal.mark("r1", 1800, T0 + 1800 * S, 440_000, 450_000)
-    assert journal.due(T0 + 3600 * S) == [("r1", "KXDEMO-26JAN01-T50", 3600)]
+    assert journal.due(T0 + 3600 * S) == [("r1", "KXDEMO-26JAN01-T50", 3600, T0 + 3600 * S)]
     journal.mark("r1", 3600, T0 + 3600 * S, None, 460_000)  # no bid at that moment
     journal.mark("r1", 3600, T0 + 3700 * S, 1, 1)  # never twice
     [entry] = journal.recent()
@@ -180,3 +180,59 @@ def test_the_journal_is_in_the_pre_upgrade_snapshot(tmp_path: Path) -> None:
     upgrades.before_start(paths, "0.1.0")
     made = upgrades.before_start(paths, "0.2.0")
     assert made is not None and (made / "journal.sqlite").is_file()
+
+
+def test_the_same_id_again_never_supersedes_the_newer_one(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.add(item("r1", T0, rec()))
+    journal.add(item("r2", T0 + 60 * S, rec()))
+    assert journal.add(item("r1", T0 + 120 * S, rec())) is False  # a restart re-emits r1
+    assert {e.id: e.state for e in journal.recent()} == {"r2": ACTIVE, "r1": SUPERSEDED}
+    journal.close()
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"entry_price_e6": 0}, {"entry_price_e6": 2_000_000}, {"count_e2": 10**12},
+        {"pnl_e6": 2**60}, {"horizons_s": [0]}, {"horizons_s": [40 * 86_400]},
+        {"expires_ns": T0 - 1}, {"expires_ns": T0 + 31 * 86_400 * S},
+    ],
+)  # fmt: skip
+def test_values_out_of_range_are_refused(tmp_path: Path, bad: dict[str, Any]) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    with pytest.raises((msgspec.ValidationError, ValueError)):
+        journal.add(item("bad", T0, rec(**bad)))
+    journal.close()
+
+
+def test_a_long_horizon_is_marked_and_a_missing_quote_waits_for_one(tmp_path: Path) -> None:
+    clock = VirtualClock(T0)
+    quotes: dict[str, tuple[int | None, int | None]] = {}
+    service = JournalService(Journal(tmp_path / "journal.sqlite"), quotes, clock.now_ns)
+    two_days = 2 * 86_400
+    service._write(
+        [item("r1", T0, rec(horizons_s=[1800, two_days], expires_ns=T0 + 3 * 86_400 * S))]
+    )
+    clock.advance_to(T0 + 1800 * S)
+    service._write([])
+    assert service.journal.recent()[0].marks == []  # no quote yet: it waits
+    clock.advance_to(T0 + 1800 * S + 601 * S)  # after ten minutes: marked without one
+    service._write([])
+    assert [(m.horizon_s, m.yes_bid_e6) for m in service.journal.recent()[0].marks] == [
+        (1800, None)
+    ]
+    quotes["KXDEMO-26JAN01-T50"] = (300_000, 310_000)
+    clock.advance_to(T0 + two_days * S)  # a two-day horizon: still due, never dropped
+    service._write([])
+    assert service.journal.recent()[0].marks[-1].horizon_s == two_days
+    service.journal.close()
+
+
+async def test_what_is_queued_at_shutdown_is_written(tmp_path: Path) -> None:
+    clock = VirtualClock(T0)
+    service = JournalService(Journal(tmp_path / "journal.sqlite"), {}, clock.now_ns)
+    service.listen(item("r1", T0, rec()))
+    service.flush()
+    assert [e.id for e in service.journal.recent()] == ["r1"]
+    service.journal.close()

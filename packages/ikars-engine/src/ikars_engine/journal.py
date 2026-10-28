@@ -24,9 +24,10 @@ import sqlite3
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import msgspec
+from msgspec import Meta
 
 from ikars_engine.model import Item, Ref
 from ikars_engine.store import open_store
@@ -37,6 +38,14 @@ ACTIVE, EXPIRED, SUPERSEDED = "active", "expired", "superseded"
 QUEUE_SIZE = 1_000
 EVERY_S = 1.0  # how often the journal writes, expires and marks
 RECENT = 200  # the most the API lists
+DAY_NS = 86_400 * 1_000_000_000
+LONGEST_NS = 30 * DAY_NS  # the furthest a recommendation may expire or be marked after it is made
+QUOTE_WAIT_NS = 600 * 1_000_000_000  # a missing quote: the mark waits this long for one
+# bounds every integer the terminal reads exactly (JavaScript: 2^53) and a price can take
+Price = Annotated[int, Meta(ge=1, le=1_000_000)]  # one contract: 1 millionth of a dollar to $1
+Count = Annotated[int, Meta(ge=1, le=1_000_000_000)]
+Money = Annotated[int, Meta(ge=-(10**12), le=10**12)]
+Horizon = Annotated[int, Meta(ge=1, le=LONGEST_NS // 1_000_000_000)]
 
 
 class Recommendation(msgspec.Struct, frozen=True, kw_only=True, forbid_unknown_fields=True):
@@ -44,15 +53,15 @@ class Recommendation(msgspec.Struct, frozen=True, kw_only=True, forbid_unknown_f
 
     ticker: str
     side: Literal["yes", "no"]
-    entry_price_e6: int  # one contract of ``side`` at the moment: its ask
-    count_e2: int  # the fixed size the P&L is for (paper only; D6)
+    entry_price_e6: Price  # one contract of ``side`` at the moment: its ask
+    count_e2: Count  # the fixed size the P&L is for (paper only; D6)
     expires_ns: int
     summary: str  # one line for the Overview
     strategy: str  # the rule, as the plugin names it
     version: str  # the rule's registration hash (G4): a change is a new version
-    horizons_s: list[int] = []  # when to mark it after it is made
+    horizons_s: list[Horizon] = []  # when to mark it after it is made
     inputs: list[Ref] = []  # the items it was built from (provenance, F)
-    pnl_e6: int | None = None  # after fees on entry and exit at the plugin's target (M1.12b)
+    pnl_e6: Money | None = None  # after fees on entry and exit at the plugin's target (M1.12b)
     event_ticker: str = ""
 
 
@@ -71,6 +80,14 @@ JOURNAL_MIGRATIONS = (
         source TEXT NOT NULL,           -- the plugin that emitted it
         payload TEXT NOT NULL           -- the Recommendation, as emitted
     );
+    CREATE TABLE pending_mark (         -- a horizon not marked yet, and when it falls due
+        id TEXT NOT NULL REFERENCES recommendation (id),
+        horizon_s INTEGER NOT NULL,
+        due_ns INTEGER NOT NULL,
+        ticker TEXT NOT NULL,
+        PRIMARY KEY (id, horizon_s)
+    );
+    CREATE INDEX pending_mark_due ON pending_mark (due_ns);
     CREATE INDEX recommendation_active ON recommendation (state) WHERE state = 'active';
     CREATE INDEX recommendation_made ON recommendation (received_ns);
     CREATE TABLE mark (
@@ -127,11 +144,17 @@ class Journal:
             raise
         self._db.execute("COMMIT")
 
-    def add(self, item: Item) -> Recommendation:
+    def add(self, item: Item) -> bool:
         """Record a recommendation item; an earlier active one of the same strategy on the same
-        market is superseded by it. Raises ``msgspec.ValidationError`` for a payload that is not a
+        market is superseded by it. False: that id is recorded already (nothing changes). Raises
+        ``msgspec.ValidationError`` or ``ValueError`` for a payload that is not a sound
         ``Recommendation`` (the plugin's fault, logged by the caller)."""
         rec = msgspec.convert(item.payload, Recommendation)
+        if not item.received_ns < rec.expires_ns <= item.received_ns + LONGEST_NS:
+            raise ValueError("it must expire after it is made, within 30 days")
+        known = "SELECT 1 FROM recommendation WHERE id = ?"
+        if self._db.execute(known, (item.ref.id,)).fetchone():  # merge review 1
+            return False
         with self._transaction():
             self._db.execute(
                 "UPDATE recommendation SET state = ?, superseded_by = ?"
@@ -139,11 +162,16 @@ class Journal:
                 (SUPERSEDED, item.ref.id, ACTIVE, rec.strategy, rec.ticker, item.ref.id),
             )
             self._db.execute(
-                "INSERT OR IGNORE INTO recommendation VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+                "INSERT INTO recommendation VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
                 (item.ref.id, rec.strategy, rec.version, rec.ticker, rec.side, item.received_ns,
                  rec.expires_ns, ACTIVE, item.source, _encode(rec).decode()),
             )  # fmt: skip
-        return rec
+            self._db.executemany(
+                "INSERT INTO pending_mark VALUES (?, ?, ?, ?)",
+                [(item.ref.id, h, item.received_ns + h * 1_000_000_000, rec.ticker)
+                 for h in sorted(set(rec.horizons_s))],
+            )  # fmt: skip
+        return True
 
     def expire(self, now_ns: int) -> int:
         done = self._db.execute(
@@ -152,31 +180,31 @@ class Journal:
         )
         return done.rowcount
 
-    def due(self, now_ns: int) -> list[tuple[str, str, int]]:
-        """(id, ticker, horizon) of every mark whose time has come and is not written yet."""
+    def due(self, now_ns: int) -> list[tuple[str, str, int, int]]:
+        """(id, ticker, horizon, due_ns) of every mark whose time has come (an index lookup; a
+        mark the engine was down for is still due, and its ``at_ns`` shows how late)."""
         rows = self._db.execute(
-            "SELECT id, ticker, received_ns, payload FROM recommendation"
-            " WHERE received_ns >= ? ORDER BY received_ns",
-            (now_ns - 86_400 * 1_000_000_000,),  # a mark is never more than a day late
-        ).fetchall()
-        written = {(i, h) for i, h in self._db.execute("SELECT id, horizon_s FROM mark")}
-        due: list[tuple[str, str, int]] = []
-        for rid, ticker, made_ns, payload in rows:
-            for horizon in _decode(payload).horizons_s:
-                if made_ns + horizon * 1_000_000_000 <= now_ns and (rid, horizon) not in written:
-                    due.append((rid, ticker, horizon))
-        return due
+            "SELECT id, ticker, horizon_s, due_ns FROM pending_mark WHERE due_ns <= ?"
+            " ORDER BY due_ns",
+            (now_ns,),
+        )
+        return [(rid, ticker, horizon, due) for rid, ticker, horizon, due in rows]
 
     def mark(self, rid: str, horizon_s: int, at_ns: int, bid: int | None, ask: int | None) -> None:
-        self._db.execute(
-            "INSERT OR IGNORE INTO mark VALUES (?, ?, ?, ?, ?)", (rid, horizon_s, at_ns, bid, ask)
-        )
+        with self._transaction():
+            self._db.execute(
+                "INSERT OR IGNORE INTO mark VALUES (?, ?, ?, ?, ?)",
+                (rid, horizon_s, at_ns, bid, ask),
+            )
+            self._db.execute(
+                "DELETE FROM pending_mark WHERE id = ? AND horizon_s = ?", (rid, horizon_s)
+            )
 
     def recent(self, limit: int = RECENT) -> list[Entry]:
         """The newest recommendations, newest first, with their marks."""
         rows = self._db.execute(
             "SELECT id, received_ns, state, superseded_by, source, payload FROM recommendation"
-            " ORDER BY received_ns DESC LIMIT ?",
+            " ORDER BY received_ns DESC, rowid DESC LIMIT ?",
             (limit,),
         ).fetchall()
         marks: dict[str, list[Mark]] = {}
@@ -220,16 +248,18 @@ class JournalService:
     def _write(self, items: list[Item]) -> None:
         for item in items:  # one at a time: a bad one never loses the rest of the batch
             try:
-                self.journal.add(item)
-                self.recorded += 1
+                if self.journal.add(item):
+                    self.recorded += 1
             except Exception as exc:  # the plugin's payload or the file: counted, logged
                 self.rejected += 1
                 log.warning("recommendation not recorded",
                             extra={"ref": str(item.ref), "error": str(exc)})  # fmt: skip
         now = self.now_ns()
         self.journal.expire(now)
-        for rid, ticker, horizon in self.journal.due(now):
+        for rid, ticker, horizon, due in self.journal.due(now):
             bid, ask = self.quotes.get(ticker, (None, None))
+            if bid is None and ask is None and now - due < QUOTE_WAIT_NS:
+                continue  # no quote yet (a fresh start, a quiet market): marked when one comes
             self.journal.mark(rid, horizon, now, bid, ask)
 
     async def run(self) -> None:
@@ -243,6 +273,13 @@ class JournalService:
             except Exception as exc:  # expiring or marking: never stops the engine; next second
                 self.failures += 1
                 log.warning("journal pass failed", extra={"error": f"{type(exc).__name__}: {exc}"})
+
+    def flush(self) -> None:
+        """At shutdown, once the plugins have stopped: what is still queued is written."""
+        items: list[Item] = []
+        while not self.queue.empty():
+            items.append(self.queue.get_nowait())
+        self._write(items)
 
     def health(self) -> dict[str, object]:
         return {"recorded": self.recorded, "rejected": self.rejected, "dropped": self.dropped,

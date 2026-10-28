@@ -52,7 +52,7 @@ from ikars_engine.logs import Redactor, configure
 from ikars_engine.metrics import Metrics
 from ikars_engine.model import Item
 from ikars_engine.paths import Paths
-from ikars_engine.plugins import HostOptions, discover
+from ikars_engine.plugins import HostOptions, PluginError, discover
 from ikars_engine.portfolio import Held, Portfolio, holdings, portfolio
 from ikars_engine.recorder import Recorder
 from ikars_engine.runmode import at
@@ -120,6 +120,7 @@ class Live:
     updates: Updater
     journal: Journal
     journal_service: JournalService
+    recorder: Recorder
 
 
 def describer(index: MarketIndex) -> Describe:
@@ -198,7 +199,10 @@ async def build(
     # the plugins (review 1.R2 item 8): one that cannot load is said in health, never a stop
     plugins, unloaded = discover()
     for plugin in plugins:
-        engine.host.add(plugin)
+        try:
+            engine.host.add(plugin)
+        except PluginError as exc:  # two of one name (merge review 2): the second is left out
+            unloaded.append(f"{plugin.spec.name}: {exc}")
     journal = Journal(paths.data / "journal.sqlite")
     journal_service = JournalService(journal, source.quotes, clock.now_ns)
     engine.listeners += [journal_service.listen, recording(recorder)]
@@ -262,7 +266,7 @@ async def build(
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
     return Live(
         engine, source, state, ledger, service, backups, account_client, gpu_task, api, client,
-        updates, journal, journal_service,
+        updates, journal, journal_service, recorder,
     )  # fmt: skip
 
 
@@ -375,7 +379,12 @@ async def run(
         stack.push_async_callback(live.account_client.aclose)
         stack.push_async_callback(live.public_client.aclose)  # M1.R 24
         stack.callback(live.state.close)
-        stack.callback(live.journal.close)  # after the API, which reads it, has stopped
+        # last of all, once the plugins have drained (merge review 4 and 5): what they emitted
+        # while stopping is recorded (the source closed the recorder; closing again flushes it)
+        # and written to the journal before it closes, after the API that reads it has stopped
+        stack.callback(live.recorder.close)
+        stack.callback(live.journal.close)
+        stack.callback(live.journal_service.flush)
         stack.callback(live.ledger.close)
         stack.callback(lambda: health.update(engine.health()))
         stack.push_async_callback(_finish, running)
