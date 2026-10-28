@@ -36,6 +36,13 @@ def sell_price_e6(side: str, yes_bid_e6: int | None, yes_ask_e6: int | None) -> 
     return E6 - yes_ask_e6 if yes_ask_e6 is not None and 0 < yes_ask_e6 < E6 else None
 
 
+def settled_e6(fees: FeeSchedule, count_e2: int, entry_e6: int, won: bool) -> int:
+    """Bought at ``entry_e6`` and held to settlement: $1 a contract if the side won, nothing if it
+    lost; only the entry pays a fee (settlement charges none)."""
+    paid = entry_e6 * count_e2 // 100
+    return (count_e2 * E6 // 100 if won else 0) - paid - taker_fee_e6(fees, count_e2, entry_e6)
+
+
 def round_trip_e6(fees: FeeSchedule, count_e2: int, entry_e6: int, exit_e6: int) -> int:
     """Bought at ``entry_e6`` and sold at ``exit_e6``: the dollars made (millionths), after both
     legs' fees. Exact for whole contracts; a fraction of a millionth is dropped, never raised."""

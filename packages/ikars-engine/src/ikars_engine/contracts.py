@@ -189,6 +189,7 @@ class MarkView(msgspec.Struct, kw_only=True):
     yes_bid_e6: int | None
     yes_ask_e6: int | None
     score_e6: int | None  # sold at the side's bid then, after both fees (None: no bid or fee)
+    at_settlement: bool  # no bid then, the market settled: scored at $1 or $0, no exit fee
 
 
 class RecommendationView(msgspec.Struct, kw_only=True):
@@ -453,7 +454,7 @@ def examples() -> dict[str, Any]:
     """A made-up example of every contract (the golden examples)."""
     level = Level(price_e6=410_000, count_e2=1_250)
     mark = MarkView(horizon_s=1800, at_utc="2026-01-01T00:30:00Z", yes_bid_e6=440_000,
-                    yes_ask_e6=450_000, score_e6=60_000)  # fmt: skip
+                    yes_ask_e6=450_000, score_e6=60_000, at_settlement=False)  # fmt: skip
     recommendation = RecommendationView(
         id="momentum-KXDEMO-26JAN01-T50-1", ticker="KXDEMO-26JAN01-T50",
         event_ticker="KXDEMO-26JAN01", side="yes", summary="made up: up 5c in 5 min on 120",

@@ -236,3 +236,45 @@ async def test_what_is_queued_at_shutdown_is_written(tmp_path: Path) -> None:
     service.flush()
     assert [e.id for e in service.journal.recent()] == ["r1"]
     service.journal.close()
+
+
+def test_the_journal_learns_settlements_once_a_minute(tmp_path: Path) -> None:
+    clock = VirtualClock(T0)
+    results: dict[str, str | None] = {"KXDEMO-26JAN01-T50": None}
+    service = JournalService(Journal(tmp_path / "journal.sqlite"), {}, clock.now_ns,
+                             result=lambda t: results.get(t), trading=lambda t: False)  # fmt: skip
+    service._write([item("r1", T0, rec())])
+    assert service.journal.unsettled(T0) == ["KXDEMO-26JAN01-T50"]
+    results["KXDEMO-26JAN01-T50"] = "yes"
+    clock.advance_to(T0 + 30 * S)
+    service._write([])  # within the minute: not looked up again yet
+    assert service.journal.recent()[0].settled is None
+    clock.advance_to(T0 + 61 * S)
+    service._write([])
+    assert service.journal.recent()[0].settled == "yes" and service.journal.unsettled(T0) == []
+    clock.advance_to(T0 + 1800 * S + 601 * S)  # its check, no quote: marked as closed
+    service._write([])
+    assert service.journal.recent()[0].marks[0].closed is True
+    service.journal.close()
+
+
+def test_an_expired_recommendation_is_never_superseded(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.add(item("r1", T0, rec()))  # valid until T0 + 30 min
+    journal.add(item("r2", T0 + 1800 * S, rec(expires_ns=T0 + 3600 * S)))  # the second it ends
+    assert {e.id: e.state for e in journal.recent()} == {"r2": ACTIVE, "r1": ACTIVE}
+    journal.expire(T0 + 1800 * S)
+    assert {e.id: e.state for e in journal.recent()}["r1"] == EXPIRED  # the expirer's, not r2's
+    journal.close()
+
+
+def test_a_journal_from_v0_1_7_gains_settlements_with_a_backup(tmp_path: Path) -> None:
+    from ikars_engine.journal import JOURNAL_MIGRATIONS
+    from ikars_engine.store import open_store
+
+    path = tmp_path / "journal.sqlite"
+    open_store(path, JOURNAL_MIGRATIONS[:1]).close()  # the schema v0.1.7 shipped
+    journal = Journal(path)
+    journal.settle("KXDEMO-26JAN01-T50", "no", T0)
+    journal.close()
+    assert list(tmp_path.glob("journal.*.bak.sqlite"))  # the old file kept first

@@ -41,7 +41,7 @@ from ikars_engine.clocks import WallClock
 from ikars_engine.engine import Engine
 from ikars_engine.governor import GB, StorageGovernor
 from ikars_engine.journal import Journal, JournalService
-from ikars_engine.kalshi.discovery import Discovery, MarketIndex
+from ikars_engine.kalshi.discovery import OPEN_STATUSES, Discovery, MarketIndex
 from ikars_engine.kalshi.exchange import ExchangeWatch
 from ikars_engine.kalshi.source import KalshiSource
 from ikars_engine.kalshi.watched import WatchedSet
@@ -205,7 +205,18 @@ async def build(
             engine.host.add(plugin)
         except PluginError as exc:  # two of one name (merge review 2): the second is left out
             unloaded.append(f"{plugin.spec.name}: {exc}")
-    journal_service = JournalService(journal, source.quotes, clock.now_ns)
+
+    def result(ticker: str) -> str | None:  # a market's settlement, once the index has it
+        found = index.markets.get(ticker)
+        return None if found is None else found.result
+
+    def trading(ticker: str) -> bool | None:  # whether the market still trades, by the index
+        found = index.markets.get(ticker)
+        return None if found is None else found.status in OPEN_STATUSES
+
+    journal_service = JournalService(
+        journal, source.quotes, clock.now_ns, result=result, trading=trading
+    )
     engine.listeners += [journal_service.listen, recording(recorder)]
     engine.health_parts["journal"] = journal_service.health
     engine.health_parts["plugins_unloaded"] = lambda: {"problems": list(unloaded)}

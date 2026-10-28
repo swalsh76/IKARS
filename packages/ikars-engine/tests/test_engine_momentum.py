@@ -203,3 +203,33 @@ def test_the_journal_takes_whole_contracts_and_knows_what_is_active(tmp_path: An
     assert journal.active("momentum", TICKER, T0 + 60 * S) is True
     assert journal.active("momentum", TICKER, T0 + 1800 * S) is False  # expired by then
     journal.close()
+
+
+def test_a_check_after_the_market_closed_is_scored_at_its_settlement() -> None:
+    from ikars_engine.api import recommendation_view
+
+    # held to settlement: $1 a contract if the side won, nothing if it lost; only the entry fee
+    assert pnl.settled_e6(FEES, 1_000, 460_000, won=True) == 5_400_000 - 180_000
+    assert pnl.settled_e6(FEES, 1_000, 460_000, won=False) == -4_600_000 - 180_000
+    rec = Recommendation(ticker=TICKER, side="yes", entry_price_e6=460_000, count_e2=1_000,
+                         expires_ns=T0 + 1800 * S, summary="s", strategy="momentum",
+                         version=VERSION, horizons_s=[1800])  # fmt: skip
+    closed = [Mark(1800, T0 + 1800 * S, None, None, True)]  # no bid: the game had ended
+    won = recommendation_view(Entry("r1", T0, "expired", None, "momentum", rec, closed, "yes"),
+                              lambda ticker: FEES)  # fmt: skip
+    assert (won.marks[0].score_e6, won.marks[0].at_settlement) == (5_220_000, True)
+    lost = recommendation_view(Entry("r1", T0, "expired", None, "momentum", rec, closed, "no"),
+                               lambda ticker: FEES)  # fmt: skip
+    assert lost.marks[0].score_e6 == -4_780_000
+    unknown = recommendation_view(Entry("r1", T0, "expired", None, "momentum", rec, closed),
+                                  lambda ticker: FEES)  # fmt: skip
+    assert (unknown.marks[0].score_e6, unknown.marks[0].at_settlement) == (None, False)
+    # an empty book while it still traded is no settlement, whatever came later (review)
+    thin = [Mark(1800, T0 + 1800 * S, None, None, False)]
+    still = recommendation_view(Entry("r1", T0, "expired", None, "momentum", rec, thin, "yes"),
+                                lambda ticker: FEES)  # fmt: skip
+    assert (still.marks[0].score_e6, still.marks[0].at_settlement) == (None, False)
+    before = [Mark(1800, T0 + 1800 * S, None, None, None)]  # a mark from v0.1.7: not known
+    old = recommendation_view(Entry("r1", T0, "expired", None, "momentum", rec, before, "yes"),
+                              lambda ticker: FEES)  # fmt: skip
+    assert old.marks[0].score_e6 is None

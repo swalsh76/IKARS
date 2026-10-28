@@ -41,6 +41,7 @@ RECENT = 200  # the most the API lists
 DAY_NS = 86_400 * 1_000_000_000
 LONGEST_NS = 30 * DAY_NS  # the furthest a recommendation may expire or be marked after it is made
 QUOTE_WAIT_NS = 600 * 1_000_000_000  # a missing quote: the mark waits this long for one
+SETTLE_EVERY_NS = 60 * 1_000_000_000  # how often settlements are looked up
 # bounds every integer the terminal reads exactly (JavaScript: 2^53) and a price can take
 Price = Annotated[int, Meta(ge=1, le=1_000_000)]  # one contract: 1 millionth of a dollar to $1
 Count = Annotated[int, Meta(ge=1, le=1_000_000_000)]
@@ -99,6 +100,18 @@ JOURNAL_MIGRATIONS = (
         PRIMARY KEY (id, horizon_s)
     );
     """,
+    # 2 (M1.12b live check, owner): a market's settlement, so a check made after it closed is
+    # scored at $1 or $0 rather than left unscored (migration 1 shipped in v0.1.7)
+    """
+    CREATE TABLE settlement (
+        ticker TEXT PRIMARY KEY,
+        result TEXT NOT NULL,           -- yes or no
+        at_ns INTEGER NOT NULL          -- when IKARS learned it
+    );
+    -- whether the market had stopped trading when the mark was made: 1 closed, 0 open, NULL not
+    -- known (marks before this column); only a closed one is scored at its settlement
+    ALTER TABLE mark ADD COLUMN closed INTEGER;
+    """,
 )
 
 _decode = msgspec.json.Decoder(Recommendation).decode
@@ -111,6 +124,7 @@ class Mark:
     at_ns: int
     yes_bid_e6: int | None
     yes_ask_e6: int | None
+    closed: bool | None = None  # the market had stopped trading then (None: not known)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +136,7 @@ class Entry:
     source: str
     recommendation: Recommendation
     marks: list[Mark]
+    settled: str | None = None  # the market's result once it settled: yes or no
 
 
 class Journal:
@@ -160,8 +175,16 @@ class Journal:
         with self._transaction():
             self._db.execute(
                 "UPDATE recommendation SET state = ?, superseded_by = ?"
-                " WHERE state = ? AND strategy = ? AND ticker = ? AND id != ?",
-                (SUPERSEDED, item.ref.id, ACTIVE, rec.strategy, rec.ticker, item.ref.id),
+                " WHERE state = ? AND strategy = ? AND ticker = ? AND id != ? AND expires_ns > ?",
+                (
+                    SUPERSEDED,
+                    item.ref.id,
+                    ACTIVE,
+                    rec.strategy,
+                    rec.ticker,
+                    item.ref.id,
+                    item.received_ns,
+                ),  # fmt: skip
             )
             self._db.execute(
                 "INSERT INTO recommendation VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
@@ -192,11 +215,15 @@ class Journal:
         )
         return [(rid, ticker, horizon, due) for rid, ticker, horizon, due in rows]
 
-    def mark(self, rid: str, horizon_s: int, at_ns: int, bid: int | None, ask: int | None) -> None:
+    def mark(
+        self, rid: str, horizon_s: int, at_ns: int, bid: int | None, ask: int | None,
+        closed: bool | None = None,
+    ) -> None:  # fmt: skip
         with self._transaction():
             self._db.execute(
-                "INSERT OR IGNORE INTO mark VALUES (?, ?, ?, ?, ?)",
-                (rid, horizon_s, at_ns, bid, ask),
+                "INSERT OR IGNORE INTO mark (id, horizon_s, at_ns, yes_bid_e6, yes_ask_e6, closed)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (rid, horizon_s, at_ns, bid, ask, closed),
             )
             self._db.execute(
                 "DELETE FROM pending_mark WHERE id = ? AND horizon_s = ?", (rid, horizon_s)
@@ -211,26 +238,42 @@ class Journal:
         ).fetchone()
         return row is not None
 
-    def recent(self, limit: int = RECENT) -> list[Entry]:
-        """The newest recommendations, newest first, with their marks."""
+    def unsettled(self, since_ns: int) -> list[str]:
+        """Markets recommended since ``since_ns`` whose settlement is not known yet."""
         rows = self._db.execute(
-            "SELECT id, received_ns, state, superseded_by, source, payload FROM recommendation"
-            " ORDER BY received_ns DESC, rowid DESC LIMIT ?",
+            "SELECT DISTINCT r.ticker FROM recommendation r LEFT JOIN settlement s"
+            " ON s.ticker = r.ticker WHERE s.ticker IS NULL AND r.received_ns >= ?",
+            (since_ns,),
+        )
+        return [ticker for (ticker,) in rows]
+
+    def settle(self, ticker: str, result: str, at_ns: int) -> None:
+        self._db.execute(
+            "INSERT OR IGNORE INTO settlement VALUES (?, ?, ?)", (ticker, result, at_ns)
+        )
+
+    def recent(self, limit: int = RECENT) -> list[Entry]:
+        """The newest recommendations, newest first, with their marks and settlements."""
+        rows = self._db.execute(
+            "SELECT r.id, r.received_ns, r.state, r.superseded_by, r.source, r.payload, s.result"
+            " FROM recommendation r LEFT JOIN settlement s ON s.ticker = r.ticker"
+            " ORDER BY r.received_ns DESC, r.rowid DESC LIMIT ?",
             (limit,),
         ).fetchall()
         marks: dict[str, list[Mark]] = {}
         if rows:
             ids = [r[0] for r in rows]
             holes = ",".join("?" * len(ids))
-            for rid, horizon, at, bid, ask in self._db.execute(
-                f"SELECT id, horizon_s, at_ns, yes_bid_e6, yes_ask_e6 FROM mark"  # noqa: S608
+            for rid, horizon, at, bid, ask, closed in self._db.execute(
+                f"SELECT id, horizon_s, at_ns, yes_bid_e6, yes_ask_e6, closed FROM mark"  # noqa: S608
                 f" WHERE id IN ({holes}) ORDER BY horizon_s",
                 ids,
             ):
-                marks.setdefault(rid, []).append(Mark(horizon, at, bid, ask))
+                shut = None if closed is None else bool(closed)
+                marks.setdefault(rid, []).append(Mark(horizon, at, bid, ask, shut))
         return [
-            Entry(rid, made, state, by, source, _decode(payload), marks.get(rid, []))
-            for rid, made, state, by, source, payload in rows
+            Entry(rid, made, state, by, source, _decode(payload), marks.get(rid, []), settled)
+            for rid, made, state, by, source, payload, settled in rows
         ]
 
 
@@ -242,6 +285,11 @@ class JournalService:
     journal: Journal
     quotes: Mapping[str, tuple[int | None, int | None]]  # the live YES bid and ask, by ticker
     now_ns: Callable[[], int]
+    # a market's result once it settled ("yes" or "no"; the market index's), else None
+    result: Callable[[str], str | None] = lambda ticker: None
+    # whether a market still trades (True), has stopped (False), or is not known (None)
+    trading: Callable[[str], bool | None] = lambda ticker: None
+    settled_at_ns: int = 0
     queue: asyncio.Queue[Item] = field(default_factory=lambda: asyncio.Queue(QUEUE_SIZE))
     dropped: int = 0
     rejected: int = 0
@@ -271,7 +319,16 @@ class JournalService:
             bid, ask = self.quotes.get(ticker, (None, None))
             if bid is None and ask is None and now - due < QUOTE_WAIT_NS:
                 continue  # no quote yet (a fresh start, a quiet market): marked when one comes
-            self.journal.mark(rid, horizon, now, bid, ask)
+            open_now = self.trading(ticker)
+            self.journal.mark(
+                rid, horizon, now, bid, ask, None if open_now is None else not open_now
+            )
+        if now - self.settled_at_ns >= SETTLE_EVERY_NS:  # once a minute, from the market index
+            self.settled_at_ns = now
+            for ticker in self.journal.unsettled(now - LONGEST_NS):
+                result = self.result(ticker)
+                if result in ("yes", "no"):
+                    self.journal.settle(ticker, result, now)
 
     async def run(self) -> None:
         while True:

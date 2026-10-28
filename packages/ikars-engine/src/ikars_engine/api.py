@@ -55,7 +55,7 @@ from ikars_engine.journal import Entry, Journal
 from ikars_engine.kalshi.discovery import OPEN_STATUSES, MarketIndex, MarketInfo
 from ikars_engine.ledger import KINDS, Ledger
 from ikars_engine.metrics import Metrics
-from ikars_engine.pnl import round_trip_e6, sell_price_e6
+from ikars_engine.pnl import round_trip_e6, sell_price_e6, settled_e6
 from ikars_engine.portfolio import Portfolio
 from ikars_engine.runmode import at
 from ikars_engine.session import COOKIE, Sessions
@@ -307,15 +307,25 @@ def recommendation_view(
     rec = entry.recommendation
     schedule = fees(rec.ticker)
 
-    def score(bid: int | None, ask: int | None) -> int | None:
+    def score(bid: int | None, ask: int | None, closed: bool | None) -> tuple[int | None, bool]:
+        """The score, and whether it is at settlement: no bid then because the market had stopped
+        trading (never just an empty book), and it has since settled."""
         sold = sell_price_e6(rec.side, bid, ask)
-        if schedule is None or sold is None:
-            return None
-        return round_trip_e6(schedule, rec.count_e2, rec.entry_price_e6, sold)
+        if schedule is None:
+            return None, False
+        if sold is not None:
+            return round_trip_e6(schedule, rec.count_e2, rec.entry_price_e6, sold), False
+        if closed and entry.settled in ("yes", "no"):  # stopped trading then: its settlement
+            won = entry.settled == rec.side
+            return settled_e6(schedule, rec.count_e2, rec.entry_price_e6, won), True
+        return None, False
 
-    marks = [c.MarkView(horizon_s=m.horizon_s, at_utc=utc_text(m.at_ns), yes_bid_e6=m.yes_bid_e6,
-                        yes_ask_e6=m.yes_ask_e6, score_e6=score(m.yes_bid_e6, m.yes_ask_e6))
-             for m in entry.marks]  # fmt: skip
+    marks = []
+    for m in entry.marks:
+        value, settled = score(m.yes_bid_e6, m.yes_ask_e6, m.closed)
+        marks.append(c.MarkView(horizon_s=m.horizon_s, at_utc=utc_text(m.at_ns),
+                                yes_bid_e6=m.yes_bid_e6, yes_ask_e6=m.yes_ask_e6, score_e6=value,
+                                at_settlement=settled))  # fmt: skip
     return c.RecommendationView(
         id=entry.id, ticker=rec.ticker, event_ticker=rec.event_ticker, side=rec.side,
         summary=rec.summary, at_utc=utc_text(entry.received_ns), strategy=rec.strategy,
