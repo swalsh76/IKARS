@@ -31,7 +31,7 @@ class FakeManager:
 
     found: Found | None = None
     fails: Exception | None = None
-    applied: list[tuple[Any, bool, bool]] = field(default_factory=list)
+    applied: list[tuple[Any, bool, bool, list[str]]] = field(default_factory=list)
     downloaded: list[Any] = field(default_factory=list)
 
     def get_current_version(self) -> str:
@@ -45,8 +45,10 @@ class FakeManager:
     def download_updates(self, found: Found) -> None:
         self.downloaded.append(found)
 
-    def wait_exit_then_apply_updates(self, found: Found, silent: bool, restart: bool) -> None:
-        self.applied.append((found, silent, restart))
+    def wait_exit_then_apply_updates(
+        self, found: Found, silent: bool, restart: bool, restart_args: list[str]
+    ) -> None:
+        self.applied.append((found, silent, restart, restart_args))
 
 
 AT = datetime(2026, 10, 27, 12, 0, tzinfo=UTC)
@@ -83,7 +85,9 @@ def test_a_newer_release_is_downloaded_and_waits_for_the_owner(tmp_path: Path) -
     stopped: list[bool] = []
     done = updater.apply(lambda: stopped.append(True))
     assert done.done and "0.1.1" in done.detail
-    assert manager.applied == [(manager.found, True, True)] and stopped == [True]
+    # restarted with the engine only: the window that asked reconnects, no second one opens
+    assert manager.applied == [(manager.found, True, True, ["--after-update"])]
+    assert stopped == [True]
 
 
 def test_no_release_or_a_failed_check_is_said(tmp_path: Path) -> None:

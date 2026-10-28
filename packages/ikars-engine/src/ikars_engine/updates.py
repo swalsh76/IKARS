@@ -27,6 +27,8 @@ REPOSITORY = "https://github.com/swalsh76/IKARS"
 FIRST_CHECK_S = 60.0  # after the start: never in the way of a cold start
 CHECK_EVERY_S = 24 * 3600.0
 CHECK_WAIT_S = 600.0  # a check and its download (a full package is about 65 MB)
+# IKARS.exe after an update: the engine only, no new window (the one that asked reconnects)
+AFTER_UPDATE = "--after-update"
 
 NOT_INSTALLED = "not installed"  # a development checkout
 UP_TO_DATE = "up to date"
@@ -145,7 +147,9 @@ class Updater:
         (``stop``) and then starts the program again."""
         if self.manager is None or self.state != READY or self._pending is None:
             return c.Done(done=False, detail="no update is ready to install")
-        self.manager.wait_exit_then_apply_updates(self._pending, silent=True, restart=True)
+        self.manager.wait_exit_then_apply_updates(
+            self._pending, silent=True, restart=True, restart_args=[AFTER_UPDATE]
+        )
         stop()
         return c.Done(
             done=True,

@@ -89,3 +89,18 @@ def test_the_engine_runs_isolated_from_the_user_s_python_settings() -> None:
     from ikars_engine.watchdog import engine_command
 
     assert engine_command(None)[1:4] == ["-I", "-m", "ikars_engine"]
+
+
+def test_after_an_update_the_engine_starts_but_no_second_window_opens(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ikars_engine import open_terminal
+
+    paths = Paths(tmp_path / "IKARS")
+    monkeypatch.setattr(launcher, "resolve", lambda: paths)
+    monkeypatch.setattr(runmode, "engine_running", lambda folder: False)
+    started: list[list[str]] = []
+    monkeypatch.setattr(launcher, "start_engine", started.append)
+    monkeypatch.setattr(open_terminal, "open_terminal", lambda p, **kw: pytest.fail("a window"))
+    assert launcher.main(["--after-update"]) == 0
+    assert started and started[0][-1] == "serve"
