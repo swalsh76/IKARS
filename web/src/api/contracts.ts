@@ -242,8 +242,10 @@ verified: (boolean | null)
  * A recommendation's market at one of its horizons (the score after fees comes from it).
  */
 export interface MarkView {
+at_settlement: boolean
 at_utc: string
 horizon_s: number
+score_e6: (number | null)
 yes_ask_e6: (number | null)
 yes_bid_e6: (number | null)
 }

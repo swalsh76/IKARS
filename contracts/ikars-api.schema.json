@@ -873,11 +873,24 @@
     "MarkView": {
       "description": "A recommendation's market at one of its horizons (the score after fees comes from it).",
       "properties": {
+        "at_settlement": {
+          "type": "boolean"
+        },
         "at_utc": {
           "type": "string"
         },
         "horizon_s": {
           "type": "integer"
+        },
+        "score_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "yes_ask_e6": {
           "anyOf": [
@@ -904,7 +917,9 @@
         "horizon_s",
         "at_utc",
         "yes_bid_e6",
-        "yes_ask_e6"
+        "yes_ask_e6",
+        "score_e6",
+        "at_settlement"
       ],
       "title": "MarkView",
       "type": "object"

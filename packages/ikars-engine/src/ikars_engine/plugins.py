@@ -25,10 +25,11 @@ import asyncio
 import contextvars
 import logging
 from collections import deque
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from importlib.metadata import EntryPoint, entry_points
+from types import MappingProxyType
 from typing import Any, Protocol, runtime_checkable
 
 import msgspec
@@ -93,10 +94,14 @@ class PluginContext:
         settings: dict[str, Any],
         emit: Callable[[Item], Awaitable[None]],
         call_timeout: float,
+        services: Mapping[str, Callable[..., Any]] | None = None,
     ) -> None:
         self.spec = spec
         self.clock = clock
         self.settings = settings
+        # read-only lookups the engine offers (M1.12b): "market" (a ticker's details) and "fees"
+        # (a series' fee schedule); a plugin asks by name and copes with one that is missing
+        self.services: Mapping[str, Callable[..., Any]] = MappingProxyType(dict(services or {}))
         self._emit = emit
         self._call_timeout = call_timeout
         self.log = logging.getLogger(f"ikars_engine.plugin.{spec.name}")
@@ -182,6 +187,7 @@ class HostOptions:
     max_crashes: int = 10  # crashes in a row (a run that stays up stable_seconds resets the count)
     stable_seconds: float = 60.0
     settings: dict[str, dict[str, Any]] = field(default_factory=dict)  # per plugin, by name
+    services: dict[str, Callable[..., Any]] = field(default_factory=dict)  # for every plugin
 
 
 class PluginHost:
@@ -204,6 +210,7 @@ class PluginHost:
         self._stable_ns = int(o.stable_seconds * 1e9)
         self._started = False
         self._settings = o.settings
+        self._services = o.services
         self._slots: dict[str, _Slot] = {}
         self.gaps: deque[Gap] = deque(maxlen=GAPS_KEPT)  # the latest; every one is in the metrics
         self.gap_total = 0
@@ -215,7 +222,12 @@ class PluginHost:
         if name in self._slots:
             raise PluginError(f"two plugins are named {name!r}")
         ctx = PluginContext(
-            plugin.spec, self._clock, self._settings.get(name, {}), self._emit, self._timeout
+            plugin.spec,
+            self._clock,
+            self._settings.get(name, {}),
+            self._emit,
+            self._timeout,
+            self._services,
         )
         self._slots[name] = _Slot(plugin, ctx, asyncio.Queue(self._queue_size))
 

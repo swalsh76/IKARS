@@ -12,8 +12,10 @@
       ],
       "marks": [
         {
+          "at_settlement": false,
           "at_utc": "2026-01-01T00:30:00Z",
           "horizon_s": 1800,
+          "score_e6": 60000,
           "yes_ask_e6": 450000,
           "yes_bid_e6": 440000
         }
