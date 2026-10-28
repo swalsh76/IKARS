@@ -6,10 +6,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import msgspec
 import pytest
 from ikars_engine import open_terminal as ot
 from ikars_engine.demo_api import Market, serve
 from ikars_engine.paths import Paths
+from ikars_engine.settings import Layout, LayoutWindow, Settings, TerminalSettings
 from ikars_engine.watchdog import RULES, Observation, evaluate
 
 # --- ikars open ---------------------------------------------------------------------------------
@@ -43,11 +45,11 @@ def test_open_starts_the_engine_when_needed_and_opens_edge(
 
     def code(port: int, token: str) -> str:
         asked.append((port, token))
-        return f"http://127.0.0.1:{port}/#code=c"
+        return "c"
 
     write_api(paths)
     result, started, launched = opener(paths, code=code)
-    assert result == {"opened": True, "started_engine": True, "port": 47821}
+    assert result == {"opened": True, "started_engine": True, "port": 47821, "windows": 1}
     assert started and started[0][-1] == "serve" and asked == [(47821, "t")]
     command = launched[0]
     assert command[1] == "--app=http://127.0.0.1:47821/#code=c"
@@ -66,7 +68,7 @@ def test_open_uses_a_running_engine_and_waits_for_its_api(
         calls[0] += 1
         if calls[0] < 3:
             raise OSError("not answering yet")
-        return "http://127.0.0.1:1/#code=c"
+        return "c"
 
     write_api(paths)
     result, started, launched = opener(paths, code=code)
@@ -77,6 +79,89 @@ def test_open_gives_up_in_plain_words(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setattr("ikars_engine.runmode.engine_running", lambda folder: True)
     with pytest.raises(ot.OpenError, match="did not answer"):
         opener(Paths(tmp_path), wait_s=0.0)
+
+
+def with_layouts(start: str = "") -> Settings:
+    windows = [
+        LayoutWindow(screen="/markets?q=fed", x=-1920, y=10, width=1600, height=900),
+        LayoutWindow(screen="/overview", x=0, y=0, width=1280, height=800),
+    ]
+    terminal = TerminalSettings(layouts=[Layout(name="Trading", windows=windows)],
+                                start_layout=start)  # fmt: skip
+    return Settings(terminal=terminal)
+
+
+def test_a_layout_opens_each_window_at_its_place_with_a_code_of_its_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = Paths(tmp_path)
+    monkeypatch.setattr("ikars_engine.runmode.engine_running", lambda folder: True)
+    codes = iter(["one", "two"])
+    write_api(paths)
+    result, _, launched = opener(paths, code=lambda port, token: next(codes),
+                                 settings=with_layouts(), layout="trading")  # fmt: skip
+    assert result["windows"] == 2
+    # Edge honours its window switches in its first process only: each window also carries its
+    # place, and moves itself there once it loads (merge review 2)
+    assert (
+        launched[0][1] == "--app=http://127.0.0.1:47821/markets?q=fed#code=one&at=-1920,10,1600,900"
+    )
+    assert launched[0][-2:] == ["--window-position=-1920,10", "--window-size=1600,900"]
+    assert launched[1][1] == "--app=http://127.0.0.1:47821/overview#code=two&at=0,0,1280,800"
+
+
+def test_a_later_window_that_cannot_sign_in_is_said_in_words(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = Paths(tmp_path)
+    monkeypatch.setattr("ikars_engine.runmode.engine_running", lambda folder: True)
+    write_api(paths)
+    calls = [0]
+
+    def code(port: int, token: str) -> str:
+        calls[0] += 1
+        if calls[0] > 1:
+            raise OSError("the engine is restarting")
+        return "c"
+
+    with pytest.raises(ot.OpenError, match="window 2 of 2 could not sign in"):
+        opener(paths, code=code, settings=with_layouts(), layout="Trading")
+
+
+def test_the_start_layout_opens_by_default_and_an_empty_name_opens_one_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = Paths(tmp_path)
+    monkeypatch.setattr("ikars_engine.runmode.engine_running", lambda folder: True)
+    write_api(paths)
+    _, _, launched = opener(paths, code=lambda p, t: "c", settings=with_layouts("Trading"))
+    assert len(launched) == 2
+    _, _, launched = opener(paths, code=lambda p, t: "c", settings=with_layouts("Trading"),
+                            layout="")  # fmt: skip
+    assert len(launched) == 1 and not any("--window" in a for a in launched[0])
+    # a start layout deleted by hand: one window, not an error
+    _, _, launched = opener(paths, code=lambda p, t: "c", settings=with_layouts("Gone"))
+    assert len(launched) == 1
+
+
+def test_an_unknown_or_unsafe_layout_is_refused_before_anything_starts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("ikars_engine.runmode.engine_running", lambda folder: False)
+    with pytest.raises(ot.OpenError, match="no layout is named"):
+        opener(Paths(tmp_path), settings=with_layouts(), layout="Nope")
+    edited = with_layouts()  # a hand-edited screen that would leave the engine
+    bad = Layout(
+        name="Trading",
+        windows=[msgspec.structs.replace(edited.terminal.layouts[0].windows[0], screen="//e.x/x")],
+    )
+    edited = msgspec.structs.replace(
+        edited, terminal=msgspec.structs.replace(edited.terminal, layouts=[bad])
+    )
+    started: list[list[str]] = []
+    with pytest.raises(ot.OpenError, match="cannot be used"):
+        ot.open_terminal(Paths(tmp_path), settings=edited, layout="Trading", start=started.append)
+    assert started == []
 
 
 def test_edge_is_found_in_its_usual_places(tmp_path: Path) -> None:

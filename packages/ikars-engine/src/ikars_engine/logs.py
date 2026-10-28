@@ -23,6 +23,15 @@ _BEARER = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
 _STANDARD = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
 
 
+def secret_forms(values: Iterable[str]) -> list[str]:
+    """``values`` and how else each is written: a path with the other slash, and its file name
+    alone (which names a key)."""
+    found = [v for v in values if v]
+    more = [v.replace("\\", "/") for v in found] + [v.replace("/", "\\") for v in found]
+    names = [re.split(r"[\\/]", v)[-1] for v in found if "/" in v or "\\" in v]
+    return found + more + names
+
+
 class Redactor:
     """Masks secret values and secret-shaped text in strings."""
 
@@ -39,11 +48,7 @@ class Redactor:
         cls, variables: Iterable[str], environ: dict[str, str] | None = None
     ) -> "Redactor":
         env = dict(os.environ) if environ is None else environ
-        values = [env.get(name, "") for name in variables]
-        # a path is also written with the other slash; its file name alone names the key
-        more = [v.replace("\\", "/") for v in values] + [v.replace("/", "\\") for v in values]
-        names = [re.split(r"[\\/]", v)[-1] for v in values if "/" in v or "\\" in v]
-        return cls(values + more + names)
+        return cls(secret_forms(env.get(name, "") for name in variables))
 
     def text(self, value: str) -> str:
         if self._pattern is not None:

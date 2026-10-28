@@ -130,10 +130,13 @@ slice still needs its own approved plan before code.
   **M1.8b plan APPROVED** (owner 2026-10-27, all as recommended; BUILD-LOG 1.8b): **1b-1** mock-ups of
   Settings and the wizard (approved before building), hotkeys, themes, Settings and the wizard; **1b-2** layouts
   (sets of windows) and the support bundle. Mock-ups approved; skins added by the owner (built-in palettes
-  only). **M1.8b-1 built** on `m1/8b` (BUILD-LOG 1.8b-1; merge review 10 itemized): PR open, waiting for
-  the owner's merge. Then **M1.8b-2** (layouts, support bundle).
-  That completes M1.8a-web. **Next:** M1.8b (Markets, Market), 2b (Ledger, Alerts, meter), then M1.8b. The owner allows `gh pr merge`
-  by a local permission rule; merge only when asked.
+  only). **M1.8b-1 done** (PR #21 merged as `db0bf9a`; the settings race fix PR #22 as `e6a29f3`).
+  **M1.8b-2 built** on `m1/8b-2` (BUILD-LOG 1.8b-2; layouts and the support bundle; merge review 10
+  itemized): **PR #23** open, waiting for the owner's merge and the two-monitor layout check. That completes M1.8.
+  **Approved addition (owner, 2026-10-27): M1.8c New window**, its own small slice after PR #23 merges: a
+  "New window" item at the foot of the side navigation opens a browser popup on the same screen (signed in by
+  the shared profile); terminal only. **Next:** M1.8c, then M1.9 (packaging), M1.12, M1.13, M1.11. The owner allows `gh pr merge` by a local
+  permission rule; merge only when asked.
 
 ## How the owner wants the work run
 

@@ -1,7 +1,8 @@
 // What the Settings screen and the first-run wizard show and send (M1.8b-1): plain functions, tested
 // without a browser. The engine checks every value again; these only shape what the owner sees.
 
-import type { KeyStatus, SettingsChange, SettingsView } from "../api/contracts";
+import type { KeyStatus, Layout, SettingsChange, SettingsView } from "../api/contracts";
+import { crumbs, parse } from "../nav/route";
 
 /** The form's fields, as typed (text boxes hold text). */
 export interface Form {
@@ -110,4 +111,15 @@ export function restartNote(v: SettingsView): string | null {
   if (v.restart_needed.length === 0) return null;
   const names = v.restart_needed.map((n) => NAMES[n] ?? n);
   return `${names.join(", ")} ${names.length === 1 ? "applies" : "apply"} after an engine restart.`;
+}
+
+/** A saved layout in words: how many windows, and each one's screen. */
+export function layoutLine(layout: Layout): string {
+  const screens = layout.windows.map((w) => {
+    const at = w.screen.indexOf("?");
+    const route = at < 0 ? parse(w.screen) : parse(w.screen.slice(0, at), w.screen.slice(at));
+    return crumbs(route).at(-1)?.label ?? "Overview";
+  });
+  const count = layout.windows.length;
+  return `${count} window${count === 1 ? "" : "s"}: ${screens.join(", ")}`;
 }

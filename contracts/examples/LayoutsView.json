@@ -1,0 +1,24 @@
+{
+  "layouts": [
+    {
+      "name": "Trading",
+      "windows": [
+        {
+          "height": 1000,
+          "screen": "/markets?q=fed",
+          "width": 1600,
+          "x": -1920,
+          "y": 0
+        },
+        {
+          "height": 800,
+          "screen": "/overview",
+          "width": 1280,
+          "x": 0,
+          "y": 0
+        }
+      ]
+    }
+  ],
+  "start": "Trading"
+}

@@ -7,17 +7,23 @@
 - ``install-autostart`` / ``remove-autostart``: the sign-in start, the watchdog's task, and the
   notification name, all user space.
 - ``alerts test``: show one test notification.
-- ``open``: the web terminal in its own Edge window (starting the engine if needed).
+- ``open``: the web terminal in its own Edge window (starting the engine if needed), or a saved
+  layout's windows (``--layout``).
+- ``support``: a redacted support bundle in the data folder's ``support`` folder (never sent).
 """
 
 import argparse
 import asyncio
 import json
 import logging
+import os
 import time
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+import msgspec
 
 from ikars_engine import autostart, runmode
 from ikars_engine.alerts import (
@@ -29,6 +35,7 @@ from ikars_engine.alerts import (
     ToastNotifier,
 )
 from ikars_engine.api import read_api_file
+from ikars_engine.contracts import Done
 from ikars_engine.logs import Redactor, configure
 from ikars_engine.paths import Paths
 from ikars_engine.settings import Settings
@@ -45,6 +52,7 @@ COMMANDS = (
     "remove-autostart",
     "alerts",
     "open",
+    "support",
 )
 STOP_WAIT_S = 60
 
@@ -58,13 +66,44 @@ def add_parsers(commands: Any) -> None:
         "install-autostart": "start at sign-in, the watchdog task and the notification name",
         "remove-autostart": "remove all three",
         "open": "the web terminal in its own Edge window",
+        "support": "a redacted support bundle in the data folder (never sent)",
     }
     for name, text in helps.items():
         parser = commands.add_parser(name, help=text)
         parser.add_argument("--root", default=None, help="the data folder (default: the usual)")
+        if name == "open":
+            parser.add_argument(
+                "--layout", default=None,
+                help="a saved layout's windows (default: the one chosen to open at start; '': one)",
+            )  # fmt: skip
     alerts = commands.add_parser("alerts", help="workstation notifications")
     alerts.add_argument("--root", default=None, help="the data folder (default: the usual)")
     alerts.add_argument("action", choices=["test"])
+
+
+def support_bundle(paths: Paths, settings: Settings) -> Done:
+    """Asks the running engine for a bundle (it adds its health and the account's amounts to what
+    is redacted); makes one here when no engine answers."""
+    from ikars_engine import support
+
+    # the token is redacted even when the engine is stopped: it outlives a restart (merge review 3)
+    record = read_api_file(paths.data)
+    token = str(record.get("token", "")) if record else None
+    if record is not None and runmode.engine_running(paths.data):
+        try:  # a half-written api.json falls back too (merge review 4)
+            request = urllib.request.Request(  # noqa: S310 (a fixed loopback address)
+                f"http://127.0.0.1:{int(record['port'])}/v1/support/bundle",
+                method="POST",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            with urllib.request.urlopen(request, timeout=120) as answer:  # noqa: S310
+                return msgspec.json.decode(answer.read(), type=Done)
+        except (OSError, ValueError, KeyError, msgspec.DecodeError):
+            pass  # an engine starting or stopping: make it here
+    try:
+        return support.make(paths, settings, dict(os.environ), token=token)
+    except (support.BundleRefused, OSError) as exc:
+        return Done(done=False, detail=str(exc))
 
 
 def desk_for(paths: Paths, settings: Settings) -> AlertDesk:
@@ -108,11 +147,15 @@ def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
         from ikars_engine.open_terminal import OpenError, open_terminal
 
         try:
-            _print(open_terminal(paths, root))
+            _print(open_terminal(paths, root, settings=settings, layout=args.layout))
         except OpenError as exc:
             _print({"opened": False, "problem": str(exc)})
             return 1
         return 0
+    if args.command == "support":
+        done = support_bundle(paths, settings)
+        _print({"done": done.done, "detail": done.detail})
+        return 0 if done.done else 1
     try:
         outcome = desk_for(paths, settings).raise_alert(
             Alert("test", URGENT, "test", "IKARS notifications work on this workstation"),

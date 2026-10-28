@@ -28,6 +28,7 @@ import asyncio
 import hmac
 import json
 import logging
+import os
 import secrets
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -47,6 +48,7 @@ from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from ikars_engine import contracts as c
+from ikars_engine import support
 from ikars_engine.files import write_text_atomic
 from ikars_engine.kalshi.discovery import OPEN_STATUSES, MarketIndex, MarketInfo
 from ikars_engine.ledger import KINDS, Ledger
@@ -54,6 +56,7 @@ from ikars_engine.metrics import Metrics
 from ikars_engine.portfolio import Portfolio
 from ikars_engine.runmode import at
 from ikars_engine.session import COOKIE, Sessions
+from ikars_engine.settings import Layout
 from ikars_engine.settings_api import SettingsRefused, TerminalConfig
 from ikars_engine.store import Gap
 from ikars_engine.threads import in_daemon_thread
@@ -676,6 +679,46 @@ def create_app(ctx: ApiContext) -> ASGIApp:
     async def restart(request: Request) -> Response:
         return _json(configured().restart())
 
+    async def support_bundle(request: Request) -> Response:
+        """A redacted support bundle in the data folder's support folder (never sent anywhere)."""
+        config = configured()
+        held = ctx.portfolio()
+        unrealised = held.unrealised_e6 or 0
+        amounts = [held.cash_e6, held.cost_e6, held.cash_e6 + held.cost_e6 + unrealised]
+        for position in held.positions:
+            amounts += [position.cost_e6, position.cost_e6 + (position.unrealised_e6 or 0)]
+        health = msgspec.json.encode(shared_health(ctx, asyncio.get_running_loop().time()))
+
+        def make() -> c.Done:
+            return support.make(config.paths, config.running, dict(os.environ), token=ctx.token,
+                                health=health, amounts_e6=amounts)  # fmt: skip
+
+        try:
+            return _json(await in_daemon_thread(make))
+        except (support.BundleRefused, OSError) as exc:
+            return _json(c.Done(done=False, detail=str(exc)))
+
+    async def layouts(request: Request) -> Response:
+        try:
+            return _json(await in_daemon_thread(configured().layouts))
+        except SettingsRefused as exc:
+            return _error(503, "unavailable", str(exc))
+
+    async def layout_change(request: Request) -> Response:
+        """Save a layout, choose the one restored at start, or delete one (M1.8b-2)."""
+        config = configured()
+        try:
+            if request.method == "DELETE":
+                name = request.path_params["name"]
+                return _json(await in_daemon_thread(config.delete_layout, name))
+            if request.url.path.endswith("/start"):
+                start = msgspec.json.decode(await request.body(), type=c.LayoutStart)
+                return _json(await in_daemon_thread(config.start_layout, start.name))
+            layout = msgspec.json.decode(await request.body(), type=Layout)
+            return _json(await in_daemon_thread(config.save_layout, layout))
+        except (msgspec.DecodeError, SettingsRefused) as exc:
+            return _error(400, "bad_request", str(exc))
+
     async def subscribe(request: Request) -> Response:
         state = ctx.streams.get(request.path_params["stream_id"])
         if state is None:
@@ -709,6 +752,10 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         Route("/v1/settings/share-init", share, methods=["POST"]),
         Route("/v1/engine/autostart", autostart_install, methods=["POST"]),
         Route("/v1/engine/restart", restart, methods=["POST"]),
+        Route("/v1/support/bundle", support_bundle, methods=["POST"]),
+        Route("/v1/layouts", layouts), Route("/v1/layouts", layout_change, methods=["PUT"]),
+        Route("/v1/layouts/start", layout_change, methods=["PUT"]),
+        Route("/v1/layouts/{name}", layout_change, methods=["DELETE"]),
     ]  # fmt: skip
     if ctx.web_root is not None:  # last: every other path is the terminal's
         routes.append(Route("/{path:path}", files_route(ctx.web_root), methods=["GET", "HEAD"]))

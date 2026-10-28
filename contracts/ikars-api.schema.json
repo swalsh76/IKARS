@@ -564,6 +564,89 @@
       "title": "KeyStatus",
       "type": "object"
     },
+    "Layout": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "windows": {
+          "items": {
+            "$ref": "#/$defs/LayoutWindow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "windows"
+      ],
+      "title": "Layout",
+      "type": "object"
+    },
+    "LayoutStart": {
+      "additionalProperties": false,
+      "description": "``PUT /v1/layouts/start``: the layout ``ikars open`` restores (empty: one window).",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "LayoutStart",
+      "type": "object"
+    },
+    "LayoutWindow": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "type": "integer"
+        },
+        "screen": {
+          "type": "string"
+        },
+        "width": {
+          "type": "integer"
+        },
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "screen",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "LayoutWindow",
+      "type": "object"
+    },
+    "LayoutsView": {
+      "description": "``GET /v1/layouts``: the saved layouts (each a set of IKARS windows; ``PUT /v1/layouts``\nsaves a ``Layout``) and the one ``ikars open`` restores (empty: one window).",
+      "properties": {
+        "layouts": {
+          "items": {
+            "$ref": "#/$defs/Layout"
+          },
+          "type": "array"
+        },
+        "start": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "layouts",
+        "start"
+      ],
+      "title": "LayoutsView",
+      "type": "object"
+    },
     "LedgerHealth": {
       "properties": {
         "errors": {

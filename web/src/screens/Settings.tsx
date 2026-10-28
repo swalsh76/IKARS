@@ -3,6 +3,7 @@ import { ApiFailure, change, get } from "../api/client";
 import type { SettingsView, ShareCheckView } from "../api/contracts";
 import { SKINS, applyTheme, isTheme, type Theme } from "../app/theme";
 import { changedCount, changes, formOf, keyLines, restartNote, type Form } from "../view/settings";
+import { Layouts } from "./Layouts";
 
 function Row({ label, htmlFor, children }: { label: string; htmlFor?: string; children: ReactNode }) {
   return (
@@ -152,7 +153,7 @@ export function Settings() {
         {field("port", "Port")}
         {field("session_days", "Stay signed in for (days)")}
         <Row label="Layouts">
-          <span className="muted small">Saved window layouts appear here (M1.8b-2).</span>
+          <Layouts />
         </Row>
       </section>
 

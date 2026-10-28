@@ -44,11 +44,11 @@ test("a skin is applied, saved and kept across a reload; a change notes its rest
   await page.locator("#setting-port").fill("48000");
   await page.locator("#setting-quiet_start").fill("23:00");
   await expect(page.getByTestId("settings-note")).toContainText("2 changes not saved");
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByTestId("settings-note")).toContainText("Saved");
   await expect(page.getByTestId("settings-note")).toContainText("the port applies after an engine restart");
   await page.locator("#setting-session_days").fill("3.5");
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByTestId("settings-note")).toContainText("session days must be a whole number");
   expect(refused).toEqual([]);
 });
@@ -85,6 +85,49 @@ test.describe("the first-run wizard", () => {
     await expect(page.getByRole("heading", { name: "Portfolio and exposure" })).toBeVisible();
     await page.reload(); // settings exist now: no wizard
     await expect(page).toHaveURL(/\/overview$/);
+    expect(refused).toEqual([]);
+  });
+});
+
+test.describe("layouts and the support bundle", () => {
+  let demo: Demo;
+  test.beforeAll(async () => {
+    demo = await startDemo();
+  });
+  test.afterAll(() => demo.stop());
+
+  test("the open windows are saved as a layout, chosen for the start and deleted", async ({ page, context }) => {
+    const refused = watchPolicy(page);
+    await page.goto(await signInTo(demo));
+    const second = await context.newPage(); // the same browser profile, as Edge's app windows are
+    await second.goto(`http://127.0.0.1:${demo.port}/ledger`);
+    await expect(second.getByRole("heading", { name: "Ledger" }).first()).toBeVisible();
+    await page.goto(`http://127.0.0.1:${demo.port}/settings`);
+    const note = page.getByTestId("layout-note");
+    await page.getByRole("button", { name: "Save the open windows" }).click();
+    await expect(note).toContainText("Name the layout first");
+    await page.getByLabel("Layout name").fill("Trading");
+    await page.getByRole("button", { name: "Save the open windows" }).click();
+    await expect(note).toContainText("Saved Trading (2 windows: Settings, Ledger)");
+    await expect(page.getByRole("radio", { name: "Trading" })).toBeChecked();
+    await page.getByRole("radio", { name: "One window" }).click(); // checked once the engine saves it
+    await expect(note).toContainText("ikars open opens one window");
+    await expect(page.getByRole("radio", { name: "One window" })).toBeChecked();
+    await page.reload();
+    await expect(page.getByRole("radio", { name: "One window" })).toBeChecked(); // kept by the engine
+    await page.getByRole("button", { name: "Delete Trading" }).click();
+    await expect(note).toContainText("Deleted Trading");
+    await expect(page.getByRole("radio", { name: "Trading" })).toHaveCount(0);
+    expect(refused).toEqual([]);
+  });
+
+  test("a support bundle is made from the Health screen", async ({ page }) => {
+    const refused = watchPolicy(page);
+    await page.goto(await signInTo(demo));
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Health" }).click();
+    await page.getByRole("button", { name: "Make a support bundle" }).click();
+    await expect(page.getByTestId("support-note")).toContainText("saved as support", { timeout: 30_000 });
+    await expect(page.getByTestId("support-note")).toContainText("never sent");
     expect(refused).toEqual([]);
   });
 });

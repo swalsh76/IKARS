@@ -1,14 +1,17 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { TerminalContext } from "./app/hooks";
+import { answerAsks, placeFrom } from "./app/layout";
 import { startTerminal } from "./app/terminal";
 import { App } from "./screens/App";
 import "./styles.css";
 
 const root = document.getElementById("root");
 if (root) {
+  placeFrom(window.location.hash); // a layout's window: to its place, before signing in clears it
   startTerminal()
     .then((terminal) => {
+      answerAsks(); // another window saving a layout asks where this one is (M1.8b-2)
       createRoot(root).render(
         <StrictMode>
           <TerminalContext value={terminal}>

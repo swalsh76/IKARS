@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { ApiFailure, change } from "../api/client";
 import { useMeterReading, useSnapshot, useValue } from "../app/hooks";
 import { gapRow, healthCards, meterCard } from "../view/health";
 
@@ -41,6 +43,39 @@ function Gaps() {
   );
 }
 
+const BUNDLE_WAIT_MS = 120_000; // up to 50 MB of logs are redacted and checked
+
+/** A redacted support bundle, saved in IKARS's support folder (D20 I; M1.8b-2). */
+function SupportBundle() {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const make = () => {
+    setBusy(true); // one at a time (the engine refuses a second anyway)
+    setNote("Making the bundle…");
+    change("/v1/support/bundle", "Done", {}, { method: "POST", timeoutMs: BUNDLE_WAIT_MS })
+      .then((done) => setNote(done.detail))
+      .catch((error: unknown) => setNote(error instanceof ApiFailure ? error.message : "could not make the bundle"))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <section className="card span-3" aria-label="Support bundle">
+      <h2>Support bundle</h2>
+      <p className="muted small">
+        The logs, this report, the versions, the settings and the gap log in one zip in IKARS&apos;s support folder. Keys, tokens, paths and account amounts are taken out and
+        checked for before it is kept. IKARS never sends it anywhere.
+      </p>
+      <div className="actions">
+        <button type="button" onClick={make} disabled={busy}>
+          Make a support bundle
+        </button>
+        <span className="muted small" data-testid="support-note">
+          {note}
+        </span>
+      </div>
+    </section>
+  );
+}
+
 export function Health() {
   const health = useValue("health");
   const reading = useMeterReading();
@@ -63,6 +98,7 @@ export function Health() {
         </section>
       ))}
       <Gaps />
+      <SupportBundle />
       <section className="card span-3">
         <details>
           <summary>The engine's whole report</summary>

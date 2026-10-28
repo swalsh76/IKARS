@@ -2,7 +2,8 @@
 
 The engine's settings file stays the one place they live (versioned, migrated, backed up before
 every change). This module reads it for the terminal, checks and saves a change, and does the few
-actions the screens offer: test or set up the share, install the start at sign-in, restart.
+actions the screens offer: test or set up the share, install the start at sign-in, restart. It
+also keeps the terminal's layouts (M1.8b-2): sets of windows, each a screen and a place on screen.
 
 What applies when:
 
@@ -17,6 +18,7 @@ thread with a time limit: a slow network share must never stall the engine's eve
 
 import asyncio
 import os
+import re
 import secrets
 import sys
 import threading
@@ -32,7 +34,7 @@ from ikars_engine import autostart, runmode, taxzone
 from ikars_engine import contracts as c
 from ikars_engine.alerts import QuietHours
 from ikars_engine.paths import Paths
-from ikars_engine.settings import Settings, SettingsError, Skin, backup, load, save
+from ikars_engine.settings import Layout, Settings, SettingsError, Skin, backup, load, save
 from ikars_engine.share import MARKER, Share, ShareError
 from ikars_engine.threads import in_daemon_thread
 
@@ -40,6 +42,15 @@ SKINS: tuple[str, ...] = get_args(Skin)
 SHARE_WAIT_S = 10.0
 RESTART = runmode.RESTART
 BACKUPS_KEPT = 20  # the settings file's backups kept (each change but a skin makes one)
+LAYOUTS_KEPT = 20
+WINDOWS_MAX = 8  # in one layout
+# a name starts with a letter or digit: "." or ".." in an address is a folder, never a name
+LAYOUT_NAME = re.compile(r"\w[\w .-]{0,39}")
+# a screen is an address in the terminal: a path and its query, nothing that could leave the engine
+# (no // host, no #, no quotes or spaces on Edge's command line)
+SCREEN = re.compile(r"/(?!/)[A-Za-z0-9/?&=%._~+-]{0,300}")
+PLACE = 100_000  # the farthest a window may sit from the main monitor's corner (pixels)
+SIZES = {"width": (200, 20_000), "height": (150, 20_000)}
 
 # a changed setting -> where it lives in the settings, and its allowed range (whole numbers)
 NUMBERS: dict[str, tuple[str, str, int, int]] = {
@@ -109,6 +120,36 @@ def checked(settings: Settings, change: c.SettingsChange) -> Settings:
     except ValueError as exc:
         raise SettingsRefused("quiet hours must be times like 22:00") from exc
     return settings
+
+
+def checked_layout(layout: Layout) -> Layout:
+    """``layout`` with its name trimmed, every window checked; raises SettingsRefused."""
+    name = layout.name.strip()
+    if not LAYOUT_NAME.fullmatch(name):
+        raise SettingsRefused(
+            "a layout's name is 1 to 40 letters, digits, spaces, dots or dashes, starting with a "
+            "letter or digit"
+        )
+    if not 1 <= len(layout.windows) <= WINDOWS_MAX:
+        raise SettingsRefused(f"a layout holds 1 to {WINDOWS_MAX} windows")
+    for window in layout.windows:
+        if not SCREEN.fullmatch(window.screen):
+            raise SettingsRefused(f"{window.screen[:60]!r} is not a screen of the terminal")
+        if not (-PLACE <= window.x <= PLACE and -PLACE <= window.y <= PLACE):
+            raise SettingsRefused("a window sits too far off the monitors")
+        for side, (low, high) in SIZES.items():
+            if not low <= getattr(window, side) <= high:
+                raise SettingsRefused(f"a window's {side} must be from {low} to {high}")
+    return msgspec.structs.replace(layout, name=name)
+
+
+def _layouts(settings: Settings, layouts: list[Layout], start: str) -> Settings:
+    terminal = msgspec.structs.replace(settings.terminal, layouts=layouts, start_layout=start)
+    return msgspec.structs.replace(settings, terminal=terminal)
+
+
+def _same(a: str, b: str) -> bool:
+    return a.casefold() == b.casefold()
 
 
 def user_environment(names: tuple[str, ...]) -> dict[str, str]:
@@ -246,11 +287,55 @@ class TerminalConfig:
             only_skin = all(
                 v is None for k, v in msgspec.structs.asdict(change).items() if k != "skin"
             )
-            if self.paths.settings.exists() and not only_skin:  # a skin is worth no backup
-                backup(self.paths.settings)
-                self._prune_backups()
-            save(updated, self.paths.settings)
+            self._write(updated, keep=not only_skin)  # a skin is worth no backup
         return self.view()
+
+    def _write(self, updated: Settings, keep: bool = True) -> None:
+        """Save ``updated``, the old file kept as a backup first (called holding the turn)."""
+        if self.paths.settings.exists() and keep:
+            backup(self.paths.settings)
+            self._prune_backups()
+        save(updated, self.paths.settings)
+
+    def layouts(self) -> c.LayoutsView:
+        with self._turn:
+            saved = self._saved()
+        return c.LayoutsView(layouts=saved.terminal.layouts, start=saved.terminal.start_layout)
+
+    def save_layout(self, layout: Layout) -> c.LayoutsView:
+        """Save ``layout`` (in place of one with the same name) as the one restored at start."""
+        layout = checked_layout(layout)
+        with self._turn:
+            saved = self._saved()
+            kept = saved.terminal.layouts
+            if any(_same(old.name, layout.name) for old in kept):
+                kept = [layout if _same(old.name, layout.name) else old for old in kept]
+            elif len(kept) >= LAYOUTS_KEPT:
+                raise SettingsRefused(f"at most {LAYOUTS_KEPT} layouts: delete one first")
+            else:
+                kept = [*kept, layout]
+            self._write(_layouts(saved, kept, layout.name))
+        return self.layouts()
+
+    def delete_layout(self, name: str) -> c.LayoutsView:
+        with self._turn:
+            saved = self._saved()
+            kept = [old for old in saved.terminal.layouts if not _same(old.name, name)]
+            if len(kept) == len(saved.terminal.layouts):
+                raise SettingsRefused(f"no layout is named {name[:40]!r}")
+            start = "" if _same(saved.terminal.start_layout, name) else saved.terminal.start_layout
+            self._write(_layouts(saved, kept, start))
+        return self.layouts()
+
+    def start_layout(self, name: str) -> c.LayoutsView:
+        """The layout ``ikars open`` restores (empty: one window on the Overview)."""
+        with self._turn:
+            saved = self._saved()
+            found = [old.name for old in saved.terminal.layouts if _same(old.name, name)]
+            if name and not found:
+                raise SettingsRefused(f"no layout is named {name[:40]!r}")
+            self._write(_layouts(saved, saved.terminal.layouts, found[0] if found else ""))
+        return self.layouts()
 
     def _prune_backups(self) -> None:
         """The latest BACKUPS_KEPT backups of the settings file (merge review 4)."""

@@ -27,7 +27,7 @@ from typing import Any
 
 import msgspec
 
-from ikars_engine.settings import Skin
+from ikars_engine.settings import Layout, LayoutWindow, Skin
 
 API_VERSION = "2.0"  # 2.0: typed health, AlertView.at_local, sign-in
 
@@ -341,6 +341,20 @@ class Done(msgspec.Struct, kw_only=True):
     detail: str
 
 
+class LayoutsView(msgspec.Struct, kw_only=True):
+    """``GET /v1/layouts``: the saved layouts (each a set of IKARS windows; ``PUT /v1/layouts``
+    saves a ``Layout``) and the one ``ikars open`` restores (empty: one window)."""
+
+    layouts: list[Layout]
+    start: str
+
+
+class LayoutStart(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
+    """``PUT /v1/layouts/start``: the layout ``ikars open`` restores (empty: one window)."""
+
+    name: str
+
+
 class ApiError(msgspec.Struct, kw_only=True):
     error: str  # a short code: unauthorised, not_found, bad_request, unavailable
     detail: str
@@ -352,7 +366,8 @@ SMALL_INTEGERS = frozenset({
     "api_streams", "before", "books_ready", "coalesce_ms", "errors", "head_seq", "hours_since",
     "id", "interval_minutes", "line", "offset", "open_gaps", "records", "seq", "total",
     "watched_markets", "throttle_minutes", "digest_minutes", "watched_max_markets",
-    "read_share_percent", "storage_budget_gb", "port", "session_days",
+    "read_share_percent", "storage_budget_gb", "port", "session_days", "x", "y", "width",
+    "height",
 })  # fmt: skip
 
 CONTRACTS: tuple[type[msgspec.Struct], ...] = (
@@ -362,7 +377,8 @@ CONTRACTS: tuple[type[msgspec.Struct], ...] = (
     GapView, GapPage,
     RecommendationView,
     RecommendationPage, Subscriptions, StreamOpened, QuoteUpdate, SessionCode, SessionCodeIssued,
-    KeyStatus, SettingsView, SettingsChange, ShareCheck, ShareCheckView, Done, ApiError,
+    KeyStatus, SettingsView, SettingsChange, ShareCheck, ShareCheckView, Done,
+    LayoutWindow, Layout, LayoutsView, LayoutStart, ApiError,
 )  # fmt: skip
 
 # The stream's event names and the payload each carries.
@@ -397,6 +413,9 @@ def schema_sha256() -> str:
 def examples() -> dict[str, Any]:
     """A made-up example of every contract (the golden examples)."""
     level = Level(price_e6=410_000, count_e2=1_250)
+    window = LayoutWindow(screen="/markets?q=fed", x=-1920, y=0, width=1600, height=1000)
+    second = LayoutWindow(screen="/overview", x=0, y=0, width=1280, height=800)
+    layout = Layout(name="Trading", windows=[window, second])
     market = MarketView(
         ticker="KXDEMO-26JAN01-T50",
         title="Made-up market",
@@ -556,6 +575,10 @@ def examples() -> dict[str, Any]:
         "ShareCheck": ShareCheck(share="made-up-share"),
         "ShareCheckView": ShareCheckView(reachable=True, marker=True, writable=True, problem=None),
         "Done": Done(done=True, detail="the engine restarts"),
+        "LayoutWindow": window,
+        "Layout": layout,
+        "LayoutsView": LayoutsView(layouts=[layout], start="Trading"),
+        "LayoutStart": LayoutStart(name="Trading"),
         "ApiError": ApiError(error="not_found", detail="no such market"),
     }
     return found
