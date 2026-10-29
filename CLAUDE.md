@@ -154,8 +154,12 @@ slice still needs its own approved plan before code.
   **M1.12c** (owner 2026-10-28: proceed as recommended: a ranked list, toasts for the strongest few) on
   `m1/12c`: **plan APPROVED** (BUILD-LOG 1.12c; all as recommended: top-ranked toasts, 3 an hour; T/I/D
   and C now; the scorecard now; no redraw). **Built** (`cd72d8f` engine, `c1fb678` terminal, `7a4592a` merge
-  review 9 fixed, 1 no change); PR open. **Live checks wait for the owner's "publish 0.1.8"** (a test
-  pre-release), then the owner's merge. Then M1.11 (M1.13 any time
+  review 9 fixed, 1 no change); PR #29 open, CI green. **v0.1.8 published** (test pre-release from
+  `bac418d`, 2026-10-28); installed; live checks 2026-10-28 19:00 MDT passed: ranked list, drill-down, T/I/D across a restart,
+  D off the list, scorecard exact vs the journal, GET only. Notifications: 2 shown in the first hour (cap
+  3), none in quiet hours (overnight not yet seen). **M1.12c done** (PR #29 merged at the owner's word).
+  **M1.12d approved** (owner 2026-10-28; BUILD-LOG 1.12d): a row opens its recommendation, highlighted row with
+  arrow keys, Enter and C/T/I/D on the Overview, a Back button, the last crumb named; branch `m1/12d`. Then M1.11 (M1.13 any time
   before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

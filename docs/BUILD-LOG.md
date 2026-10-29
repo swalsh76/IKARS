@@ -2723,10 +2723,20 @@ over half an hour; held to a win, +$5.22; the scorecard's mean and median by han
 Playwright 19 in Edge against demo-api (the list ranked, the drill-down, `T` and back, `C`); lint, types, audit,
 the generated-types check and the data guard clean.
 
-**Live checks: pending.** They need a test pre-release (published on the owner's word): the list live and ranked
-on the owner's workstation, a row opening the drill-down, `T`/`I`/`D` kept across a restart, `C` copying, at most
-3 notifications an hour and none in quiet hours, the scorecard matching the journal read directly, no order ever
-sent.
+**Live checks on v0.1.8** (test pre-release from `bac418d`, published on the owner's word; the owner's
+workstation, 2026-10-28 19:00 to 20:05 MDT; counts and states only):
+- the list: about 1,000 active, the top 50 served, ranked by return per day, every row titled; one by id returns
+  the same one with its 30- and 60-minute checks;
+- `I` (by the API) kept across a clean stop and start of the installed engine; `D` takes one off the list and
+  undoing it puts it back; both answers cleared afterwards;
+- the scorecard, read just after its minute's refresh, equal to the journal read directly (checks, scored, above
+  zero, mean, median) at both horizons;
+- notifications: 2 shown in the first hour (cap 3), none in quiet hours (overnight not yet seen); no errors in the
+  engine log;
+- no order: the signer and the REST transport refuse any method but GET.
+- **The owner found the list hard to use:** the market name opened the Market screen and only the action text the
+  Recommendation screen, where Copy order and `T`/`I`/`D`/`C` live, so `C` "did not work". Taken up as **M1.12d**
+  (below); merged as is at the owner's word.
 
 **Review.**
 - **Per commit:** `cd72d8f` 1 found and fixed before committing (a check whose fees were not known yet was kept
@@ -2752,4 +2762,18 @@ repeated the problem ("recovered: the engine is not running"), which read as if 
 its own all-clear text ("the engine is running again", "Kalshi's feed is live again", ...), and a test holds every
 problem the watchdog can raise to one. Per-commit review: none.
 
-**M1.12c built**, subject to the live checks and the owner's merge.
+**M1.12c done**: merged at the owner's word (2026-10-28).
+
+### 1.12d Navigation: rows, Back and named crumbs (approved 2026-10-28)
+
+**Owner, 2026-10-28** ("let's rethink that part of the GUI"; then "okay"): approved as recommended:
+- **Overview list:** a click anywhere on a row opens the Recommendation screen (one target; the market link stays
+  on that screen); a highlighted row, `Up`/`Down` to move it, `Enter` to open; `C`/`T`/`I`/`D` on the highlighted
+  row on the Overview too, with a short "Copied" line; a hint line names the keys. Mock-up: the canvas's Main
+  board (revised, versions 9 and 10).
+- **Back (R9):** a Back button left of the breadcrumbs, the same as `Alt+Left`, greyed when there is nowhere to
+  go back to (the Edge app window hides the browser's own).
+- **Named last crumb:** e.g. `Overview › Recommendation: <market>`, not just "Recommendation".
+- Not now: a trail of the exact path taken (Back covers it).
+
+No engine change, no new packages.
