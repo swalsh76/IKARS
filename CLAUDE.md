@@ -165,8 +165,11 @@ slice still needs its own approved plan before code.
   M1.13 before M3. **M1.11 built** on `m1/11` (BUILD-LOG 1.11): restore + runbook (tested end to end, exact
   reconcile), network wait, **Back up now** (owner's addition, mock-up approved), clean-account Sandbox pass
   (vGPU off), milestone + merge reviews all fixed. PR #31 open, CI green; **v0.1.10 published** (from
-  `87f5a4b`); Back up now checked live (23:07, share copies and clock); waits for the owner's merge, which
-  **closes M1**. Morning: overnight quiet hours in alerts.jsonl. Morning: check overnight quiet hours in alerts.jsonl. Then M1.11 (M1.13 any time
+  `87f5a4b`); Back up now checked live (23:07, share copies and clock). **M1.11 done** (PR #31 merged as `14fb25d`):
+  **M1 is complete.** **M2 proposal APPROVED** (owner 2026-10-28; PLAN §4.3: D22 to D30, slices M2.1 to
+  M2.10, M1.13 after M2.3; **local LLM only** via Strata, Claude deferred to an M3 decision (amended); $20
+  monthly ceiling; GDELT + curated RSS; embeddings M2.5 before the LLM layer M2.6). Next: the
+  M2.1 slice plan (polling-source framework) for the owner's approval. Morning: overnight quiet hours in alerts.jsonl. Morning: check overnight quiet hours in alerts.jsonl. Then M1.11 (M1.13 any time
   before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
