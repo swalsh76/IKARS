@@ -25,6 +25,7 @@ them (D20 A); in M2 nothing consumes them yet (record-only).
 """
 
 import asyncio
+import copy
 import logging
 import random
 import re
@@ -150,7 +151,8 @@ class Poller:
         source's own notes."""
         return {
             "feeds": {name: _health_view(h) for name, h in sorted(self.feeds.items())},
-            "sources": {name: dict(n) for name, n in sorted(self.notes.items())},
+            # a copy: the snapshot never changes when a source edits its notes (merge review 8)
+            "notes": copy.deepcopy(dict(sorted(self.notes.items()))),
         }
 
     async def fetch(self, feed: Feed) -> Fetched | None:
@@ -297,6 +299,7 @@ class PollingSource(PluginBase):
                 task = running.pop(name, None)
                 if task is not None:
                     task.cancel()
+                poller.feeds.pop(name, None)  # a stopped feed leaves health (merge review 3)
 
             await self.manage(ctx, poller, start, stop)
 

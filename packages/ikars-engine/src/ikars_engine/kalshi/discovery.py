@@ -104,8 +104,8 @@ class MarketIndex:
         self.version += 1
         before = self.markets.get(market.ticker)
         code = climate_code(market.rules_primary)
-        if code is None and before is not None:  # an update without its rules keeps the code
-            code = before.climate_code
+        if market.rules_primary is None and before is not None:  # an update without its rules
+            code = before.climate_code  # (rules that name no station clear it: merge review 6)
         event = market.event_ticker or ""
         series = series_ticker_of(event) or ""
         self.markets[market.ticker] = MarketInfo(
@@ -128,6 +128,16 @@ class MarketIndex:
             if m.climate_code is not None and m.status in OPEN_STATUSES:
                 found.setdefault(m.climate_code, []).append(m.ticker)
         return {code: sorted(tickers) for code, tickers in sorted(found.items())}
+
+    def open_climate_codes(self) -> list[str]:
+        """The climate-report codes open markets name, and nothing else (merge review 7)."""
+        return sorted(
+            {
+                m.climate_code
+                for m in self.markets.values()
+                if m.climate_code is not None and m.status in OPEN_STATUSES
+            }
+        )
 
     def prune(self, now_ns: int, keep_ns: int = CLOSED_KEPT_NS) -> list[str]:
         """Forget markets that closed more than ``keep_ns`` ago (the index otherwise keeps every

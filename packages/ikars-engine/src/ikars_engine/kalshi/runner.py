@@ -283,7 +283,7 @@ async def build(
         restart_max=plugin_defaults.restart_max_seconds, settings=settings.plugin_settings,
         services={"market": index.markets.get, "fees": index.fees.get, "active": journal.active,
                   "poller": poller_service(poller),
-                  "climate_codes": lambda: list(index.climate_codes())},
+                  "climate_codes": index.open_climate_codes},
     )  # fmt: skip
     engine = Engine(clock, source, metrics=metrics, skew=skew, host_options=options)
     # the plugins (review 1.R2 item 8): one that cannot load is said in health, never a stop

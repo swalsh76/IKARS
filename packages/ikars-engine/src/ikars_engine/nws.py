@@ -29,7 +29,7 @@ Values are kept as NWS gives them, with their units. Every request is a public G
 import json
 import re
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from ikars_engine.plugins import PluginContext, PluginKind, PluginSpec
@@ -40,7 +40,10 @@ GEO = "application/geo+json"
 OBS_EVERY_S = 300.0
 FORECAST_EVERY_S = 3_600.0
 CLIMATE_EVERY_S = 900.0
-CODES_EVERY_S = 3_600.0  # new cities named by new markets
+CODES_EVERY_S = 600.0  # cities named by markets that open or close (merge review 10)
+REMAP_AFTER_S = 7 * 86_400.0  # NWS asks for /points to be checked again from time to time
+FAILING_REMAP_S = 6 * 3_600.0  # a city whose feeds keep failing is looked up again (review 5)
+LOOKUP_S = 120.0  # a lookup can wait behind every feed's first poll for the host's budget
 HOURS_KEPT = 48
 NS = 1_000_000_000
 
@@ -50,13 +53,22 @@ def station_of(code: str) -> str:
     return "K" + code.removeprefix("CLI")
 
 
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
 def _ns(text: str | None) -> int | None:
+    """An NWS time in exact nanoseconds; None when it has no offset (never guessed as local
+    time: merge review 9)."""
     if not text:
         return None
     try:
-        return int(datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp() * NS)
+        when = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if when.tzinfo is None:
+        return None
+    since = when - _EPOCH
+    return (since.days * 86_400 + since.seconds) * NS + since.microseconds * 1_000
 
 
 def _value(field: Any) -> dict[str, Any] | None:
@@ -115,11 +127,25 @@ _SECTION = re.compile(r"^\s*(TODAY|YESTERDAY)\s*$", re.MULTILINE)
 
 
 def _row(text: str, label: str, after: int) -> str | None:
-    """The first value on the row named ``label`` after position ``after`` ("MM": None)."""
-    found = re.compile(rf"^\s*{label}\s+(\S+)", re.MULTILINE).search(text, after)
+    """The value on the row named ``label`` in the section that starts at ``after`` (it ends at the
+    next blank line), on that line only: a blank value never borrows the next line's or the next
+    section's (merge review 4). "MM" is None."""
+    end = text.find("\n\n", after)
+    found = re.compile(rf"^[ \t]*{label}[ \t]+(\S+)", re.MULTILINE).search(
+        text, after, end if end != -1 else len(text)
+    )
     if found is None or found.group(1) == "MM":
         return None
     return found.group(1)
+
+
+_DEGREES = re.compile(r"^(-?\d+)(R?)$")
+
+
+def _degrees(value: str | None) -> tuple[int | None, bool]:
+    """A temperature and whether NWS flagged it a record ("92R": merge review 2)."""
+    found = _DEGREES.match(value or "")
+    return (int(found.group(1)), found.group(2) == "R") if found else (None, False)
 
 
 def parse_climate(code: str, body: bytes) -> list[Found]:
@@ -144,8 +170,10 @@ def parse_climate(code: str, body: bytes) -> list[Found]:
         "day": summary.group(1) if summary else None,
         "span": span,  # "today": preliminary, "yesterday": final for that day
         "valid_as_of": (v.group(1) if (v := _VALID.search(text)) else None),
-        "high_f": int(high) if high and high.lstrip("-").isdigit() else None,
-        "low_f": int(low) if low and low.lstrip("-").isdigit() else None,
+        "high_f": _degrees(high)[0],
+        "high_record": _degrees(high)[1],
+        "low_f": _degrees(low)[0],
+        "low_record": _degrees(low)[1],
         "precip_in": _row(text, span.upper(), precip.end()) if precip and span else None,
         "snow_in": _row(text, span.upper(), snow.end()) if snow and span else None,
         "text": text,
@@ -187,18 +215,30 @@ class NwsWeather(PollingSource):
             return
         note = poller.notes.setdefault(self.spec.name, {"mapped": [], "unmapped": {}})
         running: dict[str, list[str]] = {}  # code -> its feeds' names
+        mapped_at: dict[str, int] = {}
         while True:
             open_codes = set(codes())
+            now = ctx.clock.now_ns()
+            for code in sorted(running):  # looked up again: weekly, or when its feeds keep failing
+                failing = [
+                    poller.feeds[n].failing_since_ns for n in running[code] if n in poller.feeds
+                ]
+                stale = now - mapped_at[code] > REMAP_AFTER_S * NS
+                if stale or any(f is not None and now - f > FAILING_REMAP_S * NS for f in failing):
+                    for name in running.pop(code):
+                        stop(name)
             for code in sorted(open_codes - running.keys()):  # new, or not mapped yet
                 try:
                     feeds = await self._feeds_for(code, poller, ctx)
-                except (PollError, ValueError, KeyError, TypeError) as exc:
+                except (PollError, ValueError, KeyError, TypeError, TimeoutError) as exc:
                     reason = str(exc) if isinstance(exc, PollError) else type(exc).__name__
                     note["unmapped"][code] = reason  # tried again next hour (per-commit review)
                     ctx.log.warning("a climate code did not map", extra={"code": code})
                     continue
                 note["unmapped"].pop(code, None)
                 running[code] = [feed.name for feed in feeds]
+                mapped_at[code] = now
+                note["mapped"] = sorted(running)  # as each maps: a first round takes minutes
                 for feed in feeds:
                     start(feed)
             for code in sorted(running.keys() - open_codes):  # its markets have all closed
@@ -212,9 +252,10 @@ class NwsWeather(PollingSource):
     async def _feeds_for(self, code: str, poller: Poller, ctx: PluginContext) -> list[Feed]:
         """The station and forecast grid behind ``code``, as its four feeds."""
         station = station_of(code)
-        about = json.loads(await ctx.call(poller.once(f"{API}/stations/{station}", GEO)))
+        about = json.loads(await ctx.call(poller.once(f"{API}/stations/{station}", GEO), LOOKUP_S))
         lon, lat = about["geometry"]["coordinates"][:2]
-        point = json.loads(await ctx.call(poller.once(f"{API}/points/{lat:.4f},{lon:.4f}", GEO)))
+        where = f"{API}/points/{lat:.4f},{lon:.4f}"
+        point = json.loads(await ctx.call(poller.once(where, GEO), LOOKUP_S))
         props = point["properties"]
         location = code.removeprefix("CLI")
         return [

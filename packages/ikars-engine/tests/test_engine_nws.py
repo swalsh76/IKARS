@@ -261,4 +261,75 @@ def test_a_city_is_retried_then_stopped_when_its_markets_close(tmp_path: Path) -
     assert states[2][0] == ["CLIXYZ"] and states[2][1] == {}  # the second: mapped, feeds started
     assert states[3][:2] == ([], {})  # the third: closed, its feeds stopped
     assert states[3][2] < states[2][2]  # fewer tasks: the four feed loops ended
+    assert not [n for n in poller.feeds if n.startswith("nws.")]  # and left health (review 3)
+    store.close()
+
+
+def test_a_record_high_and_a_blank_row_are_read_as_they_are() -> None:
+    # merge review 2 and 4
+    record = CLIMATE_TODAY.replace("MAXIMUM         41 ", "MAXIMUM         92R").replace(
+        "  TODAY            T             1.20", "  TODAY           \n  MONTH TO DATE    1.23"
+    )
+    [found] = parse_climate("CLIXYZ", product(record))
+    assert (found.payload["high_f"], found.payload["high_record"]) == (92, True)
+    assert (found.payload["low_f"], found.payload["low_record"]) == (-3, False)
+    assert found.payload["precip_in"] is None  # never "MONTH" from the next line
+
+
+def test_times_are_exact_and_never_guessed() -> None:
+    # merge review 9
+    from ikars_engine.nws import _ns
+
+    assert _ns("2026-01-01T15:51:00.123456+00:00") == 1_767_282_660_123_456_000
+    assert _ns("2026-01-01T15:51:00") is None  # no offset: not read as local time
+    assert _ns("not a time") is None and _ns(None) is None
+
+
+def test_revised_rules_clear_a_stale_code_and_only_codes_are_listed() -> None:
+    # merge review 6 and 7
+    index = MarketIndex()
+    index.put(made_up_market("KXHIGHXYZ-26JAN01-T40", "at Made-up Town (CLIXYZ)"))
+    index.put(made_up_market("KXHIGHABC-26JAN01-T40", "at Other Town (CLIABC)"))
+    assert index.open_climate_codes() == ["CLIABC", "CLIXYZ"]
+    index.put(made_up_market("KXHIGHXYZ-26JAN01-T40", "rules revised, no station named"))
+    assert index.open_climate_codes() == ["CLIABC"]
+
+
+def test_a_slow_lookup_leaves_the_city_unmapped_not_the_source_crashed(tmp_path: Path) -> None:
+    # merge review 1: a lookup that times out is tried again; the other cities go on
+    store = StateStore(tmp_path / "state.sqlite")
+    clock = FakeClock(sleeps=6)
+    poller = Poller(store, clock, user_agent("9.9"), transport=httpx.MockTransport(nws))
+    real_once = poller.once
+
+    async def once(url: str, accept: str = "*/*") -> bytes:
+        if "/stations/KNOP" in url:
+            raise TimeoutError
+        return await real_once(url, accept)
+
+    poller.once = once  # type: ignore[method-assign]
+    emitted: list[Item] = []
+
+    async def emit(item: Item) -> None:
+        emitted.append(item)
+
+    source = NwsWeather()
+    ctx = PluginContext(source.spec, clock, {}, emit, 30.0, services={
+        "poller": lambda: poller, "climate_codes": lambda: ["CLINOP", "CLIXYZ"],
+    })  # fmt: skip
+
+    async def go() -> None:
+        try:
+            await source.run(ctx)
+        except (asyncio.CancelledError, ExceptionGroup):
+            pass
+        finally:
+            await poller.aclose()
+
+    asyncio.run(go())
+    health = poller.health()
+    notes = health["notes"]
+    assert isinstance(notes, dict)
+    assert notes["nws"]["unmapped"] == {"CLINOP": "TimeoutError"}
+    assert notes["nws"]["mapped"] == ["CLIXYZ"] and emitted  # Made-up Town still recorded
     store.close()
