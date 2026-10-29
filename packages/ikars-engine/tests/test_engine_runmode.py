@@ -246,6 +246,19 @@ def test_what_the_watchdog_calls_a_problem() -> None:
     assert names(Observation(True, False, healthy(storage_state="warn"), NOW_NS)) == ["storage"]
 
 
+def test_an_engine_waiting_for_the_network_is_reported_after_five_minutes() -> None:
+    # M1.11 (owner, 2026-10-28): started during an outage, it waits instead of stopping
+    starting = runmode.starting_snapshot(NOW_NS)
+    assert "waiting_for_network_s" not in starting
+    assert names(Observation(True, False, starting, NOW_NS)) == []
+    short = runmode.starting_snapshot(NOW_NS, waiting_s=240)
+    assert names(Observation(True, False, short, NOW_NS)) == []
+    long = runmode.starting_snapshot(NOW_NS, waiting_s=360)
+    [problem] = evaluate(Observation(True, False, long, NOW_NS), Rules())
+    assert problem.name == "network" and "unreachable for 6 min" in problem.text
+    assert not problem.urgent  # the engine is fine; the network is not
+
+
 def test_confirm_remind_and_clear() -> None:
     rules, state = Rules(), State()
     problem = [Problem("feed", "stale")]

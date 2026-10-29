@@ -160,8 +160,13 @@ slice still needs its own approved plan before code.
   3), none in quiet hours (overnight not yet seen). **M1.12c done** (PR #29 merged at the owner's word).
   **M1.12d approved** (owner 2026-10-28; BUILD-LOG 1.12d): a row opens its recommendation, highlighted row with
   arrow keys, Enter and C/T/I/D on the Overview, a Back button, the last crumb named; **built** on `m1/12d` (`c6a424f`, `3b11a27`; merge review 7 fixed, 1 no
-  change); PR #30 open, CI green; **v0.1.9 published** (from `66d8699`, 2026-10-28); live check
-  passed (owner: "everything looks good"); waits for the owner's merge. Morning: check overnight quiet hours in alerts.jsonl. Then M1.11 (M1.13 any time
+  change); **M1.12d done** (PR #30 merged as `40283b4`); v0.1.9 published (from `66d8699`, 2026-10-28); live check
+  passed (owner: "everything looks good"). **M1.11 Close-out plan APPROVED** (owner 2026-10-28; BUILD-LOG 1.11): M1.10 moved to M2;
+  M1.13 before M3. **M1.11 built** on `m1/11` (BUILD-LOG 1.11): restore + runbook (tested end to end, exact
+  reconcile), network wait, **Back up now** (owner's addition, mock-up approved), clean-account Sandbox pass
+  (vGPU off), milestone + merge reviews all fixed. PR #31 open, CI green; **v0.1.10 published** (from
+  `87f5a4b`); Back up now checked live (23:07, share copies and clock); waits for the owner's merge, which
+  **closes M1**. Morning: overnight quiet hours in alerts.jsonl. Morning: check overnight quiet hours in alerts.jsonl. Then M1.11 (M1.13 any time
   before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run

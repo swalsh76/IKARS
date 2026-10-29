@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import msgspec
 import pytest
 from ikars_core.fees import FeeSchedule
 from ikars_engine.backup_service import LAST_OK, BackupService
@@ -19,7 +20,7 @@ from ikars_engine.kalshi.runner import PortfolioHealth
 from ikars_engine.ledger import Entry, Ledger
 from ikars_engine.ledger_import import fill_cash, replay
 from ikars_engine.paths import Paths
-from ikars_engine.portfolio import holdings, portfolio
+from ikars_engine.portfolio import Held, holdings, portfolio
 from ikars_engine.share import (
     MARKER,
     SUMS,
@@ -27,6 +28,7 @@ from ikars_engine.share import (
     ShareError,
     back_up,
     migration_copier,
+    restore,
     restore_drill,
     sha256,
 )
@@ -193,7 +195,7 @@ def test_a_restored_copy_that_is_not_a_sound_ledger_fails_the_drill(
     def damaged(*_: object) -> None:
         raise error
 
-    monkeypatch.setattr("ikars_engine.share._drill", damaged)
+    monkeypatch.setattr("ikars_engine.share.Share.newest_daily", damaged)
     local = Ledger(tmp_path / "local.sqlite", UTC)
     drill = restore_drill(share, local, tmp_path / "drill")
     local.close()
@@ -598,3 +600,306 @@ def test_the_journal_is_backed_up_with_the_state(nas: Path, tmp_path: Path) -> N
     )  # fmt: skip
     day = nas / "ikars" / "state" / "daily" / "2026" / "2026-01-01"
     assert {p.name for p in day.iterdir()} >= {"state.sqlite", "journal.sqlite", "SHA256SUMS"}
+
+
+# --- the restore (M1.11: the workstation-lost runbook) --------------------------------------------
+
+
+def share_files(share: Path) -> list[tuple[str, int, int]]:
+    return sorted(
+        (str(p.relative_to(share)), p.stat().st_size, p.stat().st_mtime_ns)
+        for p in share.rglob("*")
+        if p.is_file()
+    )
+
+
+def restore_into(share: Share, paths: Paths) -> Any:
+    return restore(
+        share, ledger=paths.ledger / "ledger.sqlite", checkpoints=paths.ledger / "checkpoints",
+        state=paths.data / "state.sqlite", journal=paths.data / "journal.sqlite",
+        settings=paths.settings,
+    )  # fmt: skip
+
+
+def backed_up(nas: Path, tmp_path: Path) -> tuple[Share, Paths]:
+    from ikars_engine.journal import Journal
+
+    share = Share(str(nas))
+    share.init(T0)
+    paths = make_data(tmp_path / "lost")
+    Journal(paths.data / "journal.sqlite").close()
+    back_up(
+        share, ledger=paths.ledger / "ledger.sqlite", state=paths.data / "state.sqlite",
+        settings=paths.settings, checkpoints=paths.ledger / "checkpoints",
+        staging=paths.data / "backup-staging", now_ns=T0, journal=paths.data / "journal.sqlite",
+    )  # fmt: skip
+    return share, paths
+
+
+def test_a_lost_workstation_is_restored_from_the_share_by_the_command(
+    nas: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ikars_engine.__main__ import main
+
+    _, lost = backed_up(nas, tmp_path)
+    before = share_files(nas)
+    root = tmp_path / "new-machine"
+    command = ["ikars", "backup", "--root", str(root), "restore", "--share", str(nas)]
+    assert main(command) == 0
+    out = capsys.readouterr().out
+    assert str(nas) not in out  # the share's path is never printed
+    report = json.loads(out)
+    assert report["restored"] is True and report["records"] == 3 and report["checkpoints"] == 1
+    assert (report["ledger_day"], report["state_day"]) == ("2026-01-01", "2026-01-01")
+    assert report["journal"] is True and report["settings"] is True
+    new = Paths(root)
+    copy = Ledger(new.ledger / "ledger.sqlite", UTC)
+    original = Ledger(lost.ledger / "ledger.sqlite", UTC)
+    try:
+        assert copy.verify().ok and copy.head() == original.head()
+    finally:
+        copy.close()
+        original.close()
+    assert len(list((new.ledger / "checkpoints").glob("*/*.json"))) == 1
+    assert (new.data / "state.sqlite").is_file() and (new.data / "journal.sqlite").is_file()
+    assert new.settings.read_text(encoding="utf-8") == lost.settings.read_text(encoding="utf-8")
+    assert not list(new.ledger.glob(".restore-*"))  # the staging folder is gone
+    assert share_files(nas) == before  # the share is only read
+
+
+def test_a_restore_never_overwrites_data(nas: Path, tmp_path: Path) -> None:
+    share, lost = backed_up(nas, tmp_path)
+    before = sha256(lost.ledger / "ledger.sqlite")
+    with pytest.raises(ShareError, match="already holds IKARS data"):
+        restore_into(share, lost)
+    assert sha256(lost.ledger / "ledger.sqlite") == before
+    with pytest.raises(ShareError, match="marker"):
+        os.remove(nas / "ikars" / MARKER)
+        restore_into(share, Paths(tmp_path / "empty"))
+
+
+def test_a_bad_backup_leaves_the_new_root_empty(nas: Path, tmp_path: Path) -> None:
+    share, _ = backed_up(nas, tmp_path)
+    root = Paths(tmp_path / "new-machine")
+    saved = nas / "ikars" / "config" / "settings.toml"
+    saved.write_text("version = [", encoding="utf-8")  # a file this version cannot read
+    with pytest.raises(ShareError, match="saved settings cannot be read"):
+        restore_into(share, root)
+    assert not [p for p in root.root.rglob("*") if p.is_file()]
+    day = nas / "ikars" / "ledger" / "daily" / "2026" / "2026-01-01" / "ikars-ledger.sqlite"
+    with open(day, "r+b") as handle:  # a bit flipped on the share
+        handle.seek(200)
+        byte = handle.read(1)
+        handle.seek(200)
+        handle.write(bytes([byte[0] ^ 1]))
+    with pytest.raises(ShareError, match="SHA256SUMS"):
+        restore_into(share, root)
+    assert not [p for p in root.root.rglob("*") if p.is_file()]
+
+
+def test_a_restore_goes_into_empty_folders_and_takes_back_a_part_way_move(
+    nas: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    share, _ = backed_up(nas, tmp_path)
+    root = Paths(tmp_path / "new-machine")
+    root.create()  # the folders a first start makes, with nothing in them (per-commit review)
+    (root.ledger / "checkpoints").mkdir(parents=True, exist_ok=True)
+    real = Path.replace
+    calls = [0]
+
+    def flaky(self: Path, target: Any) -> Path:  # the state file is locked as it moves in
+        calls[0] += 1
+        if calls[0] == 3:
+            raise PermissionError("locked")
+        return real(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky)
+    with pytest.raises(ShareError, match="could not be put in place"):
+        restore_into(share, root)
+    assert not [p for p in root.root.rglob("*") if p.is_file()]  # the ledger moved back out
+    monkeypatch.setattr(Path, "replace", real)
+    assert restore_into(share, root).checkpoints == 1  # and the next try succeeds
+
+
+def test_a_backup_that_is_not_a_ledger_is_refused_cleanly(nas: Path, tmp_path: Path) -> None:
+    # merge review 1: matching its SHA256SUMS, but not a sound ledger: a refusal, not a traceback
+    share, _ = backed_up(nas, tmp_path)
+    day = nas / "ikars" / "ledger" / "daily" / "2026" / "2026-01-01"
+    (day / "ikars-ledger.sqlite").write_bytes(b"not a database" * 100)
+    (day / SUMS).write_text(
+        "".join(f"{sha256(day / n)}  {n}\n" for n in ("checkpoint.json", "ikars-ledger.sqlite")),
+        encoding="utf-8",
+    )
+    root = Paths(tmp_path / "new-machine")
+    with pytest.raises(ShareError, match="not a sound ledger"):
+        restore_into(share, root)
+    assert not [p for p in root.root.rglob("*") if p.is_file()]
+
+
+def test_the_restore_command_refuses_under_a_running_engine(
+    nas: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ikars_engine import runmode
+    from ikars_engine.__main__ import main
+
+    backed_up(nas, tmp_path)
+    root = tmp_path / "new-machine"
+    (root / "data").mkdir(parents=True)
+    lock = runmode.EngineLock(root / "data")
+    lock.acquire(wait_s=1.0)
+    try:
+        assert main(["ikars", "backup", "--root", str(root), "restore", "--share", str(nas)]) == 1
+    finally:
+        lock.release()
+    assert "stop it first" in json.loads(capsys.readouterr().out)["problem"]
+    assert not (root / "ledger" / "ledger.sqlite").exists()
+
+
+def test_a_share_with_only_a_ledger_backup_restores_the_ledger(nas: Path, tmp_path: Path) -> None:
+    share = Share(str(nas))
+    share.init(T0)
+    paths = make_data(tmp_path / "lost")
+    folder = nas / "ikars" / "ledger" / "daily" / "2026" / "2026-01-01"
+    snapshot_copy = tmp_path / "copy.sqlite"
+    copy = Ledger(paths.ledger / "ledger.sqlite", UTC)
+    point = copy.checkpoint(tmp_path / "point", T0)
+    copy.close()
+    from ikars_engine.share import snapshot
+
+    snapshot(paths.ledger / "ledger.sqlite", snapshot_copy)
+    share.put_folder({"ikars-ledger.sqlite": snapshot_copy, "checkpoint.json": point},
+                     "ledger", "daily", "2026", "2026-01-01")  # fmt: skip
+    assert folder.is_dir()
+    done = restore_into(share, Paths(tmp_path / "new-machine"))
+    assert (done.records, done.checkpoints, done.state_day) == (3, 0, None)
+    assert (done.journal, done.settings) == (False, False)
+
+
+# --- Back up now (M1.11) -------------------------------------------------------------------------
+
+
+async def test_a_backup_asked_for_now_restarts_the_clock_and_runs_one_at_a_time(
+    nas: Path, tmp_path: Path
+) -> None:
+    paths = make_data(tmp_path / "ikars-data")
+    state = StateStore(paths.data / "state.sqlite")
+    clock = VirtualClock(T0)
+    off = BackupService(None, paths, state, clock)
+    assert await off.request() == (False, "no share is set (Settings: backups)")
+    service = BackupService(Share(str(nas)), paths, state, clock)
+    made, detail = await service.request()  # the share has no marker yet
+    assert not made and detail == "the backup failed (ShareError)" and str(nas) not in detail
+    Share(str(nas)).init(T0)
+    clock.advance_to(T0 + DAY_NS // 2)
+    assert await service.request() == (True, "backed up and checked on the share")
+    assert state.bookmark(LAST_OK) == T0 + DAY_NS // 2  # the 24-hour clock restarts from it
+    assert await service.run_if_due() is False
+    first = asyncio.create_task(service.request())
+    await asyncio.sleep(0)  # the first holds the lock, copying in its thread
+    assert service.health()["running"] is True
+    assert await service.request() == (False, "a backup is already running")
+    assert (await first)[0] is True and service.health()["running"] is False
+    state.close()
+
+
+async def test_the_backup_route(tmp_path: Path) -> None:
+    import httpx
+    from ikars_engine import contracts as c
+    from ikars_engine.api import ApiContext, create_app
+    from ikars_engine.kalshi.discovery import MarketIndex
+    from ikars_engine.metrics import Metrics
+
+    ledger = Ledger(tmp_path / "ledger.sqlite", UTC)
+    asked: list[int] = []
+
+    async def backup() -> tuple[bool, str]:
+        asked.append(1)
+        return True, "backed up and checked on the share"
+
+    ctx = ApiContext(
+        token="t" * 43, health=dict, index=MarketIndex(), quotes={}, last_price={}, changed_ns={},
+        book_changed_ns={}, books={}, book_version={}, watched=set, ledger=ledger,
+        ledger_health=dict,
+        portfolio=lambda: portfolio({}, lambda s: None, lambda s: None, Held({}, 0)),
+        alert_log=tmp_path / "alerts.jsonl", metrics=Metrics(), now_ns=lambda: 0, backup=backup,
+    )  # fmt: skip
+    auth = {"Authorization": f"Bearer {ctx.token}"}
+    transport = httpx.ASGITransport(app=create_app(ctx))
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as http:
+        assert (await http.post("/v1/backup")).status_code == 401  # the token, as everywhere
+        done = msgspec.json.decode(
+            (await http.post("/v1/backup", headers=auth)).content, type=c.Done
+        )
+        assert done.done and asked == [1]
+        assert (await http.get("/v1/backup", headers=auth)).status_code == 405
+        ctx.backup = None
+        reply = await http.post("/v1/backup", headers=auth)
+        assert reply.status_code == 503  # the command line then makes it itself
+        done = msgspec.json.decode(reply.content, type=c.Done)
+        assert not done.done and "not running" in done.detail
+    ledger.close()
+
+
+def test_backup_run_goes_through_a_running_engine_or_makes_it_itself(
+    nas: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ikars_engine import api, ledger_cli
+    from ikars_engine import contracts as c
+    from ikars_engine.__main__ import main
+
+    root = tmp_path / "ikars-data"
+    paths = make_data(root)
+    assert api.engine_post(paths.data, "/v1/backup", 1) is None  # no api.json: not up yet
+    (paths.data / "api.json").write_text('{"token": "t"}', encoding="utf-8")  # half-written
+    assert api.engine_post(paths.data, "/v1/backup", 1) is None
+    monkeypatch.setattr(ledger_cli, "engine_running", lambda folder: True)
+    asked: list[str] = []
+
+    def answers(folder: Path, route: str, timeout_s: float) -> c.Done:
+        asked.append(route)
+        return c.Done(done=True, detail="backed up")
+
+    monkeypatch.setattr(api, "engine_post", answers)
+    assert main(["ikars", "backup", "--root", str(root), "run"]) == 0
+    assert asked == ["/v1/backup"]
+    assert json.loads(capsys.readouterr().out) == {
+        "ok": True, "detail": "backed up", "by": "the running engine"
+    }  # fmt: skip
+    # an engine that cannot take it (setup mode, waiting for the network): made here, as before
+    monkeypatch.setattr(api, "engine_post", lambda folder, route, timeout_s: None)
+    Share(str(nas)).init(T0)
+    base = ["ikars", "backup", "--root", str(root)]
+    assert main([*base, "init", "--share", str(nas)]) == 0
+    capsys.readouterr()
+    assert main([*base, "run"]) == 0
+    assert json.loads(capsys.readouterr().out)["head_seq"] == 3
+
+
+async def test_the_daily_check_does_not_back_up_again_after_the_owners(
+    nas: Path, tmp_path: Path
+) -> None:
+    # merge review 5: the hourly check found it due, then waited on the owner's backup
+    Share(str(nas)).init(T0)
+    paths = make_data(tmp_path / "ikars-data")
+    state = StateStore(paths.data / "state.sqlite")
+    service = BackupService(Share(str(nas)), paths, state, VirtualClock(T0))
+    owners = asyncio.create_task(service.request())
+    await asyncio.sleep(0)
+    assert await service.run_if_due() is False  # due when it looked; not after the owner's
+    assert (await owners)[0] is True and service.runs == 1
+    health = service.health()
+    assert health["next_in_h"] == 24 and health["hours_since"] == 0
+    state.close()
+
+
+def test_a_restore_takes_nothing_newer_than_its_ledger_copy(nas: Path, tmp_path: Path) -> None:
+    # merge review 6: a later run whose ledger copy failed must not mix in its state or checkpoint
+    share, _ = backed_up(nas, tmp_path)
+    newer = nas / "ikars" / "state" / "daily" / "2026" / "2026-01-02"
+    newer.mkdir(parents=True)
+    (newer / "state.sqlite").write_bytes(b"from a later run")
+    (newer / SUMS).write_text(f"{sha256(newer / 'state.sqlite')}  state.sqlite\n", encoding="utf-8")
+    later = nas / "ikars" / "ledger" / "checkpoints" / "2026" / "2026-01-02.json"
+    later.write_text("{}", encoding="utf-8")
+    done = restore_into(share, Paths(tmp_path / "new-machine"))
+    assert (done.ledger_day, done.state_day, done.checkpoints) == ("2026-01-01", "2026-01-01", 1)

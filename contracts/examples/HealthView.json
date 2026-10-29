@@ -4,7 +4,9 @@
   "backup": {
     "configured": true,
     "hours_since": 3,
-    "last_error": null
+    "last_error": null,
+    "next_in_h": 21,
+    "running": false
   },
   "clock_offset_ms": -3.5,
   "clock_status": "ok",

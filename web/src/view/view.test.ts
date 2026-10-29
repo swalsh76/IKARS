@@ -8,7 +8,7 @@ const HEALTH: HealthView = {
   feed: { connected: true, seconds_since_last_frame: 0.24, open_gaps: 0, books_ready: 100, watched_markets: 100, trading_active: true },
   storage_state: "ok",
   ledger: { verified: true, reconciled_exact: true, records: 183, errors: 0 },
-  backup: { configured: true, hours_since: 3, last_error: null },
+  backup: { configured: true, hours_since: 3, last_error: null, next_in_h: 21 },
   clock_status: "ok",
   clock_offset_ms: 12.4,
   gpu: "Made-up GPU",
@@ -37,7 +37,12 @@ describe("health cards", () => {
     expect(c["Kalshi feed"]?.lines).toContain("last frame 0.2 s ago");
     expect(c["Clock"]?.big).toBe("+12 ms vs Kalshi");
     expect(c["Ledger"]).toMatchObject({ level: "ok", big: "Reconciled exactly" });
-    expect(c["Backups"]?.big).toBe("Last copy 3 h ago");
+    expect(c["Backups"]).toMatchObject({ big: "Last copy 3 h ago", state: "OK", action: "backup" });
+    expect(c["Backups"]?.lines).toContain("next automatic copy in 21 h"); // Back up now (M1.11)
+    const running = cards({ ...HEALTH, backup: { ...HEALTH.backup, running: true } });
+    expect(running["Backups"]?.state).toBe("BACKING UP");
+    const late = cards({ ...HEALTH, backup: { ...HEALTH.backup, hours_since: 30, next_in_h: 0 } });
+    expect(late["Backups"]?.lines).toContain("next automatic copy in 0 h");
     expect(c["Plugins"]?.big).toBe("1 running · 0 paused");
     expect(c["Terminal"]?.lines[0]).toBe("on its fixed port");
     expect(c["GPU"]?.big).toBe("Made-up GPU");

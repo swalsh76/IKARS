@@ -36,6 +36,12 @@ a{color:#60cdff;text-decoration:none}a:hover{color:#99ebff;text-decoration:under
         <sc-for list="{{c.lines}}" as="l" hint-placeholder-count="3">
           <div style="color: #cfcfcf; font-size: 13px; font-variant-numeric: tabular-nums">{{l}}</div>
         </sc-for>
+        <sc-if value="{{c.backup}}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 4px">
+            <button type="button" onClick="{{backupNow}}" disabled="{{busy}}" style="{{buttonStyle}}">{{buttonLabel}}</button>
+            <span role="status" style="color: #60cdff; font-size: 13px">{{backupNote}}</span>
+          </div>
+        </sc-if>
       </section>
     </sc-for>
 
@@ -57,16 +63,39 @@ a{color:#60cdff;text-decoration:none}a:hover{color:#99ebff;text-decoration:under
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
 class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { phase: 'idle' };
+  }
   renderVals() {
     const ok = '#60cdff', warn = '#ffb27a';
+    const phase = this.state.phase;
+    const busy = phase === 'busy';
+    const done = phase === 'done';
+    const backups = {
+      title: 'Backups', state: busy ? 'BACKING UP' : 'OK', dot: ok, backup: true,
+      big: done ? 'Last copy 22:44' : 'Last copy 01:30',
+      lines: done
+        ? ['NAS share, ikars\ folder, marker found', 'ledger, state, journal and settings', 'next automatic copy in 24 h']
+        : ['NAS share, ikars\ folder, marker found', 'restore drill passed Oct 24', 'next automatic copy in 2 h']
+    };
     return {
+      busy,
+      buttonLabel: busy ? 'Backing up…' : 'Back up now',
+      buttonStyle: 'height: 34px; padding: 0 14px; border-radius: 6px; border: 1px solid #3d3d3d; background: #2c2c2c; color: #f3f3f3; font: inherit; cursor: ' + (busy ? 'default; opacity: 0.6' : 'pointer'),
+      backupNote: done ? 'Backed up at 22:44, checked on the share' : '',
+      backupNow: () => {
+        if (busy) return;
+        this.setState({ phase: 'busy' });
+        setTimeout(() => this.setState({ phase: 'done' }), 1500);
+      },
       cards: [
         { title: 'Kalshi feed', state: 'LIVE', dot: ok, big: '46 ms behind Kalshi', lines: ['ticker, trade, lifecycle: all markets', 'last frame 0.2 s ago', 'reconnects today: 0'] },
         { title: 'Order books', state: 'OK', dot: ok, big: '3 watched · 0 broken', lines: ['783 / 234 / 98 deltas a second', 'last resync 4 m ago', 'request budget: 6% of read tier'] },
         { title: 'Feed to alert', state: 'OK', dot: ok, big: 'p50 38 ms · p99 141 ms', lines: ['target under 250 ms', 'stages: receive, signal, P&L, alert', 'terminal frame time p99 9 ms'] },
         { title: 'Clock', state: 'OK', dot: ok, big: '+12 ms vs Kalshi', lines: ['measured every 10 min', 'signers corrected', 'NTP in sync'] },
         { title: 'Ledger', state: 'OK', dot: ok, big: 'Reconciled 06:00', lines: ['balance and positions match Kalshi', 'chain verified on start', '1 unexplained change: interest?'] },
-        { title: 'Backups', state: 'OK', dot: ok, big: 'Last copy 01:30', lines: ['NAS share, ikars\\ folder, marker found', 'restore drill passed Oct 24', 'tax packages: 0 this year'] },
+        backups,
         { title: 'Storage', state: 'OK', dot: ok, big: '41 of 250 GB', lines: ['recordings 36 GB · compaction nightly', 'about 3.1 GB a day', 'full in about 68 days at this rate'] },
         { title: 'Costs this month', state: 'WATCH', dot: warn, big: '$3.20 of $40', lines: ['Claude API $2.70 · odds API $0.50', 'local model used for 94% of first passes', 'degrade at 80%, pause at 100%'] },
         { title: 'Plugins', state: 'OK', dot: ok, big: '4 running · 0 paused', lines: ['NWS weather, RSS news, GDELT, momentum', 'restarts today: 1 (RSS timeout)', 'GPU: RTX 5070 Ti in use (embeddings)'] }

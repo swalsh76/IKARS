@@ -134,9 +134,10 @@ def sandbox() -> Path:
         for host, inside in mapped
     )
     config.write_text(
-        "<Configuration>\n  <MemoryInMB>4096</MemoryInMB>\n  <MappedFolders>\n"
-        + folders
-        + "  </MappedFolders>\n"
+        # the virtual GPU crashed the Sandbox's own kernel (0x3B) on this workstation (M1.11): off,
+        # so Edge draws in software; 8 GB, as an install and Edge together came near the old 4 GB
+        "<Configuration>\n  <MemoryInMB>8192</MemoryInMB>\n  <vGPU>Disable</vGPU>\n"
+        "  <MappedFolders>\n" + folders + "  </MappedFolders>\n"
         f"  <LogonCommand><Command>cmd /c start {start}</Command></LogonCommand>\n"
         "</Configuration>\n",
         encoding="utf-8",

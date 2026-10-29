@@ -2820,3 +2820,148 @@ owner used the list, the keys, Back and the named crumb on the workstation: "eve
   | 8 | A row's element id held the raw recommendation id | Encoded |
 
 **M1.12d built and checked live**, subject to the owner's merge.
+
+## 1.11 Close-out (plan APPROVED 2026-10-28)
+
+**Owner, 2026-10-28:** the plan as proposed, with these answers:
+- **M1.10 perp research moves to M2** (not done in M1; not in M1's gate).
+- **M1 closes without M1.13**; the replay of real recordings comes before M3's back-tests, as planned.
+- **Build `ikars restore`** rather than manual copy steps.
+- **Fix the network wait at start** in this slice (after the reboot outage the engine stopped on its first account
+  request and the watchdog restarted it within 5 minutes).
+
+**Builds:**
+1. **Gate evidence** (§4.2), re-checked fresh where stale: v0.1.9 in Windows Sandbox on a clean account; live
+   markets; `ledger verify` and an exact reconcile; `ledger restore-drill`; the latency and frame-time measurements;
+   M1.12 end to end.
+2. **`ikars restore`**: the newest share backup of the ledger, the journal, the settings and the engine state into
+   an **empty** data root; checksums and the hash chain checked; a root with data refused. **`docs/RUNBOOK.md`**
+   (workstation lost: install, key variables, restore, verify, start; no real paths). Tested end to end on the
+   workstation into a scratch root (the share read only, Kalshi GET only, the live data untouched): the ledger
+   verifies and reconciles exactly, the journal's counts match, the settings load.
+3. **The network wait at start:** the engine retries its first Kalshi requests with backoff instead of stopping.
+4. **Docs current;** **the milestone review** (`/code-review medium` over M1's code, itemized); leftovers parked.
+
+**Machine:** a scratch data root on the workstation (removed afterwards); a Windows Sandbox run. **No new packages.**
+
+**Added during the slice (owner, 2026-10-28):** **Back up now**. The owner asked for a way to start a backup
+by hand. The Health screen's Backups card gets a button, from the mock-up the owner approved (the canvas's
+Health board, version 11). It is built in this slice, as recommended.
+
+#### 1.11 built (2026-10-28)
+
+**Built** on `m1/11`:
+
+| Commit | What |
+|---|---|
+| `5032883` | docs |
+| `85f2ec7` | restore, runbook, network wait |
+| `311b91f` | milestone-review fixes |
+| `c5a60db` | the test Sandbox |
+| `05b0842` | Back up now |
+| `6811c47` | merge-review fixes |
+
+After M1.12d (PR #30, `40283b4`). **No new packages.** Contracts 2.2.
+
+- **`ikars backup restore --share <share>`** puts the newest share backup into an **empty** data root:
+  - **the ledger:** SHA256SUMS, hash chain, and a head equal to the day's checkpoint, using one proof shared with
+    the drill (`proved_newest`);
+  - **its checkpoints, the state, the journal and the settings**, all of the ledger copy's day or before;
+  - **staging:** everything is checked in a staging folder, then moved in all or nothing.
+
+  It refuses a root that holds data, a running engine, and a damaged backup; a refusal says why, never a
+  traceback. The share is only read.
+
+  **`docs/RUNBOOK.md`**, for a lost workstation: install, stop the setup-mode engine and set its folder aside,
+  a new read-only key, restore, verify and reconcile, start.
+- **The network wait at start:**
+  - **What waits:** the first Kalshi request retries with backoff (5 s up to a minute each time) instead of
+    stopping, through a dropped network, a 5xx outage, a lingering 429 or a captive portal. A key or API refusal
+    still stops the engine.
+  - **Stopping:** a stop, `run --minutes`, or the end of a try in flight ends the wait cleanly.
+  - **What you see:** the starting snapshot says how long it has waited, and after 5 minutes the watchdog
+    reports "Kalshi unreachable" (not urgent), with its own all-clear text.
+- **Back up now:**
+  - **On the Health screen:** the button runs the engine's own backup at once (`POST /v1/backup`), one at a
+    time, and the 24-hour clock restarts from it. The card says BACKING UP while one runs, and when the next
+    automatic copy is due (`BackupHealth.running`, `next_in_h`).
+  - **From the command line:** `ikars backup run` goes through the running engine. When the engine cannot take
+    it (setup mode, or waiting for the network) the command makes the backup itself.
+  - **Shared helper:** the command line's calls to the engine are one helper (`api.engine_post`).
+- **The test Sandbox:** 8 GB, and its virtual GPU off (below).
+- **`open_store`** closes its connection when a file is not a database (it stayed held open on Windows).
+
+**M1 gate evidence (PLAN §4.2), 2026-10-28:**
+
+| Gate | Evidence |
+|---|---|
+| Installed with Velopack on a clean account | Windows Sandbox, two runs (below). **First run:** M1.9a's local build `0.1.0-dev.3`, upgraded in place by v0.1.9 (the owner). **Second run:** v0.1.9 alone, 7 of 7 checks yes (no Python on the machine, per-user install, the Start-menu entry, no desktop shortcut, the engine in setup mode, Edge open on the wizard, data apart from the program), stable for 7½ min. |
+| Live markets in the terminal through the engine | Live on v0.1.7 to v0.1.9; the feed live in health |
+| The ledger reconciles exactly with Kalshi | Live: chain verified, reconciled exactly. **Restored:** see the runbook row. |
+| The restore drill and the workstation-lost runbook pass | **Drill:** passes on the live ledger, 299 records. **Runbook, end to end on the workstation** (a scratch root; share read only; GET only; the live data untouched): **ledger:** 315 records, 3 checkpoints, verify ok, **an exact reconcile with Kalshi** (cash matches, no position differences); **journal:** 16,692 recommendations, all in the live journal (7 newer there); **settings:** equal to the live ones; **staging:** nothing left. The scratch roots were deleted. |
+| Latency and frame-time targets measured | **Feed to alert:** measured live in M1.4b. **Update to screen:** p99 19 ms against the 33 ms target (the owner's console run, M1.8a-web-2b). |
+| M1.12's recommendations end to end, journalled | Live on v0.1.7, v0.1.8 and v0.1.9; the scorecard equals the journal read directly (BUILD-LOG 1.12c) |
+
+**The Sandbox crash, found and solved:**
+- **What happened:** with v0.1.9, the Sandbox died about 3 minutes after IKARS opened ("the virtual machine
+  exited unexpectedly", `0x80370106`).
+- **What the evidence showed:** a recorder inside the Sandbox, copying logs and memory figures to the host every
+  10 s, showed about 5.8 GB free and no IKARS error. The host's Windows Error Reporting held a
+  `ContainerCrashDump`: the Sandbox's own kernel bugchecked, `0x3B` with an access violation. That points to the
+  Sandbox's virtual GPU path (Edge draws through it to the host's NVIDIA driver).
+- **The fix:** with `<vGPU>Disable</vGPU>`, the next run was clean.
+
+**Data restored by the restore test** stayed on the workstation in a scratch folder, now deleted. Nothing was
+written to the share.
+
+**Verified.**
+- **Python:** 1,554 tests, coverage 93.3%.
+- **Vitest:** 232.
+- **Playwright:** 19 in Edge against demo-api (Back up now clicked, the note, the card's new time).
+- **Checks:** lint, types, the generated contracts and the data guard are clean.
+
+**Live check of Back up now passed** on v0.1.10 (test pre-release from `87f5a4b`, published on the owner's
+word, 2026-10-28): the owner pressed it at 23:07. The engine logged "backup done" at 23:07:46. The share's
+ledger and state copies for the day (the state copy with the journal) were rewritten at 23:07:45 and check
+against their SHA256SUMS. The engine's last good backup, from which its 24-hour clock runs, is now 23:07:45.
+
+**Review.**
+- **Per commit:**
+  - `85f2ec7`: 2 found and fixed before committing (an empty checkpoints folder made the move fail on Windows; a
+    part-way move left files behind).
+  - `05b0842`: none.
+- **Milestone review (medium, over M1's code), 8 findings, all fixed in `311b91f`**, plus one found on the way:
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | `restore` let a damaged copy or a dropped share escape as a traceback | One shared proof with the drill; every failure is a refusal; tested |
+  | 2 | A try against a network that drops packets outlasted `ikars stop` | A stop cancels the try in flight; tested |
+  | 3 | A 5xx outage at start still stopped the engine | Waited out; a 4xx still stops; tested |
+  | 4 | The "waiting for the network" mark stayed after Kalshi answered | Cleared once it answers; tested |
+  | 5 | `restore` could run under a live engine | Refused while the engine runs; tested |
+  | 6 | `run --minutes` waited for ever without a network | The limit ends the wait |
+  | 7 | A failed move did not put back the empty checkpoints folder | Put back; any failure rolls back; tested |
+  | 8 | The proof steps were copied between the drill and the restore | `proved_newest`, shared |
+  | (found) | `open_store` held a file that was not a database open | Closed on failure; tested |
+
+- **Merge review (medium, `main...m1/11`), 10 findings, all fixed in `6811c47`:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | `engine_backup` missed a half-written `api.json` and a bad reply | One helper, `api.engine_post`, handles both; tested |
+  | 2 | `backup run` could not back up while the engine was in setup mode or waiting | It falls back to making the backup itself (the route answers 503 without a service); tested |
+  | 3 | A lingering 429 or a captive portal stopped the engine at start | Waited out; tested |
+  | 4 | A failed move during a restore escaped as a raw error | A refusal; tested |
+  | 5 | The daily check could back up again straight after the owner's | Asked again inside the lock; tested |
+  | 6 | A restore could mix pieces from different backup runs | Checkpoints and state of the ledger copy's day or before; tested |
+  | 7 | The restore's settings flag looked at the share again | Taken from what was moved |
+  | 8 | Three copies of the "call the running engine" code | `api.engine_post`, used by the backup and the support bundle |
+  | 9 | "Backed up at" used the browser's time format | The terminal's one format, `local()` |
+  | 10 | The web copied the engine's 24 hours | The engine reports `next_in_h`; tested |
+
+**Leftovers:**
+- **Moved:** M1.10 perp research moves to M2; M1.13 comes before M3.
+- **With the owner:** the two-monitor layout check; the SignPath application.
+- **Parked:** nothing new.
+
+**M1.11 built and checked live.** It waits for the owner's merge. **The merge closes M1.**

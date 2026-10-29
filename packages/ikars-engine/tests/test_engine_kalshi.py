@@ -10,17 +10,31 @@ from typing import Any
 
 import httpx
 import pytest
+from ikars_core.auth import AuthError
 from ikars_core.config import Environment, KalshiConfig
 from ikars_core.endpoints import MarketData
 from ikars_core.markets import series_ticker_of
 from ikars_core.ratelimit import TokenBucket
-from ikars_core.rest import KalshiPublicClient
+from ikars_core.rest import (
+    KalshiAPIError,
+    KalshiConnectionError,
+    KalshiPublicClient,
+    KalshiResponseError,
+)
 from ikars_core.ws import Data, FeedError, Reconnected, ResubscribeFailed, SequenceGap
 from ikars_core.ws_models import parse_frame
 from ikars_engine.clocks import VirtualClock
+from ikars_engine.kalshi import runner
 from ikars_engine.kalshi.discovery import BOOKMARK, Discovery, MarketIndex
 from ikars_engine.kalshi.exchange import ExchangeWatch
-from ikars_engine.kalshi.runner import clock_observer, requests_used, summary
+from ikars_engine.kalshi.runner import (
+    NETWORK_WAITS_S,
+    StoppedWaiting,
+    clock_observer,
+    first_bucket,
+    requests_used,
+    summary,
+)
 from ikars_engine.kalshi.source import Intervals, KalshiSource
 from ikars_engine.kalshi.watched import WatchedSet
 from ikars_engine.metrics import Metrics
@@ -1054,3 +1068,89 @@ async def test_a_volume_only_ticker_frame_leaves_the_quote_time(tmp_path: Path) 
     await rig.items(1)
     assert rig.source.changed_ns["M1"] == T0 + 3  # unchanged: the quote did not move
     await rig.source.stop()
+
+
+class FakeTime:
+    """A monotonic clock that a sleep moves on."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.slept: list[float] = []
+
+    async def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds
+
+
+def failing_bucket(failures: int, error: Exception) -> tuple[list[int], object]:
+    calls = [0]
+
+    async def request_bucket(*_: object) -> tuple[TokenBucket, dict[str, object]]:
+        calls[0] += 1
+        if calls[0] <= failures:
+            raise error
+        return TokenBucket(rate=1.0, capacity=1.0), {"tier": "basic"}
+
+    return calls, request_bucket
+
+
+def test_the_engine_waits_for_the_network_at_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    # M1.11 (owner, 2026-10-28): after a reboot during an outage it stopped on its first request
+    calls, fake = failing_bucket(6, KalshiConnectionError("GET /account/limits failed"))
+    monkeypatch.setattr(runner, "request_bucket", fake)
+    clock, waits = FakeTime(), list[int | None]()
+    config = KalshiConfig(environment=Environment.DEMO)
+    bucket, budget = asyncio.run(
+        first_bucket(config, 25, None, None, waits.append, clock.sleep, lambda: clock.now)  # type: ignore[arg-type]
+    )
+    assert calls[0] == 7 and budget == {"tier": "basic"}
+    pauses = (5, 10, 20, 40, 60, 60)
+    # the seconds waited after each try, then None: reachable again (merge review 4)
+    assert waits == [*(sum(pauses[:n]) for n in range(6)), None]
+    assert NETWORK_WAITS_S[-1] == 60 and max(clock.slept) <= 2.0  # a stop is looked for often
+
+
+def test_a_stop_while_waiting_ends_it_and_other_faults_still_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, fake = failing_bucket(99, KalshiConnectionError("down"))
+    monkeypatch.setattr(runner, "request_bucket", fake)
+    clock = FakeTime()
+    config = KalshiConfig(environment=Environment.DEMO)
+    stop = lambda: clock.now >= 3  # noqa: E731
+    with pytest.raises(StoppedWaiting):
+        asyncio.run(first_bucket(config, 25, None, stop, None, clock.sleep, lambda: clock.now))  # type: ignore[arg-type]
+    _, refused = failing_bucket(1, AuthError("the key was refused"))
+    monkeypatch.setattr(runner, "request_bucket", refused)
+    with pytest.raises(AuthError):  # a key fault is not the network: it stops at once
+        asyncio.run(first_bucket(config, 25, None, None, None, clock.sleep, lambda: clock.now))  # type: ignore[arg-type]
+    _, outage = failing_bucket(2, KalshiAPIError(503, "maintenance"))
+    monkeypatch.setattr(runner, "request_bucket", outage)
+    asyncio.run(first_bucket(config, 25, None, None, None, clock.sleep, lambda: clock.now))  # type: ignore[arg-type]
+    for lingering in (KalshiAPIError(429, "slow down"), KalshiResponseError("not Kalshi's page")):
+        _, waited = failing_bucket(1, lingering)  # merge review 3: waited out, not a stop
+        monkeypatch.setattr(runner, "request_bucket", waited)
+        asyncio.run(first_bucket(config, 25, None, None, None, clock.sleep, lambda: clock.now))  # type: ignore[arg-type]
+    _, forbidden = failing_bucket(1, KalshiAPIError(401, "unauthorized"))
+    monkeypatch.setattr(runner, "request_bucket", forbidden)
+    with pytest.raises(KalshiAPIError):  # Kalshi answered and refused: no wait (merge review 3)
+        asyncio.run(first_bucket(config, 25, None, None, None, clock.sleep, lambda: clock.now))  # type: ignore[arg-type]
+
+
+def test_a_stop_ends_a_slow_try_in_flight(monkeypatch: pytest.MonkeyPatch) -> None:
+    # merge review 2: a try against a network that drops packets can outlast `ikars stop`
+    async def hangs(*_: object) -> tuple[TokenBucket, dict[str, object]]:
+        await asyncio.sleep(3_600)
+        raise AssertionError("not reached")
+
+    monkeypatch.setattr(runner, "request_bucket", hangs)
+    monkeypatch.setattr(runner, "TICK_S", 0.01)
+    asked = [0]
+
+    def stop() -> bool:
+        asked[0] += 1
+        return asked[0] >= 3
+
+    config = KalshiConfig(environment=Environment.DEMO)
+    with pytest.raises(StoppedWaiting):
+        asyncio.run(asyncio.wait_for(first_bucket(config, 25, None, stop), timeout=5))  # type: ignore[arg-type]

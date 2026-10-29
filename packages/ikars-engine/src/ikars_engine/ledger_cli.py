@@ -42,6 +42,7 @@ from ikars_engine.ledger_import import AccountImporter, ns_of
 from ikars_engine.ledger_service import ANNOTATION_KINDS, annotate
 from ikars_engine.paths import Paths
 from ikars_engine.portfolio import Portfolio, holdings, portfolio
+from ikars_engine.runmode import engine_running
 from ikars_engine.settings import Settings, save
 from ikars_engine.share import (
     Drill,
@@ -50,6 +51,7 @@ from ikars_engine.share import (
     back_up,
     configured,
     migration_copier,
+    restore,
     restore_drill,
 )
 
@@ -79,6 +81,10 @@ def add_parser(commands: Any) -> None:
     init.add_argument("--share", default=None, help="the share (saved to the local settings)")
     steps.add_parser("run", help="back up now")
     steps.add_parser("status", help="whether the share can be used, and the newest backup")
+    back = steps.add_parser(
+        "restore", help="the newest backup into an empty data folder (a lost workstation)"
+    )
+    back.add_argument("--share", default=None, help="the share (default: the settings' share)")
 
 
 def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
@@ -260,6 +266,38 @@ def _backup(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
             save(msgspec.structs.replace(settings, backup=backup), paths.settings)
         _print({"created": created, "share_saved": bool(args.share)})
         return 0
+    if args.action == "restore":  # docs/RUNBOOK.md: on a new machine there are no settings yet
+        if engine_running(paths.data):  # never under a live engine (M1.11 review)
+            _print({"ok": False, "problem": "IKARS is running: stop it first (ikars stop)"})
+            return 1
+        restored = restore(
+            Share(args.share or settings.backup.share),
+            ledger=paths.ledger / "ledger.sqlite",
+            checkpoints=paths.ledger / "checkpoints",
+            state=paths.data / "state.sqlite",
+            journal=paths.data / "journal.sqlite",
+            settings=paths.settings,
+        )
+        _print({
+            "restored": True,
+            "ledger_day": restored.ledger_day,
+            "records": restored.records,
+            "checkpoints": restored.checkpoints,
+            "state_day": restored.state_day,
+            "journal": restored.journal,
+            "settings": restored.settings,
+            "next": "ikars ledger verify, then ikars ledger import (it reconciles with Kalshi)",
+        })  # fmt: skip
+        return 0
+    if args.action == "run" and engine_running(paths.data):
+        # through the engine: one backup at a time, and its 24-hour clock restarts (M1.11); an
+        # engine that cannot take it (setup mode, waiting for the network) leaves it to this one
+        from ikars_engine.api import engine_post
+
+        done = engine_post(paths.data, "/v1/backup", ENGINE_BACKUP_WAIT_S)
+        if done is not None:
+            _print({"ok": done.done, "detail": done.detail, "by": "the running engine"})
+            return 0 if done.done else 1
     share = Share(settings.backup.share)
     if args.action == "status":
         problem = share.problem()
@@ -283,6 +321,9 @@ def _backup(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
         "pruned": report.pruned,
     })  # fmt: skip
     return 0
+
+
+ENGINE_BACKUP_WAIT_S = 900  # a full copy to a slow share takes minutes
 
 
 def _print(data: object) -> None:
