@@ -2994,3 +2994,27 @@ made-up items, one an injection attempt:
 - **Thinking** is turned off for classification if measurement supports it.
 - **The gate** adds the quality measure.
 - **Setup:** no Claude account and no `anthropic` package.
+
+## 2.1 Polling-source framework (plan APPROVED 2026-10-28)
+
+**Owner, 2026-10-28:** approved as proposed.
+- **The User-Agent contact:** the repository's URL; an email optionally, in the local settings only.
+- **When a gap is logged:** a feed unreachable past **twice its interval** gets a gap entry for the missed window.
+  Shorter blips are retried quietly and counted in health.
+
+**Builds:**
+1. **A `PollingSource` base:**
+   - per-feed schedules with jitter;
+   - a per-host request budget, with `Retry-After` and 429 honoured, and backoff with jitter;
+   - HTTPS only, a reply size limit, and timeouts;
+   - conditional GET, with the validators kept in the state store;
+   - persisted emitted ids, so nothing is recorded twice;
+   - the User-Agent.
+2. **A gap log for polling sources.**
+3. **Health per source.**
+4. **A `[sources]` settings section**, with a migration (backup first).
+5. **`docs/research/sources.md`:** the terms checks for NWS and GDELT (G17).
+6. **Tests** against a fake HTTP server.
+
+**Live check:** one conditional GET to `api.weather.gov`. No source runs in the live engine until M2.2. **No new
+packages.**
