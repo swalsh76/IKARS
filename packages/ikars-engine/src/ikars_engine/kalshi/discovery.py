@@ -14,6 +14,7 @@ the engine needs it for the watched set, the drill-down tree and tradability, no
 """
 
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -49,6 +50,9 @@ class MarketInfo:
     close_time: datetime | None
     result: str | None
     volume_24h_e2: int  # contracts traded in the last day, in hundredths
+    # the NWS climate report its rules name, such as "CLINYC" (M2.2: weather markets settle on The
+    # Weather Company's value from that government station); None when the rules name none
+    climate_code: str | None = None
     # the ticker and title in lower case, made once: the markets search reads it on every request
     # (review 1.R2 item 5)
     search: str = field(init=False, repr=False, compare=False)
@@ -67,6 +71,15 @@ def _long_settled(
         and close_time is not None
         and now_ns - int(close_time.timestamp()) * 1_000_000_000 > keep_ns
     )
+
+
+_CLIMATE_CODE = re.compile(r"\((CLI[A-Z]{3})\)")
+
+
+def climate_code(rules: str | None) -> str | None:
+    """The NWS climate-report code in a market's rules ("recorded at New York City (CLINYC)")."""
+    found = _CLIMATE_CODE.search(rules or "")
+    return found.group(1) if found else None
 
 
 class MarketIndex:
@@ -89,6 +102,10 @@ class MarketIndex:
                 self.version += 1  # a removal, so the API's sorted list is rebuilt
             return
         self.version += 1
+        before = self.markets.get(market.ticker)
+        code = climate_code(market.rules_primary)
+        if code is None and before is not None:  # an update without its rules keeps the code
+            code = before.climate_code
         event = market.event_ticker or ""
         series = series_ticker_of(event) or ""
         self.markets[market.ticker] = MarketInfo(
@@ -101,7 +118,16 @@ class MarketIndex:
             close_time=market.close_time,
             result=market.result,
             volume_24h_e2=market.volume_24h_e2 or 0,
+            climate_code=code,
         )
+
+    def climate_codes(self) -> dict[str, list[str]]:
+        """Each NWS climate-report code named by an open market's rules, and those markets."""
+        found: dict[str, list[str]] = {}
+        for m in self.markets.values():
+            if m.climate_code is not None and m.status in OPEN_STATUSES:
+                found.setdefault(m.climate_code, []).append(m.ticker)
+        return {code: sorted(tickers) for code, tickers in sorted(found.items())}
 
     def prune(self, now_ns: int, keep_ns: int = CLOSED_KEPT_NS) -> list[str]:
         """Forget markets that closed more than ``keep_ns`` ago (the index otherwise keeps every

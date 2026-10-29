@@ -69,6 +69,7 @@ class Feed(msgspec.Struct, frozen=True, kw_only=True):
     url: str
     every_s: float
     accept: str = "*/*"
+    kind: str | None = None  # the item kind for this feed; None: the source's item_kind
 
 
 class Found(msgspec.Struct, frozen=True, kw_only=True):
@@ -138,18 +139,40 @@ class Poller:
             transport=transport,
         )
         self.feeds: dict[str, FeedHealth] = {}
+        self.notes: dict[str, dict[str, Any]] = {}  # a source's own state (M2.2: its stations)
         self._pruned_ns: int | None = None
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
     def health(self) -> dict[str, object]:
-        """Each feed's counts and times (no URLs: a feed's address can carry a query)."""
-        return {name: _health_view(h) for name, h in sorted(self.feeds.items())}
+        """Each feed's counts and times (no URLs: a feed's address can carry a query), and each
+        source's own notes."""
+        return {
+            "feeds": {name: _health_view(h) for name, h in sorted(self.feeds.items())},
+            "sources": {name: dict(n) for name, n in sorted(self.notes.items())},
+        }
 
     async def fetch(self, feed: Feed) -> Fetched | None:
         """The feed's reply, or None when it has not changed since the last good poll."""
-        parts = urlsplit(feed.url)
+        etag, modified, _, _ = self._store.poll_feed(feed.name)
+        headers = {"Accept": feed.accept}
+        if etag:
+            headers["If-None-Match"] = etag
+        if modified:
+            headers["If-Modified-Since"] = modified
+        return await self._get(feed.url, headers)
+
+    async def once(self, url: str, accept: str = "*/*") -> bytes:
+        """One lookup (a station, a forecast grid), with the same rules as a poll but nothing
+        kept: HTTPS, the host's budget, the size limit."""
+        fetched = await self._get(url, {"Accept": accept})
+        if fetched is None:  # never asked "changed since?", so never 304
+            raise PollError("HTTP 304")
+        return fetched.body
+
+    async def _get(self, url: str, headers: dict[str, str]) -> Fetched | None:
+        parts = urlsplit(url)
         if parts.scheme != "https" or not parts.hostname:
             raise PollError("only https feeds are polled")
         bucket = self._buckets.get(parts.hostname)
@@ -161,14 +184,8 @@ class Poller:
                 sleep=self._clock.sleep,
             )
         await bucket.acquire(1.0)
-        etag, modified, _, _ = self._store.poll_feed(feed.name)
-        headers = {"Accept": feed.accept}
-        if etag:
-            headers["If-None-Match"] = etag
-        if modified:
-            headers["If-Modified-Since"] = modified
         try:
-            async with self._client.stream("GET", feed.url, headers=headers) as reply:
+            async with self._client.stream("GET", url, headers=headers) as reply:
                 if reply.status_code == 304:
                     return None
                 if reply.status_code in (429, 503):
@@ -247,17 +264,41 @@ class PollingSource(PluginBase):
     def parse(self, feed: Feed, body: bytes, ctx: PluginContext) -> list[Found]:
         raise NotImplementedError
 
+    async def manage(
+        self,
+        ctx: PluginContext,
+        poller: Poller,
+        start: Callable[[Feed], None],
+        stop: Callable[[str], None],
+    ) -> None:
+        """Start the feeds. The default starts ``feeds()`` once; a source whose feeds come and go
+        (M2.2: a city named by markets that open and close) overrides it, and calls ``start`` and
+        ``stop`` (by feed name) as they do."""
+        for feed in self.feeds(ctx):
+            start(feed)
+
     async def run(self, ctx: PluginContext) -> None:
         get = ctx.services.get("poller")
         if get is None:
             ctx.log.warning("no poller in this engine: the source stays idle")
             return
         poller: Poller = get()
+        running: dict[str, asyncio.Task[None]] = {}
         # a TaskGroup: one feed's loop that fails cancels the others, so a restart never leaves
-        # two loops polling one feed (merge review 2)
+        # two loops polling one feed (merge review 2); a feed stopped on purpose just ends
         async with asyncio.TaskGroup() as group:
-            for feed in self.feeds(ctx):
-                group.create_task(self._loop(feed, poller, ctx), name=f"poll {feed.name}")
+
+            def start(feed: Feed) -> None:
+                if feed.name not in running:
+                    task = group.create_task(self._loop(feed, poller, ctx), name=feed.name)
+                    running[feed.name] = task
+
+            def stop(name: str) -> None:
+                task = running.pop(name, None)
+                if task is not None:
+                    task.cancel()
+
+            await self.manage(ctx, poller, start, stop)
 
     async def _loop(self, feed: Feed, poller: Poller, ctx: PluginContext) -> None:
         health = poller.started(feed)
@@ -307,7 +348,7 @@ class PollingSource(PluginBase):
             for one in poller.fresh(feed, listed):
                 await ctx.emit(
                     Item(
-                        ref=Ref(self.item_kind, one.id),
+                        ref=Ref(feed.kind or self.item_kind, one.id),
                         source=self.spec.name,
                         received_ns=0,  # the host stamps it
                         published_ns=one.published_ns,

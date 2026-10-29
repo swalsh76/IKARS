@@ -33,7 +33,22 @@ Checked 2026-10-28 on the API's documentation page (weather.gov/documentation/se
   `max-age=280`.
 - **`If-Modified-Since` gives a 304.** `If-None-Match` alone does not, because the weak `ETag` names the server
   that answered. IKARS sends both.
-- **`/points/{lat},{lon}` gives a location's forecast URLs.**
+- **`/points/{lat},{lon}` gives a location's forecast URLs.** Coordinates must have at most four decimal
+  places; more gives a redirect.
+
+**What Kalshi settles on (M2.2, 2026-10-28).** Kalshi's weather markets settle on **The Weather Company's**
+value, as the series' settlement source and each market's rules say: "the maximum temperature recorded at New
+York City (CLINYC) … according to The Weather Company".
+- **The Weather Company's portal** (weather.com/kalshi) shows "verified climate observations from official
+  government climate stations". It offers no API, feed or terms for automated access, so IKARS does not fetch
+  it (G17).
+- **IKARS records the NWS climate report for the same station as the proxy** (owner, 2026-10-28). How close it is
+  gets measured against Kalshi's settlements in M2.4.
+- **The rules name the report's code** (`CLINYC`). The station is `K` plus its location (KNYC, Central Park). All
+  24 codes in open markets mapped on 2026-10-28.
+- **The latest report, with its text, is at `/products/types/CLI/locations/{location}/latest`** (`max-age=49`):
+  - preliminary in the afternoon ("VALID TODAY AS OF ...");
+  - final the next morning ("YESTERDAY").
 
 ## GDELT: DOC 2.0 API and archives (M2.3, M2.8)
 
