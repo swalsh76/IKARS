@@ -2800,7 +2800,8 @@ helpers); Playwright 19 in Edge against demo-api (a click on an empty cell opens
 and its greyed state, `Down`, `C` with the clipboard read back, `T` and back, `Enter` after the focus moved); lint,
 types and the data guard clean.
 
-**Live check: pending** (a test pre-release on the owner's word): the owner uses the list, Back and the crumbs.
+**Live check passed** on v0.1.9 (test pre-release from `66d8699`, published on the owner's word, 2026-10-28): the
+owner used the list, the keys, Back and the named crumb on the workstation: "everything looks good".
 
 **Review.**
 - **Per commit:** `c6a424f` 1 found and fixed before committing (a move clears the screen's name and it was only
@@ -2818,4 +2819,4 @@ types and the data guard clean.
   | 7 | The row repeated the link's modified-click test | One helper, `plainClick` |
   | 8 | A row's element id held the raw recommendation id | Encoded |
 
-**M1.12d built**, subject to the live check and the owner's merge.
+**M1.12d built and checked live**, subject to the owner's merge.
