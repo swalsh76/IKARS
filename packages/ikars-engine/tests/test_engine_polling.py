@@ -348,9 +348,13 @@ class Refuses(News):
 
 def test_a_fault_in_the_plugin_is_not_retried_as_a_feed_problem(tmp_path: Path) -> None:
     # merge review 7: the host counts it as a crash
-    with pytest.raises(ExceptionGroup) as raised:
-        run_source(tmp_path, Server([items("a")]), sleeps=3, source=Refuses())
-    assert raised.group_contains(PluginError)
+    store = StateStore(tmp_path / "state.sqlite")
+    try:
+        with pytest.raises(ExceptionGroup) as raised:
+            run_source(tmp_path, Server([items("a")]), sleeps=3, source=Refuses(), store=store)
+        assert raised.group_contains(PluginError)
+    finally:
+        store.close()
 
 
 def test_what_went_out_before_an_emit_failed_is_remembered(tmp_path: Path) -> None:
