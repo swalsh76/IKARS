@@ -42,7 +42,7 @@ from ikars_core.ws import FeedConfig, KalshiFeed
 
 from ikars_engine import gpu, taxzone
 from ikars_engine.alerts import ALERT_LOG
-from ikars_engine.api import ApiContext, ApiServer, market_fees, market_title
+from ikars_engine.api import ApiContext, ApiServer, engine_version, market_fees, market_title
 from ikars_engine.backup_service import BackupService
 from ikars_engine.clocks import WallClock
 from ikars_engine.engine import Engine
@@ -60,6 +60,7 @@ from ikars_engine.metrics import Metrics
 from ikars_engine.model import Item
 from ikars_engine.paths import Paths
 from ikars_engine.plugins import HostOptions, PluginError, discover
+from ikars_engine.polling import Poller, poller_service, user_agent
 from ikars_engine.portfolio import Held, Portfolio, holdings, portfolio
 from ikars_engine.recommendations import ENGINE_DESK, Notices
 from ikars_engine.recorder import Recorder
@@ -195,6 +196,7 @@ class Live:
     journal: Journal
     journal_service: JournalService
     recorder: Recorder
+    poller: Poller
 
 
 def describer(index: MarketIndex) -> Describe:
@@ -235,6 +237,9 @@ async def build(
     client = KalshiPublicClient(config, bucket=bucket, observe=clock_observer(skew))
     data = MarketData(client)
     state = StateStore(paths.data / "state.sqlite")
+    # the polling sources' one HTTP client (M2.1): the User-Agent names the repository, and the
+    # contact email only when the local settings hold one
+    poller = Poller(state, clock, user_agent(engine_version(), settings.sources.contact_email))
     signer = DataSigner.from_environment(signer_environment(settings))
     feed = KalshiFeed(signer, FeedConfig(url=config.ws_url))
     watched = WatchedSet(
@@ -276,7 +281,8 @@ async def build(
         queue_size=plugin_defaults.queue_size, call_timeout=plugin_defaults.call_timeout_seconds,
         restart_base=plugin_defaults.restart_base_seconds,
         restart_max=plugin_defaults.restart_max_seconds, settings=settings.plugin_settings,
-        services={"market": index.markets.get, "fees": index.fees.get, "active": journal.active},
+        services={"market": index.markets.get, "fees": index.fees.get, "active": journal.active,
+                  "poller": poller_service(poller)},
     )  # fmt: skip
     engine = Engine(clock, source, metrics=metrics, skew=skew, host_options=options)
     # the plugins (review 1.R2 item 8): one that cannot load is said in health, never a stop
@@ -303,6 +309,7 @@ async def build(
     )  # fmt: skip
     engine.listeners += [journal_service.listen, recording(recorder)]
     engine.health_parts["journal"] = journal_service.health
+    engine.health_parts["sources"] = poller.health
     engine.health_parts["plugins_unloaded"] = lambda: {"problems": list(unloaded)}
     cards: dict[str, object] = {"device": None, "note": "detecting"}
 
@@ -364,7 +371,7 @@ async def build(
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
     return Live(
         engine, source, state, ledger, service, backups, account_client, gpu_task, api, client,
-        updates, journal, journal_service, recorder,
+        updates, journal, journal_service, recorder, poller,
     )  # fmt: skip
 
 
@@ -494,6 +501,7 @@ async def run(
     async with contextlib.AsyncExitStack() as stack:
         stack.push_async_callback(live.account_client.aclose)
         stack.push_async_callback(live.public_client.aclose)  # M1.R 24
+        stack.push_async_callback(live.poller.aclose)  # after the plugins stop (M2.1)
         stack.callback(live.state.close)
         # last of all, once the plugins have drained (merge review 4 and 5): what they emitted
         # while stopping is recorded (the source closed the recorder; closing again flushes it)

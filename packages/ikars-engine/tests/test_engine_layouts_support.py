@@ -101,7 +101,7 @@ def test_version_4_settings_gain_no_layouts_and_are_kept_as_a_backup(tmp_path: P
     path = tmp_path / "settings.toml"
     path.write_text("version = 4\n[terminal]\nskin = 'paper'\n", encoding="utf-8")
     settings = load(path)
-    assert VERSION == 5 and settings.version == 5
+    assert settings.version == VERSION  # migrated on, through every later version
     assert settings.terminal.layouts == [] and settings.terminal.start_layout == ""
     assert settings.terminal.skin == "paper"
     assert list(tmp_path.glob("settings.*.bak.toml"))

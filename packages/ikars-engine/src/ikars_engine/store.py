@@ -120,6 +120,24 @@ STATE_MIGRATIONS = (
     """
     CREATE INDEX gap_end ON gap (end_ns)
     """,
+    # 3 (M2.1): polling sources keep, per feed, the server's validators (a restart asks "changed
+    # since?", not for everything again) and its last good poll (a gap across an engine stop is
+    # measured from it), and the ids they emitted, so nothing is recorded twice
+    """
+    CREATE TABLE poll_feed (
+        feed TEXT PRIMARY KEY,
+        etag TEXT,
+        last_modified TEXT,
+        last_ok_ns INTEGER
+    );
+    CREATE TABLE poll_seen (
+        feed TEXT NOT NULL,
+        id TEXT NOT NULL,
+        at_ns INTEGER NOT NULL,
+        PRIMARY KEY (feed, id)
+    );
+    CREATE INDEX poll_seen_at ON poll_seen (at_ns)
+    """,
 )
 
 
@@ -187,6 +205,55 @@ class StateStore:
             (since_ns, limit),
         )
         return [Gap(*row) for row in rows]
+
+    # --- polling sources (M2.1) ----------------------------------------------------------------
+
+    def poll_feed(self, feed: str) -> tuple[str | None, str | None, int | None]:
+        """A feed's ETag, Last-Modified and last good poll, as last kept."""
+        row = self._db.execute(
+            "SELECT etag, last_modified, last_ok_ns FROM poll_feed WHERE feed = ?", (feed,)
+        ).fetchone()
+        return (None, None, None) if row is None else (row[0], row[1], row[2])
+
+    def set_poll_feed(
+        self, feed: str, etag: str | None, last_modified: str | None, last_ok_ns: int
+    ) -> None:
+        self._db.execute(
+            "INSERT INTO poll_feed (feed, etag, last_modified, last_ok_ns) VALUES (?, ?, ?, ?)"
+            " ON CONFLICT (feed) DO UPDATE SET etag = excluded.etag,"
+            " last_modified = excluded.last_modified, last_ok_ns = excluded.last_ok_ns",
+            (feed, etag, last_modified, last_ok_ns),
+        )
+
+    def unseen(self, feed: str, ids: list[str]) -> list[str]:
+        """``ids`` not yet emitted by ``feed``, in their order (each once)."""
+        seen: set[str] = set()
+        for start in range(0, len(ids), 500):  # SQLite's variable limit
+            chunk = ids[start : start + 500]
+            marks = ",".join("?" * len(chunk))
+            seen.update(
+                r[0]
+                for r in self._db.execute(
+                    f"SELECT id FROM poll_seen WHERE feed = ? AND id IN ({marks})",  # noqa: S608
+                    (feed, *chunk),
+                )
+            )
+        fresh, kept = [], set()
+        for one in ids:
+            if one not in seen and one not in kept:
+                kept.add(one)
+                fresh.append(one)
+        return fresh
+
+    def remember(self, feed: str, ids: list[str], at_ns: int) -> None:
+        self._db.executemany(
+            "INSERT OR IGNORE INTO poll_seen (feed, id, at_ns) VALUES (?, ?, ?)",
+            [(feed, one, at_ns) for one in ids],
+        )
+
+    def forget_seen(self, before_ns: int) -> int:
+        """Drop remembered ids older than ``before_ns`` (feeds list only recent items)."""
+        return self._db.execute("DELETE FROM poll_seen WHERE at_ns < ?", (before_ns,)).rowcount
 
     # --- bookmarks and heartbeats ------------------------------------------------------------
 
