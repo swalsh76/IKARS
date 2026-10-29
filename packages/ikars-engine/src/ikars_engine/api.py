@@ -31,6 +31,7 @@ import json
 import logging
 import os
 import secrets
+import urllib.request
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -420,6 +421,7 @@ def health_view(health: dict[str, Any]) -> c.HealthView:
             hours_since=_typed(at(health, "backup", "hours_since"), int),
             last_error=_typed(at(health, "backup", "last_error"), str),
             running=_typed(at(health, "backup", "running"), bool),
+            next_in_h=_typed(at(health, "backup", "next_in_h"), int),
         ),
         clock_status=_typed(at(health, "clock", "status"), str),
         clock_offset_ms=_typed(at(health, "clock", "offset_ms"), float),
@@ -828,8 +830,8 @@ def create_app(ctx: ApiContext) -> ASGIApp:
     async def backup_now(request: Request) -> Response:
         """A backup now (the Health screen's Back up now): made and checked on the share, or why
         not. One at a time; it restarts the 24-hour clock."""
-        if ctx.backup is None:
-            return _json(c.Done(done=False, detail="backups are not running in this engine"))
+        if ctx.backup is None:  # 503: the command line makes the backup itself (setup mode)
+            return _json(c.Done(done=False, detail="backups are not running in this engine"), 503)
         made, detail = await ctx.backup()
         return _json(c.Done(done=made, detail=detail))
 
@@ -1148,3 +1150,23 @@ def read_api_file(folder: Path) -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def engine_post(folder: Path, route: str, timeout_s: float) -> c.Done | None:
+    """``POST route`` to the engine running on this machine (its per-start token from
+    ``api.json``): its answer, or None when it cannot take it (no ``api.json`` or a half-written
+    one, no answer, a reply that is not a ``Done``, or a route that is unavailable there), so the
+    caller can do the work itself. One place for the command line's calls (M1.11 review)."""
+    record = read_api_file(folder)
+    if record is None:
+        return None
+    try:
+        request = urllib.request.Request(  # noqa: S310 (a fixed loopback address)
+            f"http://127.0.0.1:{int(record['port'])}{route}",
+            method="POST",
+            headers={"Authorization": f"Bearer {record['token']}"},
+        )
+        with urllib.request.urlopen(request, timeout=timeout_s) as answer:  # noqa: S310
+            return msgspec.json.decode(answer.read(), type=c.Done)
+    except (OSError, ValueError, KeyError, TypeError, msgspec.DecodeError):
+        return None

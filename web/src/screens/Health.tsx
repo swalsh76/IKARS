@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ApiFailure, change } from "../api/client";
 import { useMeterReading, useSnapshot, useValue } from "../app/hooks";
-import { gapRow, healthCards, meterCard } from "../view/health";
+import { gapRow, healthCards, local, meterCard } from "../view/health";
 import { Updates } from "./Updates";
 
 function Gaps() {
@@ -57,8 +57,8 @@ function BackupNow({ configured, running }: { configured: boolean; running: bool
     setNote("");
     change("/v1/backup", "Done", {}, { method: "POST", timeoutMs: BACKUP_WAIT_MS })
       .then((done) => {
-        const at = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        setNote(done.done ? `Backed up at ${at}, checked on the share` : `Not backed up: ${done.detail}`);
+        // the terminal's one time format (platform review 1.R2 item 4; merge review 9)
+        setNote(done.done ? `Backed up ${local(new Date().toISOString())}, checked on the share` : `Not backed up: ${done.detail}`);
       })
       .catch((error: unknown) => setNote(`Not backed up: ${error instanceof ApiFailure ? error.message : "the engine did not answer"}`))
       .finally(() => setBusy(false));

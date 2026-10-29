@@ -16,7 +16,6 @@ export interface Card {
   action?: "backup"; // the card carries Back up now (M1.11)
 }
 
-const BACKUP_EVERY_H = 24; // the engine's automatic copy (backup_service.py)
 
 const STATE: Record<Level, string> = { ok: "OK", watch: "WATCH", problem: "PROBLEM", unknown: "NOT YET" };
 
@@ -80,7 +79,8 @@ export function healthCards(h: HealthView): Card[] {
         !backup.configured ? "No share set" : backup.hours_since === null ? "None yet" : `Last copy ${backup.hours_since} h ago`,
         [
           backup.last_error === null ? "no errors" : `last error: ${backup.last_error}`,
-          ...(backup.configured && backup.hours_since !== null ? [`next automatic copy in ${Math.max(0, BACKUP_EVERY_H - backup.hours_since)} h`] : []),
+          // the engine says when (merge review 10): 0 means at its next hourly check
+          ...(backup.configured && backup.next_in_h != null ? [`next automatic copy in ${backup.next_in_h} h`] : []),
         ],
         backup.running ? "BACKING UP" : STATE[backupLevel],
       ),

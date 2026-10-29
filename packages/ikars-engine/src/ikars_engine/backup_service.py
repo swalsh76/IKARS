@@ -61,11 +61,17 @@ class BackupService:
             await self.run_if_due()
             await asyncio.sleep(self._every)
 
-    async def run_if_due(self) -> bool:
+    def _due(self) -> bool:
         last = self._state.bookmark(LAST_OK)
-        if last is not None and self._clock.now_ns() - last < self._due_after_ns:
+        return last is None or self._clock.now_ns() - last >= self._due_after_ns
+
+    async def run_if_due(self) -> bool:
+        if not self._due():
             return False
-        await self.run_now()
+        async with self._busy:  # asked again inside: an owner's backup may just have run (review 5)
+            if not self._due():
+                return False
+            await self._run()
         return True
 
     async def request(self) -> tuple[bool, str]:
@@ -119,6 +125,10 @@ class BackupService:
             "running": self._busy.locked(),
             "last_ok_utc": None if last is None else iso_utc(last),
             "hours_since": None if last is None else (self._clock.now_ns() - last) // (3_600 * NS),
+            # when the next automatic copy falls due (0: now, at the next hourly check)
+            "next_in_h": None
+            if last is None
+            else max(0, (last + self._due_after_ns - self._clock.now_ns()) // (3_600 * NS)),
             "runs": self.runs,
             "failures": self.failures,
             "last_error": self.last_error,

@@ -36,6 +36,7 @@ from ikars_core.rest import (
     KalshiAPIError,
     KalshiConnectionError,
     KalshiPublicClient,
+    KalshiResponseError,
 )
 from ikars_core.ws import FeedConfig, KalshiFeed
 
@@ -140,9 +141,12 @@ async def first_bucket(
             if attempt and on_wait is not None:
                 on_wait(None)  # reachable again: no stale "waiting" for the watchdog (review 4)
             return bucket
-        except (KalshiConnectionError, KalshiAPIError) as exc:
-            if isinstance(exc, KalshiAPIError) and exc.status < 500:
-                raise  # Kalshi answered and refused: not the network (review 3)
+        except (KalshiConnectionError, KalshiAPIError, KalshiResponseError) as exc:
+            # Kalshi answered and refused (a key fault): not the network (review 3); a 429 still
+            # there after the client's retries, or a page that is not Kalshi's (a captive portal),
+            # is waited out like an outage (merge review 3)
+            if isinstance(exc, KalshiAPIError) and exc.status < 500 and exc.status != 429:
+                raise
             waited = int(monotonic() - began)
             log.warning(
                 "waiting for the network",

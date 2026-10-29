@@ -201,10 +201,15 @@ class Share:
                     removed += 1
         return removed
 
-    def newest_daily(self, kind: str = "ledger") -> Path | None:
+    def newest_daily(self, kind: str = "ledger", until: str | None = None) -> Path | None:
+        """The newest dated folder of ``kind`` (on or before the day ``until``, when given)."""
         daily = self.path(kind, "daily")
         days = (
-            [d for d in daily.glob("*/*") if d.is_dir() and _is_date(d.name)]
+            [
+                d
+                for d in daily.glob("*/*")
+                if d.is_dir() and _is_date(d.name) and (until is None or d.name <= until)
+            ]
             if daily.is_dir()
             else []
         )
@@ -429,15 +434,21 @@ def restore(
         folder, verified = proved_newest(share, staged)
         moves = [(staged, ledger)]
         try:
-            points = sorted(share.path("ledger", "checkpoints").glob("*/*.json"))
+            # the checkpoints and the state of the ledger copy's day or before: never a newer
+            # run's, whose ledger copy may have failed (merge review 6)
+            points = [
+                p
+                for p in sorted(share.path("ledger", "checkpoints").glob("*/*.json"))
+                if p.stem <= folder.name
+            ]
             for source in points:
                 target = staging / "checkpoints" / source.parent.name / source.name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, target)
             if points:
                 moves.append((staging / "checkpoints", checkpoints))
-            state_folder = share.newest_daily("state")
-            has_journal = False
+            state_folder = share.newest_daily("state", until=folder.name)
+            has_journal = has_settings = False
             if state_folder is not None:
                 if not share.check_folder(state_folder):
                     raise ShareError("a state backup file does not match its SHA256SUMS")
@@ -455,9 +466,14 @@ def restore(
                 except SettingsError as exc:
                     raise ShareError(f"the saved settings cannot be read: {exc}") from exc
                 moves.append((staging / "settings.toml", settings))
+                has_settings = True
         except OSError as exc:  # the share went away part-way (M1.11 review)
             raise ShareError(f"the share could not be read ({type(exc).__name__})") from exc
-        _move_in(moves, checkpoints)
+        try:
+            _move_in(moves, checkpoints)
+        except OSError as exc:  # taken back; a refusal, not a traceback (merge review 4)
+            problem = f"the restored files could not be put in place ({type(exc).__name__})"
+            raise ShareError(problem) from exc
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return Restored(
@@ -466,7 +482,7 @@ def restore(
         len(points),
         None if state_folder is None else state_folder.name,
         has_journal,
-        saved.is_file(),
+        has_settings,
     )
 
 

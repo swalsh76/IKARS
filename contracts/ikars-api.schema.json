@@ -99,6 +99,17 @@
             }
           ]
         },
+        "next_in_h": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "running": {
           "anyOf": [
             {

@@ -62,6 +62,7 @@ class BackupHealth(msgspec.Struct, kw_only=True):
     hours_since: int | None
     last_error: str | None
     running: bool | None = None  # 2.2: a backup is being made now (the owner's or the day's)
+    next_in_h: int | None = None  # 2.2: hours until the next automatic copy is due
 
 
 class HealthView(msgspec.Struct, kw_only=True):
@@ -445,7 +446,7 @@ class ApiError(msgspec.Struct, kw_only=True):
 # exact in JavaScript. A new integer field must be one of these four (a test checks).
 SMALL_INTEGERS = frozenset({
     "api_streams", "before", "books_ready", "coalesce_ms", "errors", "head_seq", "hours_since",
-    "id", "interval_minutes", "line", "offset", "open_gaps", "records", "seq", "total",
+    "id", "interval_minutes", "next_in_h", "line", "offset", "open_gaps", "records", "seq", "total",
     "watched_markets", "throttle_minutes", "digest_minutes", "watched_max_markets",
     "read_share_percent", "storage_budget_gb", "port", "session_days", "x", "y", "width",
     "height", "progress", "size_bytes", "horizon_s", "horizons_s", "checks", "scored", "above_zero",
@@ -574,7 +575,9 @@ def examples() -> dict[str, Any]:
         watched_markets=100, trading_active=True,
     )  # fmt: skip
     ledger = LedgerHealth(verified=True, reconciled_exact=True, records=183, errors=0)
-    backup = BackupHealth(configured=True, hours_since=3, last_error=None, running=False)
+    backup = BackupHealth(
+        configured=True, hours_since=3, last_error=None, running=False, next_in_h=21
+    )
     gap = GapView(
         id=1, channel="trade", reason="reconnect (connection_lost)",
         start_utc="2026-01-01T00:00:00Z", end_utc="2026-01-01T00:00:03Z", recovery="backfill",

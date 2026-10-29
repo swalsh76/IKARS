@@ -146,7 +146,7 @@ class DemoBackup:
 
     def health(self) -> dict[str, Any]:
         return {"configured": True, "hours_since": self.hours_since, "last_error": None,
-                "running": self.running}  # fmt: skip
+                "running": self.running, "next_in_h": 24 - (self.hours_since or 0)}  # fmt: skip
 
 
 def demo_health(market: Market) -> dict[str, Any]:

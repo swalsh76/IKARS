@@ -21,7 +21,6 @@ import asyncio
 import json
 import tempfile
 import time
-import urllib.request
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -38,7 +37,6 @@ from ikars_core.rest import KalshiAccountClient, KalshiAPIError, KalshiPublicCli
 
 from ikars_engine import taxzone
 from ikars_engine.clocks import WallClock
-from ikars_engine.contracts import Done
 from ikars_engine.ledger import KINDS, Ledger
 from ikars_engine.ledger_import import AccountImporter, ns_of
 from ikars_engine.ledger_service import ANNOTATION_KINDS, annotate
@@ -292,10 +290,14 @@ def _backup(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
         })  # fmt: skip
         return 0
     if args.action == "run" and engine_running(paths.data):
-        # through the engine: one backup at a time, and its 24-hour clock restarts (M1.11)
-        done = engine_backup(paths)
-        _print({"ok": done.done, "detail": done.detail, "by": "the running engine"})
-        return 0 if done.done else 1
+        # through the engine: one backup at a time, and its 24-hour clock restarts (M1.11); an
+        # engine that cannot take it (setup mode, waiting for the network) leaves it to this one
+        from ikars_engine.api import engine_post
+
+        done = engine_post(paths.data, "/v1/backup", ENGINE_BACKUP_WAIT_S)
+        if done is not None:
+            _print({"ok": done.done, "detail": done.detail, "by": "the running engine"})
+            return 0 if done.done else 1
     share = Share(settings.backup.share)
     if args.action == "status":
         problem = share.problem()
@@ -322,25 +324,6 @@ def _backup(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
 
 
 ENGINE_BACKUP_WAIT_S = 900  # a full copy to a slow share takes minutes
-
-
-def engine_backup(paths: Paths) -> Done:
-    """A backup made by the running engine (``POST /v1/backup`` with its per-start token)."""
-    from ikars_engine.api import read_api_file
-
-    record = read_api_file(paths.data)
-    if record is None:
-        return Done(done=False, detail="the engine's API is not up yet: try again in a minute")
-    request = urllib.request.Request(  # noqa: S310 (a fixed loopback address)
-        f"http://127.0.0.1:{int(record['port'])}/v1/backup",
-        method="POST",
-        headers={"Authorization": f"Bearer {record['token']}"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=ENGINE_BACKUP_WAIT_S) as answer:  # noqa: S310
-            return msgspec.json.decode(answer.read(), type=Done)
-    except (OSError, ValueError, msgspec.ValidationError) as exc:
-        return Done(done=False, detail=f"the engine did not answer ({type(exc).__name__})")
 
 
 def _print(data: object) -> None:

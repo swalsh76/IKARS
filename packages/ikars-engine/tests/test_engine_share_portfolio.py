@@ -714,7 +714,7 @@ def test_a_restore_goes_into_empty_folders_and_takes_back_a_part_way_move(
         return real(self, target)
 
     monkeypatch.setattr(Path, "replace", flaky)
-    with pytest.raises(PermissionError):
+    with pytest.raises(ShareError, match="could not be put in place"):
         restore_into(share, root)
     assert not [p for p in root.root.rglob("*") if p.is_file()]  # the ledger moved back out
     monkeypatch.setattr(Path, "replace", real)
@@ -833,30 +833,73 @@ async def test_the_backup_route(tmp_path: Path) -> None:
         assert done.done and asked == [1]
         assert (await http.get("/v1/backup", headers=auth)).status_code == 405
         ctx.backup = None
-        done = msgspec.json.decode(
-            (await http.post("/v1/backup", headers=auth)).content, type=c.Done
-        )
+        reply = await http.post("/v1/backup", headers=auth)
+        assert reply.status_code == 503  # the command line then makes it itself
+        done = msgspec.json.decode(reply.content, type=c.Done)
         assert not done.done and "not running" in done.detail
     ledger.close()
 
 
-def test_backup_run_goes_through_a_running_engine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_backup_run_goes_through_a_running_engine_or_makes_it_itself(
+    nas: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    from ikars_engine import api, ledger_cli
     from ikars_engine import contracts as c
-    from ikars_engine import ledger_cli
     from ikars_engine.__main__ import main
 
     root = tmp_path / "ikars-data"
-    make_data(root)
-    real = ledger_cli.engine_backup
+    paths = make_data(root)
+    assert api.engine_post(paths.data, "/v1/backup", 1) is None  # no api.json: not up yet
+    (paths.data / "api.json").write_text('{"token": "t"}', encoding="utf-8")  # half-written
+    assert api.engine_post(paths.data, "/v1/backup", 1) is None
     monkeypatch.setattr(ledger_cli, "engine_running", lambda folder: True)
-    monkeypatch.setattr(
-        ledger_cli, "engine_backup", lambda paths: c.Done(done=True, detail="backed up")
-    )
+    asked: list[str] = []
+
+    def answers(folder: Path, route: str, timeout_s: float) -> c.Done:
+        asked.append(route)
+        return c.Done(done=True, detail="backed up")
+
+    monkeypatch.setattr(api, "engine_post", answers)
     assert main(["ikars", "backup", "--root", str(root), "run"]) == 0
+    assert asked == ["/v1/backup"]
     assert json.loads(capsys.readouterr().out) == {
         "ok": True, "detail": "backed up", "by": "the running engine"
     }  # fmt: skip
-    no_api = real(Paths(root))  # no api.json: the engine is not up yet
-    assert not no_api.done and "not up yet" in no_api.detail
+    # an engine that cannot take it (setup mode, waiting for the network): made here, as before
+    monkeypatch.setattr(api, "engine_post", lambda folder, route, timeout_s: None)
+    Share(str(nas)).init(T0)
+    base = ["ikars", "backup", "--root", str(root)]
+    assert main([*base, "init", "--share", str(nas)]) == 0
+    capsys.readouterr()
+    assert main([*base, "run"]) == 0
+    assert json.loads(capsys.readouterr().out)["head_seq"] == 3
+
+
+async def test_the_daily_check_does_not_back_up_again_after_the_owners(
+    nas: Path, tmp_path: Path
+) -> None:
+    # merge review 5: the hourly check found it due, then waited on the owner's backup
+    Share(str(nas)).init(T0)
+    paths = make_data(tmp_path / "ikars-data")
+    state = StateStore(paths.data / "state.sqlite")
+    service = BackupService(Share(str(nas)), paths, state, VirtualClock(T0))
+    owners = asyncio.create_task(service.request())
+    await asyncio.sleep(0)
+    assert await service.run_if_due() is False  # due when it looked; not after the owner's
+    assert (await owners)[0] is True and service.runs == 1
+    health = service.health()
+    assert health["next_in_h"] == 24 and health["hours_since"] == 0
+    state.close()
+
+
+def test_a_restore_takes_nothing_newer_than_its_ledger_copy(nas: Path, tmp_path: Path) -> None:
+    # merge review 6: a later run whose ledger copy failed must not mix in its state or checkpoint
+    share, _ = backed_up(nas, tmp_path)
+    newer = nas / "ikars" / "state" / "daily" / "2026" / "2026-01-02"
+    newer.mkdir(parents=True)
+    (newer / "state.sqlite").write_bytes(b"from a later run")
+    (newer / SUMS).write_text(f"{sha256(newer / 'state.sqlite')}  state.sqlite\n", encoding="utf-8")
+    later = nas / "ikars" / "ledger" / "checkpoints" / "2026" / "2026-01-02.json"
+    later.write_text("{}", encoding="utf-8")
+    done = restore_into(share, Paths(tmp_path / "new-machine"))
+    assert (done.ledger_day, done.state_day, done.checkpoints) == ("2026-01-01", "2026-01-01", 1)

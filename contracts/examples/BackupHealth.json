@@ -2,5 +2,6 @@
   "configured": true,
   "hours_since": 3,
   "last_error": null,
+  "next_in_h": 21,
   "running": false
 }

@@ -15,7 +15,12 @@ from ikars_core.config import Environment, KalshiConfig
 from ikars_core.endpoints import MarketData
 from ikars_core.markets import series_ticker_of
 from ikars_core.ratelimit import TokenBucket
-from ikars_core.rest import KalshiAPIError, KalshiConnectionError, KalshiPublicClient
+from ikars_core.rest import (
+    KalshiAPIError,
+    KalshiConnectionError,
+    KalshiPublicClient,
+    KalshiResponseError,
+)
 from ikars_core.ws import Data, FeedError, Reconnected, ResubscribeFailed, SequenceGap
 from ikars_core.ws_models import parse_frame
 from ikars_engine.clocks import VirtualClock
@@ -1122,6 +1127,10 @@ def test_a_stop_while_waiting_ends_it_and_other_faults_still_stop(
     _, outage = failing_bucket(2, KalshiAPIError(503, "maintenance"))
     monkeypatch.setattr(runner, "request_bucket", outage)
     asyncio.run(first_bucket(config, 25, None, None, None, clock.sleep, lambda: clock.now))  # type: ignore[arg-type]
+    for lingering in (KalshiAPIError(429, "slow down"), KalshiResponseError("not Kalshi's page")):
+        _, waited = failing_bucket(1, lingering)  # merge review 3: waited out, not a stop
+        monkeypatch.setattr(runner, "request_bucket", waited)
+        asyncio.run(first_bucket(config, 25, None, None, None, clock.sleep, lambda: clock.now))  # type: ignore[arg-type]
     _, forbidden = failing_bucket(1, KalshiAPIError(401, "unauthorized"))
     monkeypatch.setattr(runner, "request_bucket", forbidden)
     with pytest.raises(KalshiAPIError):  # Kalshi answered and refused: no wait (merge review 3)

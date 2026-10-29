@@ -41,7 +41,7 @@ test("drills into Health and back, with real addresses, and stays signed in on r
   const backups = page.getByRole("region", { name: "Backups" });
   await expect(backups).toContainText("Last copy 3 h ago");
   await backups.getByRole("button", { name: "Back up now" }).click();
-  await expect(page.getByTestId("backup-note")).toHaveText(/^Backed up at .+, checked on the share$/);
+  await expect(page.getByTestId("backup-note")).toHaveText(/^Backed up [A-Z][a-z]{2} \d{1,2}, \d\d:\d\d, checked on the share$/);
   await expect(backups).toContainText("Last copy 0 h ago");
   await expect(backups).toContainText("next automatic copy in 24 h");
   await page.goBack();

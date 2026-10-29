@@ -67,6 +67,7 @@ export interface BackupHealth {
 configured: (boolean | null)
 hours_since: (number | null)
 last_error: (string | null)
+next_in_h?: (number | null)
 running?: (boolean | null)
 }
 /**
