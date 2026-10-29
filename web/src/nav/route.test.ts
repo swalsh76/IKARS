@@ -17,6 +17,7 @@ describe("addresses", () => {
     ["/markets", "?q=rain&category=Climate", { screen: "markets", query: "rain", category: "Climate" }],
     ["/market/KXDEMO-26JAN01-T50", "", { screen: "market", ticker: "KXDEMO-26JAN01-T50" }],
     ["/market/A%2FB", "", { screen: "market", ticker: "A/B" }],
+    ["/recommendation/momentum-KXA-1", "", { screen: "recommendation", id: "momentum-KXA-1" }],
     ["/health/extra", "", { screen: "missing", path: "/health/extra" }],
     ["/nothing", "", { screen: "missing", path: "/nothing" }],
     ["/market/%E0%A4%A", "", { screen: "missing", path: "/market/%E0%A4%A" }],
@@ -31,6 +32,7 @@ describe("addresses", () => {
       { screen: "markets", query: "" },
       { screen: "markets", query: "", category: "Climate & Weather" },
       { screen: "market", ticker: "A/B" },
+      { screen: "recommendation", id: "momentum-KXA-1" },
       { screen: "ledger" },
     ] as Route[]) {
       const url = new URL(href(route), "http://127.0.0.1");

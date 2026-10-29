@@ -74,6 +74,14 @@ export function contracts(value: E2): string {
   return `${negative ? "-" : ""}${grouped(integer)}${trimmed ? `.${trimmed}` : ""}`;
 }
 
+/** A ratio the engine sends in millionths (a return, M1.12c) as a percent: ``+0.8%``, ``-7.5%``,
+ * ``+4,016.6%``. */
+export function percent(value: number, { places = 1, signed = false }: DollarFormat = {}): string {
+  const [negative, integer, fraction] = scaled(whole(value), 10_000n, places);
+  const sign = negative ? "-" : signed && value > 0 && (integer !== "0" || /[1-9]/.test(fraction)) ? "+" : "";
+  return `${sign}${grouped(integer)}${fraction ? `.${fraction}` : ""}%`;
+}
+
 /** A share of a total, for drawing only (a bar's width): never money arithmetic shown as money. */
 export function share(part: E6, total: E6): number {
   const p = whole(part);

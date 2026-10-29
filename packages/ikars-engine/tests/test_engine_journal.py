@@ -53,7 +53,7 @@ def test_a_recommendation_is_kept_superseded_by_a_newer_one_and_expires(tmp_path
     assert journal.expire(T0 + 1800 * S) == 2  # r2 and r3: active and past their expiry
     assert {e.id: e.state for e in journal.recent()} == {"r1": SUPERSEDED, "r2": EXPIRED,
                                                         "r3": EXPIRED}  # fmt: skip
-    assert journal.add(item("r1", T0, rec())) is False  # the same id again: nothing changes
+    assert journal.add(item("r1", T0, rec())) is None  # the same id again: nothing changes
     assert len(journal.recent()) == 3
     journal.close()
 
@@ -186,7 +186,7 @@ def test_the_same_id_again_never_supersedes_the_newer_one(tmp_path: Path) -> Non
     journal = Journal(tmp_path / "journal.sqlite")
     journal.add(item("r1", T0, rec()))
     journal.add(item("r2", T0 + 60 * S, rec()))
-    assert journal.add(item("r1", T0 + 120 * S, rec())) is False  # a restart re-emits r1
+    assert journal.add(item("r1", T0 + 120 * S, rec())) is None  # a restart re-emits r1
     assert {e.id: e.state for e in journal.recent()} == {"r2": ACTIVE, "r1": SUPERSEDED}
     journal.close()
 

@@ -23,13 +23,13 @@ for the old one; the engine serves its own terminal, so the two always match.
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import msgspec
 
 from ikars_engine.settings import Layout, LayoutWindow, Skin
 
-API_VERSION = "2.0"  # 2.0: typed health, AlertView.at_local, sign-in
+API_VERSION = "2.1"  # 2.0: typed health, AlertView.at_local, sign-in; 2.1: ranked recommendations
 
 
 class Hello(msgspec.Struct, kw_only=True):
@@ -212,10 +212,50 @@ class RecommendationView(msgspec.Struct, kw_only=True):
     pnl_e6: int | None  # after fees on entry and exit (M1.12b)
     inputs: list[str]  # the items it was built from ("kind:id")
     marks: list[MarkView]
+    # M1.12c
+    title: str  # the market's ("" when the index no longer has it)
+    source: str  # the plugin that made it
+    outlay_e6: int | None  # the contracts and the entry fee: also the worst case (None: no fees)
+    return_e6: int | None  # at the target after fees, in millionths of the outlay
+    per_day_e6: int | None  # that, per day of its validity: the ranking (D20 D)
+    response: str | None  # the owner's: taken, ignored or dismissed
+    horizons_s: list[int]  # when it is checked after it is made (marks come at these)
 
 
 class RecommendationPage(msgspec.Struct, kw_only=True):
+    """The newest, or (``state=active`` and the stream's ``recommendations`` event) the active ones
+    ranked by return per day, the dismissed left out; ``total`` is how many there are."""
+
     items: list[RecommendationView]
+    total: int
+
+
+class ResponseChange(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
+    """``PUT /v1/recommendations/{id}/response``: the owner's response (None takes it back)."""
+
+    answer: Literal["taken", "ignored", "dismissed"] | None
+
+
+class ScoreLineView(msgspec.Struct, kw_only=True):
+    """One strategy version's checks at one horizon, after costs."""
+
+    strategy: str
+    version: str
+    horizon_s: int
+    checks: int  # made (scored, unscorable, or waiting for a settlement)
+    scored: int
+    above_zero: int
+    mean_e6: int | None
+    median_e6: int | None
+
+
+class ScoreCard(msgspec.Struct, kw_only=True):
+    """``GET /v1/scorecard``: the recommendations made since ``since_utc`` (30 days), worked out
+    once a minute (``at_utc``; None before the first)."""
+
+    since_utc: str
+    at_utc: str | None
+    lines: list[ScoreLineView]
 
 
 class Candle(msgspec.Struct, kw_only=True):
@@ -406,7 +446,7 @@ SMALL_INTEGERS = frozenset({
     "id", "interval_minutes", "line", "offset", "open_gaps", "records", "seq", "total",
     "watched_markets", "throttle_minutes", "digest_minutes", "watched_max_markets",
     "read_share_percent", "storage_budget_gb", "port", "session_days", "x", "y", "width",
-    "height", "progress", "size_bytes", "horizon_s",
+    "height", "progress", "size_bytes", "horizon_s", "horizons_s", "checks", "scored", "above_zero",
 })  # fmt: skip
 
 CONTRACTS: tuple[type[msgspec.Struct], ...] = (
@@ -415,7 +455,8 @@ CONTRACTS: tuple[type[msgspec.Struct], ...] = (
     LedgerStatusView, LedgerRecordView, LedgerPage, AlertView, AlertPage, Candle, CandlePage,
     GapView, GapPage,
     RecommendationView,
-    MarkView, RecommendationPage, Subscriptions, StreamOpened, QuoteUpdate, SessionCode,
+    MarkView, RecommendationPage, ResponseChange, ScoreLineView, ScoreCard, Subscriptions,
+    StreamOpened, QuoteUpdate, SessionCode,
     SessionCodeIssued,
     KeyStatus, SettingsView, SettingsChange, ShareCheck, ShareCheckView, Done,
     LayoutWindow, Layout, LayoutsView, LayoutStart, UpdateView, ApiError,
@@ -429,6 +470,7 @@ STREAM_EVENTS: dict[str, type[msgspec.Struct]] = {
     "portfolio": PortfolioView,
     "alert": AlertView,
     "health": HealthView,
+    "recommendations": RecommendationPage,  # the active ones, ranked, when they change (M1.12c)
     "error": ApiError,  # the stream could not open (too many at once), then it ends
 }
 
@@ -460,9 +502,12 @@ def examples() -> dict[str, Any]:
         event_ticker="KXDEMO-26JAN01", side="yes", summary="made up: up 5c in 5 min on 120",
         at_utc="2026-01-01T00:00:00Z", strategy="momentum", version="9f2ce1a0", state="active",
         superseded_by=None, entry_price_e6=420_000, count_e2=1_000,
-        expires_utc="2026-01-01T00:30:00Z", pnl_e6=None, inputs=["market:KXDEMO-26JAN01-T50"],
-        marks=[mark],
+        expires_utc="2026-01-01T00:30:00Z", pnl_e6=20_000, inputs=["market:KXDEMO-26JAN01-T50"],
+        marks=[mark], title="Made-up market above 50", source="momentum", outlay_e6=4_270_000,
+        return_e6=4_683, per_day_e6=224_784, response=None, horizons_s=[1800, 3600],
     )  # fmt: skip
+    line = ScoreLineView(strategy="momentum", version="9f2ce1a0", horizon_s=1800, checks=12,
+                         scored=10, above_zero=4, mean_e6=-42_000, median_e6=-28_000)  # fmt: skip
     window = LayoutWindow(screen="/markets?q=fed", x=-1920, y=0, width=1600, height=1000)
     second = LayoutWindow(screen="/overview", x=0, y=0, width=1280, height=800)
     layout = Layout(name="Trading", windows=[window, second])
@@ -579,7 +624,12 @@ def examples() -> dict[str, Any]:
         "AlertPage": AlertPage(items=[alert]),
         "MarkView": mark,
         "RecommendationView": recommendation,
-        "RecommendationPage": RecommendationPage(items=[recommendation]),
+        "RecommendationPage": RecommendationPage(items=[recommendation], total=1),
+        "ResponseChange": ResponseChange(answer="taken"),
+        "ScoreLineView": line,
+        "ScoreCard": ScoreCard(
+            since_utc="2025-12-02T00:00:00Z", at_utc="2026-01-01T00:00:00Z", lines=[line]
+        ),
         "Candle": candle,
         "CandlePage": CandlePage(ticker=market.ticker, interval_minutes=1, items=[candle]),
         "GapView": gap,

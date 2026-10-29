@@ -145,14 +145,22 @@ slice still needs its own approved plan before code.
   1.12): a engine (plugins in the live runner, recording, received time, the journal), b momentum (continuation,
   4c in 5 min on 50 contracts, spread <= 3c, 10c..90c, valid 30 min, scored at 30 and 60 min; 10 contracts;
   registered by hash), c terminal (Overview list, Recommendation drill-down, normal throttled toast). **M1.12a
-  done** (PR #27 merged as `099b94b`). **M1.12b built** on `m1/12b` (pushed, `e463699`: momentum plugin
+  done** (PR #27 merged as `099b94b`). **M1.12b done** (PR #28 merged as `3f0f8bd`, CI green on `main`; momentum plugin
   version `0d648804a13a`, pnl.py, merge review 9 fixed; owner: SPARQ guard lapsed; any market with a depth check).
   **Live check passed** on v0.1.7 (2026-10-28; BUILD-LOG 1.12b): about 20 recommendations a minute at first on
   in-play sports, half the 30-minute checks found the market closed. **Owner:** v1 keeps running a week
   unchanged (until about 2026-11-04), then its record decides; a closed market's check is scored at settlement
   (built, `f810687`). The M1.6 auto-start check passed (the installed IKARS started at sign-in after a restart).
-  PR open, waiting for the owner's merge. Then M1.12c (the alert flood is its first question), M1.11 (M1.13 any
-  time before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+  **M1.12c** (owner 2026-10-28: proceed as recommended: a ranked list, toasts for the strongest few) on
+  `m1/12c`: **plan APPROVED** (BUILD-LOG 1.12c; all as recommended: top-ranked toasts, 3 an hour; T/I/D
+  and C now; the scorecard now; no redraw). **Built** (`cd72d8f` engine, `c1fb678` terminal, `7a4592a` merge
+  review 9 fixed, 1 no change); PR #29 open, CI green. **v0.1.8 published** (test pre-release from
+  `bac418d`, 2026-10-28); installed; live checks 2026-10-28 19:00 MDT passed: ranked list, drill-down, T/I/D across a restart,
+  D off the list, scorecard exact vs the journal, GET only. Notifications: 2 shown in the first hour (cap
+  3), none in quiet hours (overnight not yet seen). **M1.12c done** (PR #29 merged at the owner's word).
+  **M1.12d approved** (owner 2026-10-28; BUILD-LOG 1.12d): a row opens its recommendation, highlighted row with
+  arrow keys, Enter and C/T/I/D on the Overview, a Back button, the last crumb named; branch `m1/12d`. Then M1.11 (M1.13 any time
+  before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 

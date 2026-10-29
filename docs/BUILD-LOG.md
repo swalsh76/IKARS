@@ -2614,4 +2614,166 @@ workstation (v0.1.7, 2026-10-28 05:31 to 06:32 UTC; counts and states only):**
   | 8 | `pnl` depended on the ledger importer and the portfolio | It depends on neither |
   | 9 | The services could be changed by a plugin | A read-only mapping; tested |
 
-**M1.12b built**, subject to the owner's merge. Momentum v1 keeps running on the installed IKARS.
+**M1.12b done:** PR #28 merged as `3f0f8bd` (2026-10-28), CI and CodeQL green on `main`. Momentum v1 keeps
+running on the installed IKARS.
+
+### 1.12c The terminal side of momentum (plan APPROVED 2026-10-28)
+
+The third slice of M1.12 (approved in 1.12): the Overview's recommendation list, the Recommendation drill-down
+and the alert tier (D20 H). **Owner (2026-10-28): proceed as recommended**: momentum v1 makes about 7 to 20
+recommendations a minute, so a notification for each is out; a ranked list instead, and notifications for only
+the strongest few. Branch `m1/12c`, after M1.12b (PR #28, `3f0f8bd`).
+
+**Engine**
+- **Views:** `/v1/recommendations` takes `state=active` and returns the active ones ranked;
+  `/v1/recommendations/{id}` returns one of any age (the list stops at the newest 200). Each view gains the market's
+  title, the return on capital at the rule's target and per day, the worst case (the side ends at $0: the cost and
+  the entry fee) and the owner's response.
+- **Ranking:** by return per day of capital tied up, at the rule's target and after fees (D20 D; the mock-up's
+  order). Momentum's validity is fixed at 30 minutes, so this orders as return on capital does. Its per-day
+  figures look large (a 4c move on 46c over half an hour).
+- **Live list:** a `recommendations` stream event carries the active list (ranked, up to 50) when it changes.
+  The engine checks once a second, so the Overview needs no polling.
+- **The owner's response (G9):** taken, ignored or dismissed, written to the journal (migration 3: the latest
+  answer per recommendation) through `PUT /v1/recommendations/{id}/response`. "Taken" is only the owner's word:
+  IKARS places nothing (D6).
+- **Scorecard:** for each strategy and version over the last 30 days: how many were scored, the share above
+  zero, and the mean and median after costs at each check. The journal service works it out once a minute and
+  the API serves that copy. At about 10,000 recommendations a day it is never computed per request.
+- **Alerts (H):** for the first time, the engine raises alerts of its own.
+  - `normal` alerts now show outside quiet hours, throttled, and wait for the digest in quiet hours. Nothing
+    raised `normal` before: the watchdog uses high and urgent.
+  - A recommendation alerts only if it ranks first among the active ones when it is made, and the hourly budget
+    (3) is not spent. The rest appear only on the Overview, never in the alert log.
+  - The text is the market, the side, the price and the move. As before, no amounts.
+  - The engine's alert desk keeps its own state file, because each watchdog pass rewrites the watchdog's. It
+    appends to the same alert log under a lock, and shows notifications on a worker thread, never on the event
+    loop.
+
+**Terminal**
+- **Overview, "Top recommendations"** (replacing the placeholder):
+  - columns: market (its title and the why), action, size, P&L at the target after costs, return per day,
+    strategy and version, and expiry (counting down);
+  - active ones only, ranked, up to 50 (scrolling), with the active count;
+  - a row opens the drill-down.
+- **Overview, "Journal scorecard (30 days)"** (replacing the placeholder): one line per strategy version.
+- **Recommendation drill-down** (`/recommendations/:id`), from the approved M1.3 mock-up, limited to what exists:
+  - the headline (Buy YES 10 @ $0.46), with the strategy, version, state and expiry;
+  - P&L at the target, return per day, and the worst case;
+  - **Mark taken / Ignore / Dismiss** (`T`/`I`/`D`), and **Copy order** (`C`: ticker, side, size and price to
+    the clipboard); both hotkeys were promised for M1.12 in 1.8b-1;
+  - **Why:** the summary and the inputs, with received times;
+  - the **checks** at 30 and 60 minutes: bid and ask, and the score after fees or at settlement;
+  - **provenance:** the engine version, the rule and its registered version, the number of inputs, and "LLM not
+    used".
+- **Left out, because nothing yet feeds them:**
+  - on the drill-down: fill chance (D20 C), size and limits (the risk layer), the bracket (watch orders), the
+    settings hash, and Replay (M1.13);
+  - on the Overview: the Fill column. Its "EV after costs" column becomes "P&L at target" (momentum has no
+    probability estimate);
+  - "Live movers" stays a placeholder: it needs a scan of every market, not the journal. It is relabelled for M2.
+- **demo-api:** made-up recommendations and a scorecard, for the screen tests and `pnpm load`.
+
+**Machine:** journal migration 3 (backed up first, as before), and the engine's alert state file
+(`alert-desk-engine.json` in the data folder). **Packages:** none.
+
+**Tests:** ranking, worst case and return per day by hand; the response round trip and the migration; the
+scorecard against a hand-built journal; the hourly budget, quiet hours and the throttle; the lock on the shared
+log; the screens in Vitest and Playwright (the list live, the drill-down, `T`/`I`/`D`/`C`).
+
+**Live checks** (on a test pre-release, published on the owner's word):
+- the Overview's list updates live and ranked, and a row opens the drill-down;
+- `T`/`I`/`D` are kept across a restart, and `C` copies the order;
+- at most 3 recommendation notifications an hour, and none in quiet hours;
+- the scorecard matches the journal read directly;
+- no order is ever sent.
+
+**Owner's answers (2026-10-28): all as recommended.** Notifications: top-ranked only, at most 3 an hour; the
+response and Copy order come now; the scorecard comes now; no mock-up redraw (the relabel and omissions as
+listed).
+
+#### 1.12c built (2026-10-28)
+
+**Built** on `m1/12c`: `cd72d8f` (the engine side), `c1fb678` (the terminal side), `7a4592a` (the merge-review
+fixes). After M1.12b (PR #28, `3f0f8bd`). **No new packages.** API 2.1 (contracts and the web types regenerated).
+
+- **Figures and ranking** (`recommendations.py`): the outlay (the contracts and the entry fee; also the worst case),
+  the return at the rule's target after fees, and that per day of validity (D20 D), all integers (millionths). The
+  **board** keeps the active ones ranked as they come and go; the API serves the top 50
+  (`/v1/recommendations?state=active`) and the stream sends them as a `recommendations` event when they change.
+  `/v1/recommendations/{id}` returns one of any age.
+- **The owner's response (G9):** `PUT /v1/recommendations/{id}/response` (taken, ignored, dismissed; the same
+  again takes it back); a dismissed one leaves the list. Journal migration 3.
+- **Kept scores:** each check's score is kept with it once known (at once, at the market's settlement, or, when the
+  fees stay unknown for an hour, kept unscored), so an old check keeps its score after its market leaves the index,
+  and the **scorecard** (`/v1/scorecard`: each strategy version over 30 days: checks, scored, above zero, mean,
+  median) is a query on a worker thread once a minute.
+- **Notifications (H):** only a recommendation that ranks first when it is made, at most 3 an hour, none in quiet
+  hours; the engine's own alert desk state (`alert-desk-engine.json`); the alert log written under a lock shared
+  with the watchdog; `normal` alerts now show by day (nothing raised them before).
+- **Terminal:** the Overview's "Top recommendations" (live, ranked, countdowns) and "Journal scorecard (30 days)";
+  "Live movers" relabelled for M2. The **Recommendation screen** (`/recommendation/<id>`), from the approved
+  mock-up to what exists: the headline, P&L at the target, return per day, the outlay and worst case; Mark taken,
+  Ignore, Dismiss (`T`/`I`/`D`) and Copy order (`C`); why, the checks made and to come, the provenance. Left out
+  as planned: fill chance, size and limits, the bracket, the settings hash, Replay; the Overview's Fill column.
+- **demo-api:** six made-up active recommendations and one with its check, for the screen tests and `pnpm load`.
+
+**Verified.** Python 1,537 tests (the figures by hand: 10 at 46c lay out $4.78; +$0.04 is 0.8368%, 40.17% a day
+over half an hour; held to a win, +$5.22; the scorecard's mean and median by hand); Vitest 228 (functions 91.6%);
+Playwright 19 in Edge against demo-api (the list ranked, the drill-down, `T` and back, `C`); lint, types, audit,
+the generated-types check and the data guard clean.
+
+**Live checks on v0.1.8** (test pre-release from `bac418d`, published on the owner's word; the owner's
+workstation, 2026-10-28 19:00 to 20:05 MDT; counts and states only):
+- the list: about 1,000 active, the top 50 served, ranked by return per day, every row titled; one by id returns
+  the same one with its 30- and 60-minute checks;
+- `I` (by the API) kept across a clean stop and start of the installed engine; `D` takes one off the list and
+  undoing it puts it back; both answers cleared afterwards;
+- the scorecard, read just after its minute's refresh, equal to the journal read directly (checks, scored, above
+  zero, mean, median) at both horizons;
+- notifications: 2 shown in the first hour (cap 3), none in quiet hours (overnight not yet seen); no errors in the
+  engine log;
+- no order: the signer and the REST transport refuse any method but GET.
+- **The owner found the list hard to use:** the market name opened the Market screen and only the action text the
+  Recommendation screen, where Copy order and `T`/`I`/`D`/`C` live, so `C` "did not work". Taken up as **M1.12d**
+  (below); merged as is at the owner's word.
+
+**Review.**
+- **Per commit:** `cd72d8f` 1 found and fixed before committing (a check whose fees were not known yet was kept
+  unscored for good: it now waits, up to an hour); `c1fb678` 2 found and fixed before committing (the rule label
+  and the headline duplicated their formatting: one helper each).
+- **Merge review (medium), 10 findings: 9 fixed in `7a4592a`, 1 no change:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | At stop the notices closed before the journal's last flush; an offer then raised and lost the batch | Closed after the flush; an offer after closing is refused; tested |
+  | 2 | A page built before the board loaded stayed empty until the next change | The load counts as a change; tested |
+  | 3 | Checks waiting for fees could fill every scoring batch and hold back the rest | Paged in order of made time; tested |
+  | 4 | The scorecard query was awaited inside the journal loop | Its own task beside the loop |
+  | 5 | The desk's per-market throttle could spend the hourly budget on nothing | Keyed by the recommendation; tested |
+  | 6 | The ranked page's cache missed marks, scores and index changes | They count as changes; the index version is in the key; tested |
+  | 7 | "Ranks first" compared with ones expired but not yet pruned | Only those still valid when it was made; tested |
+  | 8 | Dismissals of replaced or expired recommendations stayed in memory for good | Only one on the board stays hidden; tested |
+  | 9 | Normal alerts now pop up for every caller, not only recommendations | No change: approved in this slice's plan (normal shows by day, nothing else raises it) |
+  | 10 | demo-api called the journal service's private `_write` | It uses `listen` and `flush` |
+
+**Added at the owner's request (2026-10-28, after a network outage):** a watchdog "recovered" notification
+repeated the problem ("recovered: the engine is not running"), which read as if it still were. Each problem now has
+its own all-clear text ("the engine is running again", "Kalshi's feed is live again", ...), and a test holds every
+problem the watchdog can raise to one. Per-commit review: none.
+
+**M1.12c done**: merged at the owner's word (2026-10-28).
+
+### 1.12d Navigation: rows, Back and named crumbs (approved 2026-10-28)
+
+**Owner, 2026-10-28** ("let's rethink that part of the GUI"; then "okay"): approved as recommended:
+- **Overview list:** a click anywhere on a row opens the Recommendation screen (one target; the market link stays
+  on that screen); a highlighted row, `Up`/`Down` to move it, `Enter` to open; `C`/`T`/`I`/`D` on the highlighted
+  row on the Overview too, with a short "Copied" line; a hint line names the keys. Mock-up: the canvas's Main
+  board (revised, versions 9 and 10).
+- **Back (R9):** a Back button left of the breadcrumbs, the same as `Alt+Left`, greyed when there is nowhere to
+  go back to (the Edge app window hides the browser's own).
+- **Named last crumb:** e.g. `Overview › Recommendation: <market>`, not just "Recommendation".
+- Not now: a trail of the exact path taken (Back covers it).
+
+No engine change, no new packages.

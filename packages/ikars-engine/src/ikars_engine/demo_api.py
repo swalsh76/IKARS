@@ -2,7 +2,8 @@
 
 For the web terminal's screen tests (Playwright) and its load test (PLAN D20 J): ``--markets``
 made-up markets whose quotes move ``--hz`` times a second, order books for the first few, a made-up
-ledger and alert log, all in a temporary folder that is deleted at the end. It never reads the real
+ledger and alert log, made-up recommendations with a scorecard (M1.12c), all in a temporary
+folder that is deleted at the end. It never reads the real
 data folder, settings, keys or Kalshi.
 
 On start it prints one JSON line: the port, a sign-in address (with a one-time code) and the
@@ -21,15 +22,19 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import msgspec
 from ikars_core.book import OrderBook
+from ikars_core.fees import fee_schedule
 from ikars_core.models import Candlestick
 from ikars_core.ws_models import parse_frame
 
-from ikars_engine.api import ApiContext, ApiServer
+from ikars_engine.api import ApiContext, ApiServer, market_fees
 from ikars_engine.autostart import MemoryRegistry
+from ikars_engine.journal import Journal, JournalService, Recommendation
 from ikars_engine.kalshi.discovery import MarketIndex, MarketInfo
 from ikars_engine.ledger import Entry, Ledger
 from ikars_engine.metrics import Metrics
+from ikars_engine.model import Item, Ref
 from ikars_engine.paths import Paths
 from ikars_engine.portfolio import Held, portfolio
 from ikars_engine.session import Sessions
@@ -86,6 +91,9 @@ class Market:
             bid = self.random.randrange(5, 90) * CENT
             self.quotes[info.ticker] = (bid, bid + 2 * CENT)
             self.last[info.ticker] = bid + CENT
+        fees = fee_schedule("quadratic", 1_000_000)  # Kalshi's standard fee
+        if fees is not None:
+            self.index.fees["KXDEMO"] = fees
         self.index.version += 1
         self.tick(time.time_ns())
 
@@ -131,6 +139,37 @@ def demo_health(market: Market) -> dict[str, Any]:
     }  # fmt: skip
 
 
+RECOMMENDED = 6  # made-up recommendations on the first markets
+
+
+def made_up_recommendations(market: Market, service: JournalService, now_ns: int) -> None:
+    """Six active ones (different returns), and one made an hour ago with its 30-minute check."""
+    tickers = list(market.index.markets)[: RECOMMENDED + 1]
+    items = []
+    for n, ticker in enumerate(tickers):
+        made = now_ns - (3_600 if n == RECOMMENDED else 60 * n) * 10**9
+        bid, ask = market.quotes[ticker]
+        price = ask if ask is not None else 50 * CENT
+        rec = Recommendation(
+            ticker=ticker, side="yes", entry_price_e6=price, count_e2=1_000,
+            expires_ns=made + 1_800 * 10**9, summary=f"made up: up {n + 4}c in 5 min",
+            strategy="momentum", version="0d648804a13a", horizons_s=[1_800, 3_600],
+            inputs=[Ref("market", ticker), Ref("trade", f"made-up-{n}")],
+            pnl_e6=(n + 1) * 40_000 - 100_000, event_ticker=ticker.rsplit("-", 1)[0],
+        )  # fmt: skip
+        ref = Ref("recommendation", f"momentum-{ticker}-{made}")
+        items.append(Item(ref=ref, source="momentum", received_ns=made,
+                          payload=msgspec.to_builtins(rec), hops=1))  # fmt: skip
+    for made_up in items:  # as the engine hands them over (merge review 10)
+        service.listen(made_up)
+    service.flush()
+    old = items[-1]
+    service.journal.mark(
+        old.ref.id, 1_800, old.received_ns + 1_800 * 10**9, 520_000, 540_000, False
+    )
+    service.journal.score(service.fees, now_ns)
+
+
 async def serve(
     folder: Path,
     markets: int,
@@ -161,6 +200,11 @@ async def serve(
         return made_up_candles(start, end, minutes, ticker)
 
     held = Held({}, 300_000_000)
+    journal = Journal(folder / "journal.sqlite")
+    recommendations = JournalService(journal, market.quotes, time.time_ns,
+                                     fees=market_fees(market.index))  # fmt: skip
+    made_up_recommendations(market, recommendations, time.time_ns())
+    await recommendations.refresh_card()
 
     def context_for(token: str) -> ApiContext:
         api = ApiContext(
@@ -171,7 +215,8 @@ async def serve(
             ledger_health=lambda: {"verified": True, "reconciled_exact": True},
             portfolio=lambda: portfolio(market.quotes, lambda s: None, lambda s: None, held),
             alert_log=alerts, metrics=Metrics(), now_ns=time.time_ns, sessions=sessions,
-            web_root=terminal_root(), candles=candles, config=config,
+            web_root=terminal_root(), candles=candles, config=config, journal=journal,
+            recommendations=recommendations,
         )  # fmt: skip
         return api
 
@@ -188,6 +233,7 @@ async def serve(
     finally:
         await server.stop()
         ledger.close()
+        journal.close()
 
 
 def main(markets: int, hz: float, port: int, seconds: float | None, first_run: bool = False) -> int:

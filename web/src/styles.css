@@ -154,6 +154,8 @@ h2 { margin: 0; font-size: 16px; }
 .alert.priority-high { color: var(--text); }
 
 .scroll { overflow-x: auto; }
+.recs { max-height: 520px; overflow-y: auto; }
+.unpriced, .flat { color: var(--sub); }
 table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 th { text-align: left; color: var(--muted); font-size: 12px; font-weight: 600; padding: 6px 8px; }
 td { padding: 6px 8px; border-top: 1px solid var(--line); }

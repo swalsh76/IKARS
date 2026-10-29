@@ -21,7 +21,7 @@ test("signs in with the one-time code and shows the Overview", async ({ page }) 
   expect(page.url()).not.toContain("code="); // removed from the address bar at once
   await expect(page.getByTestId("cash")).toHaveText("$300.00");
   await expect(page.getByTestId("positions")).toHaveText("0");
-  await expect(page.getByRole("region", { name: "Top recommendations" })).toContainText("Arrives in M1.12");
+  await expect(page.getByTestId("active")).toHaveText("6 active"); // made-up, live from the stream
   await expect(page.getByLabel("Engine status")).toContainText("Feed live");
   await expect(page.locator("#alerts").locator("..")).toContainText("made up");
   await expect(page).toHaveTitle("Overview · IKARS");
@@ -157,7 +157,7 @@ test("hotkeys: the screens, the list, the theme and the Linked panel", async ({ 
   await expect(page).toHaveURL(/\/markets$/);
   await page.locator("body").click({ position: { x: 5, y: 5 } }); // out of the search box
   await page.keyboard.press("Shift+Slash"); // ?
-  await expect(page.getByRole("dialog", { name: "Hotkeys" })).toContainText("arrives in M1.12");
+  await expect(page.getByRole("dialog", { name: "Hotkeys" })).toContainText("Copy the order");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Hotkeys" })).toHaveCount(0);
   const theme = () => page.evaluate(() => document.documentElement.getAttribute("data-theme"));
@@ -185,5 +185,32 @@ test("New window opens this screen in another window, already signed in (M1.8c)"
   await expect(other.getByRole("region", { name: "Ledger status" })).toContainText("chain verified");
   // a popup window (no tabs or toolbar), not a tab, and not tied back to this window
   expect(await other.evaluate(() => [window.toolbar.visible, window.opener === null])).toEqual([false, true]);
+  expect(refused).toEqual([]);
+});
+
+test("recommendations: the ranked list, the drill-down, an answer by hotkey and Copy order (M1.12c)", async ({ page, context }) => {
+  const refused = watchPolicy(page);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(await signInUrl());
+  const list = page.getByRole("table", { name: "Top recommendations" });
+  await expect(list.getByRole("row")).toHaveCount(7); // the heading and six
+  const perDay = (await list.locator("tbody tr td:nth-child(5)").allTextContents()).map((s) => Number(s.replace(/[%,+]/g, "")));
+  expect(perDay).toEqual([...perDay].sort((x, y) => y - x)); // ranked by return per day
+  await expect(page.getByRole("table", { name: "Scorecard" })).toContainText("momentum 0d6488");
+  await list.getByRole("row").nth(1).getByRole("link", { name: /^Buy YES/ }).click();
+  await expect(page).toHaveURL(/\/recommendation\/momentum-/);
+  await expect(page.getByTestId("headline")).toHaveText(/^Buy YES 10 @ \$0\.\d\d$/);
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toHaveText(/Overview\s*›\s*Recommendation/);
+  await expect(page.getByRole("table", { name: "Checks" })).toContainText("not yet");
+  await expect(page.getByRole("region", { name: "Provenance" })).toContainText("registered 0d648804a13a");
+  await page.keyboard.press("t");
+  await expect(page.getByTestId("note")).toHaveText("Marked taken.");
+  await expect(page.getByRole("button", { name: "Mark taken" })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("t"); // the same answer again takes it back
+  await expect(page.getByTestId("note")).toHaveText("Answer taken back.");
+  await page.keyboard.press("c");
+  await expect(page.getByTestId("note")).toHaveText(/^Copied: KXDEMO-\S+ YES 10 @ \d+¢$/);
+  await page.goBack();
+  await expect(page.getByTestId("active")).toHaveText("6 active");
   expect(refused).toEqual([]);
 });

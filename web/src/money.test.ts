@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MoneyError, cents, contracts, dollars, e2, e6, share } from "./money";
+import { MoneyError, cents, contracts, dollars, e2, e6, percent, share } from "./money";
 
 describe("dollars", () => {
   it("formats millionths exactly, rounding half away from zero", () => {
@@ -61,5 +61,18 @@ describe("share", () => {
     expect(share(e6(5), e6(0))).toBe(0);
     expect(share(e6(-5), e6(10))).toBe(0);
     expect(share(e6(20), e6(10))).toBe(100);
+  });
+});
+
+describe("percent", () => {
+  it("shows a ratio in millionths as a percent, exactly", () => {
+    expect(percent(8_368)).toBe("0.8%");
+    expect(percent(401_664, { signed: true })).toBe("+40.2%");
+    expect(percent(-75_314, { signed: true })).toBe("-7.5%");
+    expect(percent(40_166_400)).toBe("4,016.6%");
+    expect(percent(4, { signed: true })).toBe("0.0%"); // rounds to nothing: no sign
+    expect(percent(-4)).toBe("0.0%");
+    expect(percent(123_456, { places: 2 })).toBe("12.35%");
+    expect(() => percent(0.5)).toThrow(MoneyError);
   });
 });

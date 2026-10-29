@@ -35,7 +35,7 @@ from ikars_core.ws import FeedConfig, KalshiFeed
 
 from ikars_engine import gpu, taxzone
 from ikars_engine.alerts import ALERT_LOG
-from ikars_engine.api import ApiContext, ApiServer
+from ikars_engine.api import ApiContext, ApiServer, market_fees, market_title
 from ikars_engine.backup_service import BackupService
 from ikars_engine.clocks import WallClock
 from ikars_engine.engine import Engine
@@ -54,8 +54,10 @@ from ikars_engine.model import Item
 from ikars_engine.paths import Paths
 from ikars_engine.plugins import HostOptions, PluginError, discover
 from ikars_engine.portfolio import Held, Portfolio, holdings, portfolio
+from ikars_engine.recommendations import ENGINE_DESK, Notices
 from ikars_engine.recorder import Recorder
 from ikars_engine.runmode import at
+from ikars_engine.runmode_cli import desk_for
 from ikars_engine.session import Sessions
 from ikars_engine.settings import Settings
 from ikars_engine.settings_api import TerminalConfig
@@ -214,9 +216,12 @@ async def build(
         found = index.markets.get(ticker)
         return None if found is None else found.status in OPEN_STATUSES
 
+    # the strongest recommendations notify (M1.12c), through the engine's own alert desk
+    notices = Notices(desk_for(paths, settings, ENGINE_DESK), market_title(index))
     journal_service = JournalService(
-        journal, source.quotes, clock.now_ns, result=result, trading=trading
-    )
+        journal, source.quotes, clock.now_ns, result=result, trading=trading,
+        fees=market_fees(index), notices=notices,
+    )  # fmt: skip
     engine.listeners += [journal_service.listen, recording(recorder)]
     engine.health_parts["journal"] = journal_service.health
     engine.health_parts["plugins_unloaded"] = lambda: {"problems": list(unloaded)}
@@ -271,6 +276,7 @@ async def build(
             config=TerminalConfig(paths, settings, root, restartable=restartable),
             updates=updates,
             journal=journal,
+            recommendations=journal_service,
         )
 
     api = ApiServer(api_context, paths.data, port=settings.terminal.port)
@@ -396,6 +402,10 @@ async def run(
         # and written to the journal before it closes, after the API that reads it has stopped
         stack.callback(live.recorder.close)
         stack.callback(live.journal.close)
+        if (
+            live.journal_service.notices is not None
+        ):  # after the flush, which may offer one (review 1)
+            stack.callback(live.journal_service.notices.close)
         stack.callback(live.journal_service.flush)
         stack.callback(live.ledger.close)
         stack.callback(lambda: health.update(engine.health()))

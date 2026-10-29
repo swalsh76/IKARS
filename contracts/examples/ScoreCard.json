@@ -1,0 +1,16 @@
+{
+  "at_utc": "2026-01-01T00:00:00Z",
+  "lines": [
+    {
+      "above_zero": 4,
+      "checks": 12,
+      "horizon_s": 1800,
+      "mean_e6": -42000,
+      "median_e6": -28000,
+      "scored": 10,
+      "strategy": "momentum",
+      "version": "9f2ce1a0"
+    }
+  ],
+  "since_utc": "2025-12-02T00:00:00Z"
+}

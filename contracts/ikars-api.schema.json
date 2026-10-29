@@ -1209,16 +1209,21 @@
       "type": "object"
     },
     "RecommendationPage": {
+      "description": "The newest, or (``state=active`` and the stream's ``recommendations`` event) the active ones\nranked by return per day, the dismissed left out; ``total`` is how many there are.",
       "properties": {
         "items": {
           "items": {
             "$ref": "#/$defs/RecommendationView"
           },
           "type": "array"
+        },
+        "total": {
+          "type": "integer"
         }
       },
       "required": [
-        "items"
+        "items",
+        "total"
       ],
       "title": "RecommendationPage",
       "type": "object"
@@ -1241,6 +1246,12 @@
         "expires_utc": {
           "type": "string"
         },
+        "horizons_s": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
         "id": {
           "type": "string"
         },
@@ -1256,6 +1267,26 @@
           },
           "type": "array"
         },
+        "outlay_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "per_day_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "pnl_e6": {
           "anyOf": [
             {
@@ -1266,7 +1297,30 @@
             }
           ]
         },
+        "response": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "return_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "side": {
+          "type": "string"
+        },
+        "source": {
           "type": "string"
         },
         "state": {
@@ -1291,6 +1345,9 @@
         "ticker": {
           "type": "string"
         },
+        "title": {
+          "type": "string"
+        },
         "version": {
           "type": "string"
         }
@@ -1311,9 +1368,127 @@
         "expires_utc",
         "pnl_e6",
         "inputs",
-        "marks"
+        "marks",
+        "title",
+        "source",
+        "outlay_e6",
+        "return_e6",
+        "per_day_e6",
+        "response",
+        "horizons_s"
       ],
       "title": "RecommendationView",
+      "type": "object"
+    },
+    "ResponseChange": {
+      "additionalProperties": false,
+      "description": "``PUT /v1/recommendations/{id}/response``: the owner's response (None takes it back).",
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "enum": [
+                "dismissed",
+                "ignored",
+                "taken"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "answer"
+      ],
+      "title": "ResponseChange",
+      "type": "object"
+    },
+    "ScoreCard": {
+      "description": "``GET /v1/scorecard``: the recommendations made since ``since_utc`` (30 days), worked out\nonce a minute (``at_utc``; None before the first).",
+      "properties": {
+        "at_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lines": {
+          "items": {
+            "$ref": "#/$defs/ScoreLineView"
+          },
+          "type": "array"
+        },
+        "since_utc": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "since_utc",
+        "at_utc",
+        "lines"
+      ],
+      "title": "ScoreCard",
+      "type": "object"
+    },
+    "ScoreLineView": {
+      "description": "One strategy version's checks at one horizon, after costs.",
+      "properties": {
+        "above_zero": {
+          "type": "integer"
+        },
+        "checks": {
+          "type": "integer"
+        },
+        "horizon_s": {
+          "type": "integer"
+        },
+        "mean_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "median_e6": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scored": {
+          "type": "integer"
+        },
+        "strategy": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy",
+        "version",
+        "horizon_s",
+        "checks",
+        "scored",
+        "above_zero",
+        "mean_e6",
+        "median_e6"
+      ],
+      "title": "ScoreLineView",
       "type": "object"
     },
     "SessionCode": {
@@ -1773,8 +1948,9 @@
     "health": "HealthView",
     "opened": "StreamOpened",
     "portfolio": "PortfolioView",
-    "quote": "QuoteUpdate"
+    "quote": "QuoteUpdate",
+    "recommendations": "RecommendationPage"
   },
   "title": "IKARS loopback API",
-  "version": "2.0"
+  "version": "2.1"
 }

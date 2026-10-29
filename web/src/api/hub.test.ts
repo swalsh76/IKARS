@@ -56,6 +56,7 @@ describe("the hub's values", () => {
     hub.handle({ event: "portfolio", data: portfolio });
     hub.handle({ event: "health", data: { at_utc: "x" } as HealthView });
     hub.handle({ event: "alert", data: alert(1) });
+    hub.handle({ event: "recommendations", data: { items: [], total: 0 } });
     hub.handle({ event: "error", data: { error: "unavailable", detail: "busy" } });
     hub.connection("retrying");
     hub.flush();
@@ -63,6 +64,7 @@ describe("the hub's values", () => {
     expect(hub.get("portfolio")).toBe(portfolio);
     expect(hub.get("health")?.at_utc).toBe("x");
     expect(hub.get("alerts").map((a) => a.line)).toEqual([1]);
+    expect(hub.get("recommendations")?.total).toBe(0);
     expect(hub.get("connection")).toBe("retrying");
   });
 
