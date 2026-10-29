@@ -2820,3 +2820,27 @@ owner used the list, the keys, Back and the named crumb on the workstation: "eve
   | 8 | A row's element id held the raw recommendation id | Encoded |
 
 **M1.12d built and checked live**, subject to the owner's merge.
+
+## 1.11 Close-out (plan APPROVED 2026-10-28)
+
+**Owner, 2026-10-28:** the plan as proposed, with these answers:
+- **M1.10 perp research moves to M2** (not done in M1; not in M1's gate).
+- **M1 closes without M1.13**; the replay of real recordings comes before M3's back-tests, as planned.
+- **Build `ikars restore`** rather than manual copy steps.
+- **Fix the network wait at start** in this slice (after the reboot outage the engine stopped on its first account
+  request and the watchdog restarted it within 5 minutes).
+
+**Builds:**
+1. **Gate evidence** (§4.2), re-checked fresh where stale: v0.1.9 in Windows Sandbox on a clean account; live
+   markets; `ledger verify` and an exact reconcile; `ledger restore-drill`; the latency and frame-time measurements;
+   M1.12 end to end.
+2. **`ikars restore`**: the newest share backup of the ledger, the journal, the settings and the engine state into
+   an **empty** data root; checksums and the hash chain checked; a root with data refused. **`docs/RUNBOOK.md`**
+   (workstation lost: install, key variables, restore, verify, start; no real paths). Tested end to end on the
+   workstation into a scratch root (the share read only, Kalshi GET only, the live data untouched): the ledger
+   verifies and reconciles exactly, the journal's counts match, the settings load.
+3. **The network wait at start:** the engine retries its first Kalshi requests with backoff instead of stopping.
+4. **Docs current;** **the milestone review** (`/code-review medium` over M1's code, itemized); leftovers parked.
+
+**Machine:** a scratch data root on the workstation (removed afterwards); a Windows Sandbox run. **No new packages.**
+
