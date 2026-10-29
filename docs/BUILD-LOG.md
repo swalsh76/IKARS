@@ -3092,3 +3092,94 @@ release.
   | 10 | The dedup ran twice, and the store was read twice per poll | One pass, one read |
 
 **M2.1 built.** It waits for the owner's merge.
+
+## 2.2 Weather (plan APPROVED 2026-10-29)
+
+**Owner, 2026-10-29:** approved as proposed.
+- **The settlement source:** NWS is the proxy, measured later.
+- **Stations:** every climate-report code named by an open market.
+
+**Found while planning:** Kalshi's weather markets settle on **The Weather Company's** value, from the government
+station their rules name ("recorded at New York City (CLINYC) … according to The Weather Company"), not on the NWS
+climate report. The Weather Company has no free feed and no terms for automated access (G17). So the NWS report for
+the same station is recorded as the proxy. D22 in PLAN §4.3 and `docs/research/sources.md` note it, and M2.4
+measures the proxy against Kalshi's settlements.
+
+#### 2.2 built (2026-10-29)
+
+**Built** on `m2/2`:
+
+| Commit | What |
+|---|---|
+| `d347239` | the slice |
+| `eca9ef5` | merge-review fixes |
+
+After M2.1 (PR #33, `86726d7`). **No new packages.**
+
+- **Stations from the rules:**
+  - the market index keeps each market's climate-report code (`\(CLI[A-Z]{3}\)` in its rules);
+  - the engine offers the codes open markets name (`climate_codes`);
+  - a code maps to its station (`K` plus its location, confirmed at `/stations`) and its forecast grid
+    (`/points`, four decimal places).
+  - On 2026-10-28, open markets named **24 codes**, and all 24 mapped.
+- **The `nws` source plugin** (entry point `nws`), through the shared poller:
+  - `weather_obs`: the latest observation, every 5 min;
+  - `weather_forecast`: the hourly and daily forecasts, hourly, the first 48 hours kept;
+  - `weather_climate`: the latest climate report, every 15 min, parsed:
+    - the day, and whether it is "today" (preliminary) or "yesterday" (final);
+    - the high and low, with NWS's record flag;
+    - precipitation and snow, as text ("T" a trace; "MM" stored as None);
+    - the report's text, kept.
+- **The plugin over time:**
+  - Codes are checked every 10 minutes: new ones start their feeds, and those whose markets have all closed stop
+    theirs.
+  - A code that does not map is shown in health and tried again.
+  - A city is looked up again weekly, or after 6 hours of failing feeds.
+  - It can be turned off with `plugin_settings.nws.enabled = false`.
+- **The polling base:** feeds that start and stop while it runs, a per-feed item kind, one-off lookups, and
+  per-source notes in health (`sources: {feeds, notes}`).
+
+**Dry run against the real NWS** (2026-10-28 23:00 MDT, a scratch store, three minutes):
+- **Stations:** 24 of 24 codes mapped.
+- **Feeds:** 96, with no errors.
+- **First round:** 24 observations, 48 forecasts and 24 climate reports, every report parsed. For example, NYC's
+  28 October preliminary report read high 61, low 45, no precipitation; Boston's final read high 52, low 38.
+
+**Verified.**
+- **Python:** 1,585 tests, 11 for NWS, with hand-written made-up replies: rules and codes, parsing, mapping, an
+  unmapped code, a retry, closing, a timeout and a record value. `nws.py` coverage 93%.
+- **Checks:** lint, types and the data guard are clean.
+
+**Live check on v0.1.11** (test release from `f0e5b10`, published on the owner's word; installed 2026-10-29
+00:32 MDT; counts and states only):
+- **The upgrades:** settings version 6 with the **$20** ceiling and `[sources]`, after a backup; the state store on
+  schema 3, after a backup.
+- **The plugins:** `momentum` and `nws` running.
+- **Stations:** 24 of 24 codes mapped.
+- **First round:** 96 feeds polled, 96 items emitted, 0 errors, 0 gaps.
+- **Recorded in `recordings\item`:** 24 observations, 48 forecasts and 23 climate reports (the 24th still in the
+  hour's buffer).
+
+**Pending:** a day of recording with no unlogged gaps. M2's 7-day weather clock starts with this release.
+
+**Review.**
+- **Per commit:** `d347239`, 3 found before committing; 2 fixed, 1 no change:
+  - a lookup that failed once kept a city unmapped until a restart: it is now tried again;
+  - a city whose markets closed was polled for ever: its feeds now stop;
+  - the health shape changed: no change, since only the engine reads it.
+- **Merge review (medium), 10 findings, all fixed in `eca9ef5`:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | A station lookup timing out (30 s) crashed the whole source, which could end up paused | Caught; the city is unmapped and tried again; lookups get 2 minutes; tested |
+  | 2 | A record value ("92R") was dropped | Read, with a `high_record`/`low_record` flag; tested |
+  | 3 | Stopped feeds stayed in health for ever | Removed on stop; tested |
+  | 4 | A blank value borrowed the next line's, or the next section's | Read on its own line within its own section; tested |
+  | 5 | A city's forecast URLs were never looked up again | Weekly, or after 6 hours of failing feeds |
+  | 6 | Rules that no longer name a station kept the old code | Only an update without rules keeps it; tested |
+  | 7 | The codes service built and sorted ticker lists to throw away | `open_climate_codes`, codes only; tested |
+  | 8 | Health read `sources.sources`, and the notes were shared, not copied | `{feeds, notes}`, the notes deep-copied |
+  | 9 | NWS times went through floats, and a time without an offset was read as local | Exact integer nanoseconds; none without an offset; tested |
+  | 10 | Codes were checked only hourly, so feeds started up to an hour late | Every 10 minutes |
+
+**M2.2 built.** It waits for the live check (0.1.11) and the owner's merge.
