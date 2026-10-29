@@ -3150,12 +3150,17 @@ After M2.1 (PR #33, `86726d7`). **No new packages.**
   unmapped code, a retry, closing, a timeout and a record value. `nws.py` coverage 93%.
 - **Checks:** lint, types and the data guard are clean.
 
-**Live check: pending** (test release 0.1.11 on the owner's word):
-- the state store's migration 3 and settings version 6 upgrade cleanly on the owner's workstation;
-- the source maps the stations and records;
-- after a day, no unlogged gaps.
+**Live check on v0.1.11** (test release from `f0e5b10`, published on the owner's word; installed 2026-10-29
+00:32 MDT; counts and states only):
+- **The upgrades:** settings version 6 with the **$20** ceiling and `[sources]`, after a backup; the state store on
+  schema 3, after a backup.
+- **The plugins:** `momentum` and `nws` running.
+- **Stations:** 24 of 24 codes mapped.
+- **First round:** 96 feeds polled, 96 items emitted, 0 errors, 0 gaps.
+- **Recorded in `recordings\item`:** 24 observations, 48 forecasts and 23 climate reports (the 24th still in the
+  hour's buffer).
 
-M2's 7-day weather clock starts then.
+**Pending:** a day of recording with no unlogged gaps. M2's 7-day weather clock starts with this release.
 
 **Review.**
 - **Per commit:** `d347239`, 3 found before committing; 2 fixed, 1 no change:
