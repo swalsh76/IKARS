@@ -2976,3 +2976,21 @@ The owner approved the M2 proposal: PLAN §4.3, with decisions D22 to D30 and sl
 
 It is all within the frozen scope (D5, D9, D15, D20 A/B, G8, G17), and perp research moves in from M1.10. Each
 slice still gets its own plan before code.
+
+**Amended (owner, 2026-10-28: "slower response rate is acceptable"; "approved as amended"):** M2 uses **the local
+LLM only**.
+
+The comparison came from a probe of the Strata model, `qwen3.8-flash-next`, quantised to IQ3_S. It ran on six
+made-up items, one an injection attempt:
+- valid JSON 6 of 6;
+- relevance 6 of 6;
+- category 4 of 6 (both misses defensible);
+- the injection resisted;
+- 2.5 to 5 s per item at 36 to 54 tokens a second, most of it the model "thinking".
+
+**What changes:**
+- **Claude** is deferred to an M3 decision, made on M2's labelled-sample measure.
+- **Embeddings (now M2.5)** come before the LLM layer (now M2.6), so the pre-filter bounds the volume.
+- **Thinking** is turned off for classification if measurement supports it.
+- **The gate** adds the quality measure.
+- **Setup:** no Claude account and no `anthropic` package.
