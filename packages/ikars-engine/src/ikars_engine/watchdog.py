@@ -43,6 +43,7 @@ RECOVERED = {
     "engine": "the engine is running again",
     "engine-silent": "the engine is reporting again",
     "restarting": "the engine is running again",
+    "network": "Kalshi is reachable again",
     "feed": "Kalshi's feed is live again",
     "ledger-chain": "the ledger's hash chain checks out again",
     "ledger-reconcile": "the ledger reconciles exactly with Kalshi again",
@@ -61,6 +62,7 @@ class Rules:
     restart_limit: int = 3  # an hour
     snapshot_stale_s: int = 180  # the engine writes one a minute
     start_grace_s: int = 600  # a starting engine's first snapshot comes after discovery
+    network_wait_s: int = 300  # a starting engine waiting this long for Kalshi is reported
     feed_stale_s: int = 600  # while the exchange is trading
     backup_late_hours: int = 36
 
@@ -96,6 +98,12 @@ def evaluate(obs: Observation, rules: Rules) -> list[Problem]:
         silent = "the engine is running but has stopped reporting"
         return [Problem("engine-silent", silent, urgent=True)]
     if starting:
+        waited = at(snap, "waiting_for_network_s")
+        if isinstance(waited, int) and waited >= rules.network_wait_s:
+            text = (
+                f"Kalshi has been unreachable for {waited // 60} min; the engine is waiting for it"
+            )
+            return [Problem("network", text)]
         return []  # nothing else to judge until its first real snapshot
     problems = []
     silence = at(snap, "feed", "seconds_since_last_frame")

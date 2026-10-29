@@ -141,10 +141,14 @@ def write_snapshot(folder: Path, snapshot: dict[str, Any]) -> None:
     write_text_atomic(folder / SNAPSHOT, json.dumps(snapshot, default=str))
 
 
-def starting_snapshot(now_ns: int) -> dict[str, Any]:
+def starting_snapshot(now_ns: int, waiting_s: int | None = None) -> dict[str, Any]:
     """Written as soon as ``serve`` holds the lock, so the watchdog never judges a new engine by
-    the last run's snapshot; it allows a start-up grace (discovery takes a minute or two)."""
-    return {"written_ns": now_ns, "pid": os.getpid(), "starting": True}
+    the last run's snapshot; it allows a start-up grace (discovery takes a minute or two). Written
+    again while the engine waits for the network, with how long it has waited."""
+    snapshot: dict[str, Any] = {"written_ns": now_ns, "pid": os.getpid(), "starting": True}
+    if waiting_s is not None:
+        snapshot["waiting_for_network_s"] = waiting_s
+    return snapshot
 
 
 def read_snapshot(folder: Path) -> dict[str, Any] | None:

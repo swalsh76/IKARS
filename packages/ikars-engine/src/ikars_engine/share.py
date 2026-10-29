@@ -30,6 +30,9 @@ pre-migration copies are kept for ever. The local ledger is never pruned.
 
 **The restore drill** (G14) restores the newest daily ledger copy into a scratch file, checks its
 hashes, verifies its chain, and checks that its head is in the local ledger with the same hash.
+
+**The restore** (D20 I, the workstation-lost runbook, ``docs/RUNBOOK.md``) puts the newest backup
+into an empty data root: the same proofs, then the checkpoints, state, journal and settings.
 """
 
 import hashlib
@@ -47,6 +50,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from ikars_engine.ledger import Head, Ledger
+from ikars_engine.settings import SettingsError, read
 from ikars_engine.store import StoreError
 
 log = logging.getLogger("ikars_engine.backup")
@@ -374,3 +378,107 @@ def _drill(share: Share, local: Ledger, scratch: Path) -> Drill:
             False, folder.name, verified.records, "the copy's head is not in the local ledger"
         )
     return Drill(True, folder.name, verified.records)
+
+
+@dataclass(frozen=True, slots=True)
+class Restored:
+    ledger_day: str
+    records: int
+    checkpoints: int
+    state_day: str | None  # None: no state backup on the share yet
+    journal: bool
+    settings: bool
+
+
+def restore(
+    share: Share,
+    *,
+    ledger: Path,
+    checkpoints: Path,
+    state: Path,
+    journal: Path,
+    settings: Path,
+) -> Restored:
+    """The newest backup into a data root that holds no IKARS data (a lost workstation, PLAN
+    D20 I): the ledger with its chain and checkpoint proved, its checkpoints, the engine state, the
+    journal and the settings. Everything is checked in a staging folder first and only then moved
+    into place, so a failed restore leaves the root as empty as it was. The share is only read."""
+    problem = share.problem()
+    if problem is not None:
+        raise ShareError(problem)
+    if any(p.exists() for p in (ledger, state, journal, settings)) or (
+        checkpoints.is_dir() and any(checkpoints.iterdir())
+    ):
+        raise ShareError("the data folder already holds IKARS data: restore only into an empty one")
+    folder = share.newest_daily("ledger")
+    if folder is None:
+        raise ShareError("no ledger backup on the share")
+    if not share.check_folder(folder):
+        raise ShareError("a ledger backup file does not match its SHA256SUMS")
+    staging = ledger.parent / f".restore-{uuid4().hex}"
+    staging.mkdir(parents=True)
+    try:
+        staged = staging / LEDGER_FILE
+        shutil.copyfile(folder / LEDGER_FILE, staged)
+        copy = Ledger(staged, ZoneInfo("UTC"))
+        try:
+            verified = copy.verify()
+        finally:
+            copy.close()
+        if not verified.ok:
+            raise ShareError(f"the backup's chain: {verified.problem}")
+        point = json.loads((folder / "checkpoint.json").read_text(encoding="utf-8"))
+        if (point["seq"], point["hash"]) != (verified.head.seq, verified.head.hash):
+            raise ShareError("the backup's head differs from its checkpoint")
+        moves = [(staged, ledger)]
+        points = sorted(share.path("ledger", "checkpoints").glob("*/*.json"))
+        for source in points:
+            target = staging / "checkpoints" / source.parent.name / source.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+        if points:
+            moves.append((staging / "checkpoints", checkpoints))
+        state_folder = share.newest_daily("state")
+        has_journal = False
+        if state_folder is not None:
+            if not share.check_folder(state_folder):
+                raise ShareError("a state backup file does not match its SHA256SUMS")
+            shutil.copyfile(state_folder / STATE_FILE, staging / STATE_FILE)
+            moves.append((staging / STATE_FILE, state))
+            if (state_folder / JOURNAL_FILE).is_file():
+                shutil.copyfile(state_folder / JOURNAL_FILE, staging / JOURNAL_FILE)
+                moves.append((staging / JOURNAL_FILE, journal))
+                has_journal = True
+        saved = share.path("config", "settings.toml")
+        if saved.is_file():
+            shutil.copyfile(saved, staging / "settings.toml")
+            try:
+                read(staging / "settings.toml")
+            except SettingsError as exc:
+                raise ShareError(f"the saved settings cannot be read: {exc}") from exc
+            moves.append((staging / "settings.toml", settings))
+        if checkpoints.is_dir():  # empty (checked above): a folder cannot be replaced onto it
+            checkpoints.rmdir()
+        moved: list[Path] = []
+        try:
+            for source, target in moves:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source.replace(target)
+                moved.append(target)
+        except OSError:  # part-way: what moved goes again, so the root is as empty as it was
+            for target in moved:
+                if target.is_dir():
+                    shutil.rmtree(target, ignore_errors=True)
+                else:
+                    target.unlink(missing_ok=True)
+            raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return Restored(
+        folder.name,
+        verified.records,
+        len(points),
+        None if state_folder is None else state_folder.name,
+        has_journal,
+        saved.is_file(),
+    )

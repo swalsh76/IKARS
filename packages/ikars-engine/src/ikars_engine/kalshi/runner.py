@@ -13,12 +13,13 @@ health line every minute. The background run mode (start at login, keep awake, w
 import asyncio
 import contextlib
 import hashlib
+import itertools
 import json
 import logging
 import os
 import sqlite3
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,7 +31,7 @@ from ikars_core.config import Environment, KalshiConfig
 from ikars_core.endpoints import MarketData
 from ikars_core.fees import FeeSchedule
 from ikars_core.ratelimit import TokenBucket
-from ikars_core.rest import KalshiAccountClient, KalshiPublicClient
+from ikars_core.rest import KalshiAccountClient, KalshiConnectionError, KalshiPublicClient
 from ikars_core.ws import FeedConfig, KalshiFeed
 
 from ikars_engine import gpu, taxzone
@@ -105,6 +106,45 @@ async def request_bucket(
     }
 
 
+NETWORK_WAITS_S = (5, 10, 20, 40, 60)  # then a minute each time
+
+
+class StoppedWaiting(Exception):
+    """The owner stopped the engine while it waited for the network."""
+
+
+async def first_bucket(
+    config: KalshiConfig,
+    share_percent: int,
+    signer: AccountSigner,
+    should_stop: Callable[[], bool] | None = None,
+    on_wait: Callable[[int], None] | None = None,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> tuple[TokenBucket, dict[str, object]]:
+    """:func:`request_bucket`, waiting for the network: an engine started while it is down (a
+    reboot during an outage) keeps trying instead of stopping (owner, 2026-10-28). ``on_wait`` gets
+    the seconds waited after each failed try; a key or API fault still stops it."""
+    began = monotonic()
+    for attempt in itertools.count():
+        try:
+            return await request_bucket(config, share_percent, signer)
+        except KalshiConnectionError as exc:
+            waited = int(monotonic() - began)
+            log.warning(
+                "waiting for the network",
+                extra={"error": type(exc.__cause__ or exc).__name__, "waited_s": waited},
+            )
+            if on_wait is not None:
+                on_wait(waited)
+            end = monotonic() + NETWORK_WAITS_S[min(attempt, len(NETWORK_WAITS_S) - 1)]
+            while (left := end - monotonic()) > 0:
+                if should_stop is not None and should_stop():
+                    raise StoppedWaiting from exc
+                await sleep(min(TICK_S, left))
+    raise AssertionError("unreachable")  # pragma: no cover - the loop returns or raises
+
+
 @dataclass(slots=True)
 class Live:
     """Everything ``run`` starts and stops."""
@@ -143,7 +183,12 @@ def settings_digest(settings: Settings) -> str:
 
 
 async def build(
-    paths: Paths, settings: Settings, root: Path | None = None, restartable: bool = False
+    paths: Paths,
+    settings: Settings,
+    root: Path | None = None,
+    restartable: bool = False,
+    should_stop: Callable[[], bool] | None = None,
+    on_wait: Callable[[int], None] | None = None,
 ) -> Live:
     config = KalshiConfig(environment=Environment(settings.kalshi.environment))
     zone = taxzone.resolve(settings.tax_time_zone)  # a bad setting fails before anything opens
@@ -151,7 +196,9 @@ async def build(
     metrics = Metrics()
     skew = SkewMonitor()
     account_signer = AccountSigner.from_environment(signer_environment(settings))
-    bucket, budget = await request_bucket(config, settings.feed.read_share_percent, account_signer)
+    bucket, budget = await first_bucket(
+        config, settings.feed.read_share_percent, account_signer, should_stop, on_wait
+    )
     log.info("request budget", extra=budget)
     client = KalshiPublicClient(config, bucket=bucket, observe=clock_observer(skew))
     data = MarketData(client)
@@ -364,6 +411,7 @@ async def run(
     should_stop: Callable[[], bool] | None = None,
     on_minute: Callable[[dict[str, object]], None] | None = None,
     root: Path | None = None,
+    on_wait: Callable[[int], None] | None = None,
 ) -> dict[str, object]:
     """The live engine until ``minutes`` pass or ``should_stop`` says so (checked every two
     seconds); each minute, a summary line to ``out`` and the health to ``on_minute`` (and once at
@@ -388,7 +436,13 @@ async def run(
         # a fresh install: the terminal only, to set IKARS up (M1.9a)
         log.warning("setup mode: the Kalshi key cannot be used", extra={"problem": problem})
         return await run_setup(paths, settings, problem, should_stop, on_minute, root, minutes)
-    live = await build(paths, settings, root, restartable=should_stop is not None)
+    try:
+        live = await build(
+            paths, settings, root, should_stop is not None, should_stop=should_stop, on_wait=on_wait
+        )
+    except StoppedWaiting:
+        log.info("stopped while waiting for the network")
+        return {"stopped": "while waiting for the network"}
     engine = live.engine
     health: dict[str, object] = {}
     running: list[asyncio.Task[object]] = []

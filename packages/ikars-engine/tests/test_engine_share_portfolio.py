@@ -27,6 +27,7 @@ from ikars_engine.share import (
     ShareError,
     back_up,
     migration_copier,
+    restore,
     restore_drill,
     sha256,
 )
@@ -598,3 +599,142 @@ def test_the_journal_is_backed_up_with_the_state(nas: Path, tmp_path: Path) -> N
     )  # fmt: skip
     day = nas / "ikars" / "state" / "daily" / "2026" / "2026-01-01"
     assert {p.name for p in day.iterdir()} >= {"state.sqlite", "journal.sqlite", "SHA256SUMS"}
+
+
+# --- the restore (M1.11: the workstation-lost runbook) --------------------------------------------
+
+
+def share_files(share: Path) -> list[tuple[str, int, int]]:
+    return sorted(
+        (str(p.relative_to(share)), p.stat().st_size, p.stat().st_mtime_ns)
+        for p in share.rglob("*")
+        if p.is_file()
+    )
+
+
+def restore_into(share: Share, paths: Paths) -> Any:
+    return restore(
+        share, ledger=paths.ledger / "ledger.sqlite", checkpoints=paths.ledger / "checkpoints",
+        state=paths.data / "state.sqlite", journal=paths.data / "journal.sqlite",
+        settings=paths.settings,
+    )  # fmt: skip
+
+
+def backed_up(nas: Path, tmp_path: Path) -> tuple[Share, Paths]:
+    from ikars_engine.journal import Journal
+
+    share = Share(str(nas))
+    share.init(T0)
+    paths = make_data(tmp_path / "lost")
+    Journal(paths.data / "journal.sqlite").close()
+    back_up(
+        share, ledger=paths.ledger / "ledger.sqlite", state=paths.data / "state.sqlite",
+        settings=paths.settings, checkpoints=paths.ledger / "checkpoints",
+        staging=paths.data / "backup-staging", now_ns=T0, journal=paths.data / "journal.sqlite",
+    )  # fmt: skip
+    return share, paths
+
+
+def test_a_lost_workstation_is_restored_from_the_share_by_the_command(
+    nas: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ikars_engine.__main__ import main
+
+    _, lost = backed_up(nas, tmp_path)
+    before = share_files(nas)
+    root = tmp_path / "new-machine"
+    command = ["ikars", "backup", "--root", str(root), "restore", "--share", str(nas)]
+    assert main(command) == 0
+    out = capsys.readouterr().out
+    assert str(nas) not in out  # the share's path is never printed
+    report = json.loads(out)
+    assert report["restored"] is True and report["records"] == 3 and report["checkpoints"] == 1
+    assert (report["ledger_day"], report["state_day"]) == ("2026-01-01", "2026-01-01")
+    assert report["journal"] is True and report["settings"] is True
+    new = Paths(root)
+    copy = Ledger(new.ledger / "ledger.sqlite", UTC)
+    original = Ledger(lost.ledger / "ledger.sqlite", UTC)
+    try:
+        assert copy.verify().ok and copy.head() == original.head()
+    finally:
+        copy.close()
+        original.close()
+    assert len(list((new.ledger / "checkpoints").glob("*/*.json"))) == 1
+    assert (new.data / "state.sqlite").is_file() and (new.data / "journal.sqlite").is_file()
+    assert new.settings.read_text(encoding="utf-8") == lost.settings.read_text(encoding="utf-8")
+    assert not list(new.ledger.glob(".restore-*"))  # the staging folder is gone
+    assert share_files(nas) == before  # the share is only read
+
+
+def test_a_restore_never_overwrites_data(nas: Path, tmp_path: Path) -> None:
+    share, lost = backed_up(nas, tmp_path)
+    before = sha256(lost.ledger / "ledger.sqlite")
+    with pytest.raises(ShareError, match="already holds IKARS data"):
+        restore_into(share, lost)
+    assert sha256(lost.ledger / "ledger.sqlite") == before
+    with pytest.raises(ShareError, match="marker"):
+        os.remove(nas / "ikars" / MARKER)
+        restore_into(share, Paths(tmp_path / "empty"))
+
+
+def test_a_bad_backup_leaves_the_new_root_empty(nas: Path, tmp_path: Path) -> None:
+    share, _ = backed_up(nas, tmp_path)
+    root = Paths(tmp_path / "new-machine")
+    saved = nas / "ikars" / "config" / "settings.toml"
+    saved.write_text("version = [", encoding="utf-8")  # a file this version cannot read
+    with pytest.raises(ShareError, match="saved settings cannot be read"):
+        restore_into(share, root)
+    assert not [p for p in root.root.rglob("*") if p.is_file()]
+    day = nas / "ikars" / "ledger" / "daily" / "2026" / "2026-01-01" / "ikars-ledger.sqlite"
+    with open(day, "r+b") as handle:  # a bit flipped on the share
+        handle.seek(200)
+        byte = handle.read(1)
+        handle.seek(200)
+        handle.write(bytes([byte[0] ^ 1]))
+    with pytest.raises(ShareError, match="SHA256SUMS"):
+        restore_into(share, root)
+    assert not [p for p in root.root.rglob("*") if p.is_file()]
+
+
+def test_a_restore_goes_into_empty_folders_and_takes_back_a_part_way_move(
+    nas: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    share, _ = backed_up(nas, tmp_path)
+    root = Paths(tmp_path / "new-machine")
+    root.create()  # the folders a first start makes, with nothing in them (per-commit review)
+    (root.ledger / "checkpoints").mkdir(parents=True, exist_ok=True)
+    real = Path.replace
+    calls = [0]
+
+    def flaky(self: Path, target: Any) -> Path:  # the state file is locked as it moves in
+        calls[0] += 1
+        if calls[0] == 3:
+            raise PermissionError("locked")
+        return real(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky)
+    with pytest.raises(PermissionError):
+        restore_into(share, root)
+    assert not [p for p in root.root.rglob("*") if p.is_file()]  # the ledger moved back out
+    monkeypatch.setattr(Path, "replace", real)
+    assert restore_into(share, root).checkpoints == 1  # and the next try succeeds
+
+
+def test_a_share_with_only_a_ledger_backup_restores_the_ledger(nas: Path, tmp_path: Path) -> None:
+    share = Share(str(nas))
+    share.init(T0)
+    paths = make_data(tmp_path / "lost")
+    folder = nas / "ikars" / "ledger" / "daily" / "2026" / "2026-01-01"
+    snapshot_copy = tmp_path / "copy.sqlite"
+    copy = Ledger(paths.ledger / "ledger.sqlite", UTC)
+    point = copy.checkpoint(tmp_path / "point", T0)
+    copy.close()
+    from ikars_engine.share import snapshot
+
+    snapshot(paths.ledger / "ledger.sqlite", snapshot_copy)
+    share.put_folder({"ikars-ledger.sqlite": snapshot_copy, "checkpoint.json": point},
+                     "ledger", "daily", "2026", "2026-01-01")  # fmt: skip
+    assert folder.is_dir()
+    done = restore_into(share, Paths(tmp_path / "new-machine"))
+    assert (done.records, done.checkpoints, done.state_day) == (3, 0, None)
+    assert (done.journal, done.settings) == (False, False)

@@ -236,6 +236,14 @@ def serve(paths: Paths, settings: Settings, root: Path | None = None) -> int:
             except OSError as exc:  # a reader held it this instant: the next minute writes it
                 log.warning("health snapshot not written", extra={"error": type(exc).__name__})
 
+        def waiting(seconds: int) -> None:  # still starting: the watchdog keeps its grace
+            try:
+                runmode.write_snapshot(
+                    paths.data, runmode.starting_snapshot(time.time_ns(), waiting_s=seconds)
+                )
+            except OSError as exc:
+                log.warning("health snapshot not written", extra={"error": type(exc).__name__})
+
         with runmode.keep_awake():
             asyncio.run(
                 run_engine(
@@ -246,6 +254,7 @@ def serve(paths: Paths, settings: Settings, root: Path | None = None) -> int:
                     should_stop=lambda: runmode.stop_requested(paths.data),
                     on_minute=snapshot,
                     root=root,
+                    on_wait=waiting,
                 )
             )
     except Exception as exc:  # in the background nobody sees a traceback: it goes to the log

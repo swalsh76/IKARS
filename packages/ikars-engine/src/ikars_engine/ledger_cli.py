@@ -50,6 +50,7 @@ from ikars_engine.share import (
     back_up,
     configured,
     migration_copier,
+    restore,
     restore_drill,
 )
 
@@ -79,6 +80,10 @@ def add_parser(commands: Any) -> None:
     init.add_argument("--share", default=None, help="the share (saved to the local settings)")
     steps.add_parser("run", help="back up now")
     steps.add_parser("status", help="whether the share can be used, and the newest backup")
+    back = steps.add_parser(
+        "restore", help="the newest backup into an empty data folder (a lost workstation)"
+    )
+    back.add_argument("--share", default=None, help="the share (default: the settings' share)")
 
 
 def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
@@ -259,6 +264,26 @@ def _backup(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
             backup = msgspec.structs.replace(settings.backup, share=args.share)
             save(msgspec.structs.replace(settings, backup=backup), paths.settings)
         _print({"created": created, "share_saved": bool(args.share)})
+        return 0
+    if args.action == "restore":  # docs/RUNBOOK.md: on a new machine there are no settings yet
+        restored = restore(
+            Share(args.share or settings.backup.share),
+            ledger=paths.ledger / "ledger.sqlite",
+            checkpoints=paths.ledger / "checkpoints",
+            state=paths.data / "state.sqlite",
+            journal=paths.data / "journal.sqlite",
+            settings=paths.settings,
+        )
+        _print({
+            "restored": True,
+            "ledger_day": restored.ledger_day,
+            "records": restored.records,
+            "checkpoints": restored.checkpoints,
+            "state_day": restored.state_day,
+            "journal": restored.journal,
+            "settings": restored.settings,
+            "next": "ikars ledger verify, then ikars ledger import (it reconciles with Kalshi)",
+        })  # fmt: skip
         return 0
     share = Share(settings.backup.share)
     if args.action == "status":
