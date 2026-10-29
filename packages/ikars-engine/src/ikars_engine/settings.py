@@ -19,7 +19,7 @@ from ikars_core.fixedpoint import PrecisionError, to_e6
 
 from ikars_engine.files import backup_name, write_text_atomic
 
-VERSION = 5
+VERSION = 6
 
 # the terminal's built-in skins (PLAN G16 as amended): one list, here, for the settings, the API's
 # contracts and (generated from them) the terminal
@@ -41,7 +41,7 @@ class LogSettings(msgspec.Struct, frozen=True, kw_only=True):
 
 
 class BudgetSettings(msgspec.Struct, frozen=True, kw_only=True):
-    monthly_e6: int = 40_000_000  # dollars in millionths, like all money
+    monthly_e6: int = 20_000_000  # dollars in millionths, like all money (owner, 2026-10-28: $20)
     degrade_at_percent: int = 80
 
 
@@ -95,6 +95,12 @@ class TerminalSettings(msgspec.Struct, frozen=True, kw_only=True):
     start_layout: str = ""  # the one ikars open restores; empty: one window on the Overview
 
 
+class SourceSettings(msgspec.Struct, frozen=True, kw_only=True):
+    # polling sources (M2.1): the User-Agent names the repository; an email is added only when set
+    # here, in the local settings, never in the repository (owner, 2026-10-28)
+    contact_email: str = ""
+
+
 class PluginDefaults(msgspec.Struct, frozen=True, kw_only=True):
     queue_size: int = 10_000
     call_timeout_seconds: float = 30.0
@@ -113,6 +119,7 @@ class Settings(msgspec.Struct, frozen=True, kw_only=True):
     backup: BackupSettings = BackupSettings()
     alerts: AlertSettings = AlertSettings()
     terminal: TerminalSettings = TerminalSettings()
+    sources: SourceSettings = SourceSettings()
     plugin_settings: dict[str, dict[str, Any]] = {}
 
 
@@ -187,9 +194,21 @@ def _v4_to_v5(data: dict[str, Any]) -> dict[str, Any]:
     return {**data, "version": 5}
 
 
+def _v5_to_v6(data: dict[str, Any]) -> dict[str, Any]:
+    # version 6 adds [sources] (M2.1) and moves an unchanged $40 monthly ceiling to the $20 the
+    # owner chose for M2 (2026-10-28); a ceiling the owner set stays as it is
+    budget = dict(data.get("budget", {}))
+    if budget.get("monthly_e6") == 40_000_000:
+        budget["monthly_e6"] = 20_000_000
+    out = {**data, "version": 6}
+    if budget:
+        out["budget"] = budget
+    return out
+
+
 OLD_DEFAULT_ZONE = "America/New_York"
 MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
-    1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5,
+    1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6,
 }  # fmt: skip
 
 

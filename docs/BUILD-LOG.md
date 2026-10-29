@@ -2994,3 +2994,101 @@ made-up items, one an injection attempt:
 - **Thinking** is turned off for classification if measurement supports it.
 - **The gate** adds the quality measure.
 - **Setup:** no Claude account and no `anthropic` package.
+
+## 2.1 Polling-source framework (plan APPROVED 2026-10-28)
+
+**Owner, 2026-10-28:** approved as proposed.
+- **The User-Agent contact:** the repository's URL; an email optionally, in the local settings only.
+- **When a gap is logged:** a feed unreachable past **twice its interval** gets a gap entry for the missed window.
+  Shorter blips are retried quietly and counted in health.
+
+**Builds:**
+1. **A `PollingSource` base:**
+   - per-feed schedules with jitter;
+   - a per-host request budget, with `Retry-After` and 429 honoured, and backoff with jitter;
+   - HTTPS only, a reply size limit, and timeouts;
+   - conditional GET, with the validators kept in the state store;
+   - persisted emitted ids, so nothing is recorded twice;
+   - the User-Agent.
+2. **A gap log for polling sources.**
+3. **Health per source.**
+4. **A `[sources]` settings section**, with a migration (backup first).
+5. **`docs/research/sources.md`:** the terms checks for NWS and GDELT (G17).
+6. **Tests** against a fake HTTP server.
+
+**Live check:** one conditional GET to `api.weather.gov`. No source runs in the live engine until M2.2. **No new
+packages.**
+
+#### 2.1 built (2026-10-28)
+
+**Built** on `m2/1`:
+
+| Commit | What |
+|---|---|
+| `abc5e80` | the plan |
+| `2ed9abf` | the framework |
+| `6815d92` | merge-review fixes |
+| `976f707` | a test closing its store |
+
+After the M2 plan (PR #32, `dfc3f4b`). **No new packages.**
+
+- **`polling.py`:**
+  - **`PollingSource`:** a source plugin names its feeds and reads one reply.
+  - **`Poller`:** the engine's one HTTP client for polling sources, offered to plugins as the service
+    `"poller"`, its health under `sources` (no URLs), and closed after the plugins stop.
+- **Per feed:**
+  - **Schedule:** its own interval with jitter, never sooner than the server's `max-age`; after a start, the
+    next poll comes when it is due.
+  - **Politeness:** HTTPS only, no redirects followed, a 5 MB reply limit, about one request a second per host
+    (on the engine's clock).
+  - **Waits:**
+    - after a first blip, half the interval;
+    - after a server that said slow down, at least the interval or its `Retry-After`;
+    - otherwise doubling to 15 minutes.
+  - **Conditional GET:** both validators are sent, and kept only after the reply's items have gone out.
+  - **Once only:** each id is emitted once, and each sighting refreshes it (ids not seen for 14 days are
+    dropped).
+  - **The gap rule (owner):** a gap entry for the missed window when the time since the last good poll passes
+    **twice the healthy wait**, for an outage or an engine that was stopped. Shorter blips are counted in health
+    only.
+  - **Isolation:** the feeds of one source run in a TaskGroup. A fault in the plugin (an item kind it may not
+    emit) crashes the plugin, so the host counts it, instead of being retried as a feed problem.
+- **The state store, migration 3:** `poll_feed` (validators, last good poll, healthy wait) and `poll_seen`.
+- **Settings, version 6:**
+  - `[sources] contact_email`: empty by default, local only, and added to the User-Agent when set.
+  - An unchanged $40 monthly ceiling becomes the owner's **$20**; a ceiling the owner set stays.
+  - The default is now $20.
+- **`docs/research/sources.md`:** the NWS and GDELT terms checks (G17) and how every polling source behaves.
+
+**Live check (2026-10-28), a probe of `api.weather.gov`** (public, no key, our User-Agent accepted):
+- **Observations:** a weak `ETag`, a `Last-Modified` and `max-age=280`.
+- **Conditional requests:** `If-Modified-Since` gives a 304, but `If-None-Match` alone does not (the weak `ETag`
+  names the server that answered), so IKARS sends both.
+- **Locations:** `/points/{lat},{lon}` gives a location's forecast URLs (for M2.2).
+
+No source runs in the live engine yet. The new migrations first run on the owner's workstation with M2.2's test
+release.
+
+**Verified.**
+- **Python:** 1,574 tests (20 new for polling, against a fake HTTP server and clock); `polling.py` coverage 96%.
+- **Checks:** lint, types and the data guard are clean.
+
+**Review.**
+- **Per commit:** `2ed9abf`: 1 found and fixed before committing. The validators were saved before the reply's
+  items went out, so a failed parse or emit lost them behind a 304. They are now kept in `succeeded()`.
+- **Merge review (medium), 10 findings, all fixed in `6815d92`:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | `2.0**failures` overflowed after about 17 hours of failures and crashed the source | The exponent is capped; tested at 5,000 |
+  | 2 | `gather` left the other feeds' loops running when one failed, so a restart doubled them | A TaskGroup cancels them |
+  | 3 | A server `max-age` over twice the interval gave a false gap on every poll | The gap rule uses the healthy wait, kept with the feed; tested |
+  | 4 | The "backoff" retried sooner than the healthy interval | After the first blip, never sooner than the interval; tested |
+  | 5 | An item still listed after 14 days was forgotten and recorded again | Each sighting refreshes it; tested |
+  | 6 | A partial emit failure re-sent the items already out | What went out is remembered; tested |
+  | 7 | Plugin faults were retried for ever as feed problems | They crash the plugin; tested |
+  | 8 | `Retry-After` dates were read against the real clock | The engine's clock |
+  | 9 | Remembering ids was one fsync per row on the event loop | One transaction |
+  | 10 | The dedup ran twice, and the store was read twice per poll | One pass, one read |
+
+**M2.1 built.** It waits for the owner's merge.
