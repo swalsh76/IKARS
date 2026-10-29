@@ -2920,7 +2920,10 @@ written to the share.
 - **Playwright:** 19 in Edge against demo-api (Back up now clicked, the note, the card's new time).
 - **Checks:** lint, types, the generated contracts and the data guard are clean.
 
-**Live check of Back up now: pending** (a test pre-release on the owner's word).
+**Live check of Back up now passed** on v0.1.10 (test pre-release from `87f5a4b`, published on the owner's
+word, 2026-10-28): the owner pressed it at 23:07. The engine logged "backup done" at 23:07:46. The share's
+ledger and state copies for the day (the state copy with the journal) were rewritten at 23:07:45 and check
+against their SHA256SUMS. The engine's last good backup, from which its 24-hour clock runs, is now 23:07:45.
 
 **Review.**
 - **Per commit:**
@@ -2961,4 +2964,4 @@ written to the share.
 - **With the owner:** the two-monitor layout check; the SignPath application.
 - **Parked:** nothing new.
 
-**M1.11 built.** It waits for the live check of Back up now and the owner's merge. **The merge closes M1.**
+**M1.11 built and checked live.** It waits for the owner's merge. **The merge closes M1.**
