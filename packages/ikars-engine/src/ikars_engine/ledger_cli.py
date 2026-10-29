@@ -42,6 +42,7 @@ from ikars_engine.ledger_import import AccountImporter, ns_of
 from ikars_engine.ledger_service import ANNOTATION_KINDS, annotate
 from ikars_engine.paths import Paths
 from ikars_engine.portfolio import Portfolio, holdings, portfolio
+from ikars_engine.runmode import engine_running
 from ikars_engine.settings import Settings, save
 from ikars_engine.share import (
     Drill,
@@ -266,6 +267,9 @@ def _backup(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
         _print({"created": created, "share_saved": bool(args.share)})
         return 0
     if args.action == "restore":  # docs/RUNBOOK.md: on a new machine there are no settings yet
+        if engine_running(paths.data):  # never under a live engine (M1.11 review)
+            _print({"ok": False, "problem": "IKARS is running: stop it first (ikars stop)"})
+            return 1
         restored = restore(
             Share(args.share or settings.backup.share),
             ledger=paths.ledger / "ledger.sqlite",

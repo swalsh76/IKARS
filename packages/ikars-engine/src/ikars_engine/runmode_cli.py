@@ -236,7 +236,7 @@ def serve(paths: Paths, settings: Settings, root: Path | None = None) -> int:
             except OSError as exc:  # a reader held it this instant: the next minute writes it
                 log.warning("health snapshot not written", extra={"error": type(exc).__name__})
 
-        def waiting(seconds: int) -> None:  # still starting: the watchdog keeps its grace
+        def waiting(seconds: int | None) -> None:  # still starting: the watchdog keeps its grace
             try:
                 runmode.write_snapshot(
                     paths.data, runmode.starting_snapshot(time.time_ns(), waiting_s=seconds)

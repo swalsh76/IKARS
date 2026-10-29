@@ -45,10 +45,14 @@ def open_store(
     path.parent.mkdir(parents=True, exist_ok=True)
     existed = path.exists() and path.stat().st_size > 0
     connection = sqlite3.connect(path, isolation_level=None)  # transactions are explicit
-    connection.execute("PRAGMA journal_mode=WAL")
-    connection.execute("PRAGMA synchronous=FULL")
-    connection.execute("PRAGMA foreign_keys=ON")
-    version = connection.execute("PRAGMA user_version").fetchone()[0]
+    try:
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA synchronous=FULL")
+        connection.execute("PRAGMA foreign_keys=ON")
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+    except BaseException:  # not a database: the file must not stay held open (M1.11 review)
+        connection.close()
+        raise
     if version > len(migrations):
         connection.close()
         raise StoreError(

@@ -49,7 +49,7 @@ from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from ikars_engine.ledger import Head, Ledger
+from ikars_engine.ledger import Head, Ledger, Verified
 from ikars_engine.settings import SettingsError, read
 from ikars_engine.store import StoreError
 
@@ -334,45 +334,60 @@ class Drill:
     problem: str | None = None
 
 
-def restore_drill(share: Share, local: Ledger, scratch: Path) -> Drill:
-    """Restore the newest daily ledger copy into ``scratch`` and prove it (G14)."""
+class ProofFailed(ShareError):
+    """The newest daily ledger copy could not be proved (with its day and records, when known)."""
+
+    def __init__(self, problem: str, day: str | None = None, records: int = 0) -> None:
+        super().__init__(problem)
+        self.day = day
+        self.records = records
+
+
+def proved_newest(share: Share, target: Path) -> tuple[Path, Verified]:
+    """Copy the newest daily ledger copy to ``target`` and prove it: its SHA256SUMS, its chain, and
+    its head equal to the day's checkpoint. One proof for the drill and the restore (M1.11
+    review); every way it fails is a :class:`ProofFailed` (a share that drops part-way, a copy
+    that matches its checksums but is not a sound ledger: M1.R 22)."""
     problem = share.problem()
     if problem is not None:
-        return Drill(False, None, 0, problem)
+        raise ProofFailed(problem)
     try:
-        return _drill(share, local, scratch)
+        folder = share.newest_daily("ledger")
+        if folder is None:
+            raise ProofFailed("no ledger backup on the share")
+        if not share.check_folder(folder):
+            raise ProofFailed("a backup file does not match its SHA256SUMS", folder.name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(folder / LEDGER_FILE, target)
+        copy = Ledger(target, ZoneInfo("UTC"))
+        try:
+            verified = copy.verify()
+        finally:
+            copy.close()
+        if not verified.ok:
+            raise ProofFailed(
+                f"the restored chain: {verified.problem}", folder.name, verified.records
+            )
+        point = json.loads((folder / "checkpoint.json").read_text(encoding="utf-8"))
+        if (point["seq"], point["hash"]) != (verified.head.seq, verified.head.hash):
+            raise ProofFailed(
+                "the copy's head differs from its checkpoint", folder.name, verified.records
+            )
     except OSError as exc:  # the share went away part-way
-        return Drill(False, None, 0, f"the share could not be read ({type(exc).__name__})")
+        raise ProofFailed(f"the share could not be read ({type(exc).__name__})") from exc
     except (sqlite3.DatabaseError, StoreError, ValueError, KeyError) as exc:
-        # a copy that matches its checksums but is not a sound ledger (M1.R 22)
-        return Drill(
-            False, None, 0, f"the restored copy is not a sound ledger ({type(exc).__name__})"
-        )
+        problem = f"the restored copy is not a sound ledger ({type(exc).__name__})"
+        raise ProofFailed(problem) from exc
+    return folder, verified
 
 
-def _drill(share: Share, local: Ledger, scratch: Path) -> Drill:
-    folder = share.newest_daily("ledger")
-    if folder is None:
-        return Drill(False, None, 0, "no ledger backup on the share")
-    if not share.check_folder(folder):
-        return Drill(False, folder.name, 0, "a backup file does not match its SHA256SUMS")
-    scratch.mkdir(parents=True, exist_ok=True)
-    restored = scratch / LEDGER_FILE
-    shutil.copyfile(folder / LEDGER_FILE, restored)
-    copy = Ledger(restored, ZoneInfo("UTC"))
+def restore_drill(share: Share, local: Ledger, scratch: Path) -> Drill:
+    """Restore the newest daily ledger copy into ``scratch`` and prove it (G14), and that its head
+    is in the local ledger."""
     try:
-        verified = copy.verify()
-    finally:
-        copy.close()
-    if not verified.ok:
-        return Drill(
-            False, folder.name, verified.records, f"the restored chain: {verified.problem}"
-        )
-    point = json.loads((folder / "checkpoint.json").read_text(encoding="utf-8"))
-    if (point["seq"], point["hash"]) != (verified.head.seq, verified.head.hash):
-        return Drill(
-            False, folder.name, verified.records, "the copy's head differs from its checkpoint"
-        )
+        folder, verified = proved_newest(share, scratch / LEDGER_FILE)
+    except ProofFailed as failed:
+        return Drill(False, failed.day, failed.records, str(failed))
     if verified.head.seq and local.hash_at(verified.head.seq) != verified.head.hash:
         return Drill(
             False, folder.name, verified.records, "the copy's head is not in the local ledger"
@@ -403,75 +418,46 @@ def restore(
     D20 I): the ledger with its chain and checkpoint proved, its checkpoints, the engine state, the
     journal and the settings. Everything is checked in a staging folder first and only then moved
     into place, so a failed restore leaves the root as empty as it was. The share is only read."""
-    problem = share.problem()
-    if problem is not None:
-        raise ShareError(problem)
     if any(p.exists() for p in (ledger, state, journal, settings)) or (
         checkpoints.is_dir() and any(checkpoints.iterdir())
     ):
         raise ShareError("the data folder already holds IKARS data: restore only into an empty one")
-    folder = share.newest_daily("ledger")
-    if folder is None:
-        raise ShareError("no ledger backup on the share")
-    if not share.check_folder(folder):
-        raise ShareError("a ledger backup file does not match its SHA256SUMS")
     staging = ledger.parent / f".restore-{uuid4().hex}"
     staging.mkdir(parents=True)
     try:
         staged = staging / LEDGER_FILE
-        shutil.copyfile(folder / LEDGER_FILE, staged)
-        copy = Ledger(staged, ZoneInfo("UTC"))
-        try:
-            verified = copy.verify()
-        finally:
-            copy.close()
-        if not verified.ok:
-            raise ShareError(f"the backup's chain: {verified.problem}")
-        point = json.loads((folder / "checkpoint.json").read_text(encoding="utf-8"))
-        if (point["seq"], point["hash"]) != (verified.head.seq, verified.head.hash):
-            raise ShareError("the backup's head differs from its checkpoint")
+        folder, verified = proved_newest(share, staged)
         moves = [(staged, ledger)]
-        points = sorted(share.path("ledger", "checkpoints").glob("*/*.json"))
-        for source in points:
-            target = staging / "checkpoints" / source.parent.name / source.name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, target)
-        if points:
-            moves.append((staging / "checkpoints", checkpoints))
-        state_folder = share.newest_daily("state")
-        has_journal = False
-        if state_folder is not None:
-            if not share.check_folder(state_folder):
-                raise ShareError("a state backup file does not match its SHA256SUMS")
-            shutil.copyfile(state_folder / STATE_FILE, staging / STATE_FILE)
-            moves.append((staging / STATE_FILE, state))
-            if (state_folder / JOURNAL_FILE).is_file():
-                shutil.copyfile(state_folder / JOURNAL_FILE, staging / JOURNAL_FILE)
-                moves.append((staging / JOURNAL_FILE, journal))
-                has_journal = True
-        saved = share.path("config", "settings.toml")
-        if saved.is_file():
-            shutil.copyfile(saved, staging / "settings.toml")
-            try:
-                read(staging / "settings.toml")
-            except SettingsError as exc:
-                raise ShareError(f"the saved settings cannot be read: {exc}") from exc
-            moves.append((staging / "settings.toml", settings))
-        if checkpoints.is_dir():  # empty (checked above): a folder cannot be replaced onto it
-            checkpoints.rmdir()
-        moved: list[Path] = []
         try:
-            for source, target in moves:
+            points = sorted(share.path("ledger", "checkpoints").glob("*/*.json"))
+            for source in points:
+                target = staging / "checkpoints" / source.parent.name / source.name
                 target.parent.mkdir(parents=True, exist_ok=True)
-                source.replace(target)
-                moved.append(target)
-        except OSError:  # part-way: what moved goes again, so the root is as empty as it was
-            for target in moved:
-                if target.is_dir():
-                    shutil.rmtree(target, ignore_errors=True)
-                else:
-                    target.unlink(missing_ok=True)
-            raise
+                shutil.copyfile(source, target)
+            if points:
+                moves.append((staging / "checkpoints", checkpoints))
+            state_folder = share.newest_daily("state")
+            has_journal = False
+            if state_folder is not None:
+                if not share.check_folder(state_folder):
+                    raise ShareError("a state backup file does not match its SHA256SUMS")
+                shutil.copyfile(state_folder / STATE_FILE, staging / STATE_FILE)
+                moves.append((staging / STATE_FILE, state))
+                if (state_folder / JOURNAL_FILE).is_file():
+                    shutil.copyfile(state_folder / JOURNAL_FILE, staging / JOURNAL_FILE)
+                    moves.append((staging / JOURNAL_FILE, journal))
+                    has_journal = True
+            saved = share.path("config", "settings.toml")
+            if saved.is_file():
+                shutil.copyfile(saved, staging / "settings.toml")
+                try:
+                    read(staging / "settings.toml")
+                except SettingsError as exc:
+                    raise ShareError(f"the saved settings cannot be read: {exc}") from exc
+                moves.append((staging / "settings.toml", settings))
+        except OSError as exc:  # the share went away part-way (M1.11 review)
+            raise ShareError(f"the share could not be read ({type(exc).__name__})") from exc
+        _move_in(moves, checkpoints)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return Restored(
@@ -482,3 +468,26 @@ def restore(
         has_journal,
         saved.is_file(),
     )
+
+
+def _move_in(moves: list[tuple[Path, Path]], checkpoints: Path) -> None:
+    """All the moves or none: a failure part-way takes back what moved and puts back the empty
+    checkpoints folder that was there (M1.11 review)."""
+    had_folder = checkpoints.is_dir()
+    if had_folder:  # empty (checked): a folder cannot be replaced onto it
+        checkpoints.rmdir()
+    moved: list[Path] = []
+    try:
+        for source, target in moves:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source.replace(target)
+            moved.append(target)
+    except BaseException:
+        for target in moved:
+            if target.is_dir():
+                shutil.rmtree(target, ignore_errors=True)
+            else:
+                target.unlink(missing_ok=True)
+        if had_folder:
+            checkpoints.mkdir(parents=True, exist_ok=True)
+        raise

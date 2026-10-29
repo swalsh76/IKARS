@@ -194,7 +194,7 @@ def test_a_restored_copy_that_is_not_a_sound_ledger_fails_the_drill(
     def damaged(*_: object) -> None:
         raise error
 
-    monkeypatch.setattr("ikars_engine.share._drill", damaged)
+    monkeypatch.setattr("ikars_engine.share.Share.newest_daily", damaged)
     local = Ledger(tmp_path / "local.sqlite", UTC)
     drill = restore_drill(share, local, tmp_path / "drill")
     local.close()
@@ -718,6 +718,40 @@ def test_a_restore_goes_into_empty_folders_and_takes_back_a_part_way_move(
     assert not [p for p in root.root.rglob("*") if p.is_file()]  # the ledger moved back out
     monkeypatch.setattr(Path, "replace", real)
     assert restore_into(share, root).checkpoints == 1  # and the next try succeeds
+
+
+def test_a_backup_that_is_not_a_ledger_is_refused_cleanly(nas: Path, tmp_path: Path) -> None:
+    # merge review 1: matching its SHA256SUMS, but not a sound ledger: a refusal, not a traceback
+    share, _ = backed_up(nas, tmp_path)
+    day = nas / "ikars" / "ledger" / "daily" / "2026" / "2026-01-01"
+    (day / "ikars-ledger.sqlite").write_bytes(b"not a database" * 100)
+    (day / SUMS).write_text(
+        "".join(f"{sha256(day / n)}  {n}\n" for n in ("checkpoint.json", "ikars-ledger.sqlite")),
+        encoding="utf-8",
+    )
+    root = Paths(tmp_path / "new-machine")
+    with pytest.raises(ShareError, match="not a sound ledger"):
+        restore_into(share, root)
+    assert not [p for p in root.root.rglob("*") if p.is_file()]
+
+
+def test_the_restore_command_refuses_under_a_running_engine(
+    nas: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ikars_engine import runmode
+    from ikars_engine.__main__ import main
+
+    backed_up(nas, tmp_path)
+    root = tmp_path / "new-machine"
+    (root / "data").mkdir(parents=True)
+    lock = runmode.EngineLock(root / "data")
+    lock.acquire(wait_s=1.0)
+    try:
+        assert main(["ikars", "backup", "--root", str(root), "restore", "--share", str(nas)]) == 1
+    finally:
+        lock.release()
+    assert "stop it first" in json.loads(capsys.readouterr().out)["problem"]
+    assert not (root / "ledger" / "ledger.sqlite").exists()
 
 
 def test_a_share_with_only_a_ledger_backup_restores_the_ledger(nas: Path, tmp_path: Path) -> None:
