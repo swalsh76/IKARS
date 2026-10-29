@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { RecommendationView } from "../api/contracts";
-import { ApiFailure, change } from "../api/client";
-import { useSnapshot } from "../app/hooks";
+import { answer, copyOrder } from "../app/answers";
+import { useRoute, useSnapshot, useTerminal } from "../app/hooks";
 import { href } from "../nav/route";
-import { ANSWERS, checkRows, figures, headline, inputText, orderText, ruleName, type Answer } from "../view/recommendations";
+import { ANSWERS, checkRows, figures, headline, inputText, ruleName, type Answer } from "../view/recommendations";
 import { local } from "../view/health";
 import { contracts, e2 } from "../money";
 import { Guarded } from "./Guarded";
-import { COPY_EVENT, RESPOND_EVENT } from "./Keys";
+import { useAnswerKeys } from "./Keys";
 import { Link } from "./Shell";
 
 const LABELS: Record<Answer, string> = { taken: "Mark taken", ignored: "Ignore", dismissed: "Dismiss" };
@@ -61,41 +61,27 @@ export function Recommendation({ id }: { id: string }) {
     if (loaded.state === "ready") setAnswered(null); // a newer copy from the engine wins
   }
 
-  const respond = async (answer: Answer | null) => {
+  const respond = async (given: Answer | null) => {
     const r = current.current;
     if (!r) return;
-    const next = r.response === answer ? null : answer; // the same answer again takes it back
-    try {
-      setAnswered(await change(`/v1/recommendations/${encodeURIComponent(r.id)}/response`, "RecommendationView", { answer: next }));
-      setNote(next === null ? "Answer taken back." : `Marked ${next}.`);
-    } catch (error) {
-      setNote(error instanceof ApiFailure ? error.message : "Not saved.");
-    }
+    const { value, note } = await answer(r, given);
+    if (value) setAnswered(value);
+    setNote(note);
   };
   const copy = async () => {
     const r = current.current;
-    if (!r) return;
-    try {
-      await navigator.clipboard.writeText(orderText(r));
-      setNote(`Copied: ${orderText(r)}`);
-    } catch {
-      setNote("The clipboard refused it.");
-    }
+    if (r) setNote(await copyOrder(r));
   };
-  const handlers = useRef({ respond, copy });
+  const { navigator } = useTerminal();
+  const route = useRoute(); // a move clears the name: given again after each one (per-commit review)
+  const name = shown ? shown.title || shown.ticker : null;
   useEffect(() => {
-    handlers.current = { respond, copy };
-  });
-  useEffect(() => {
-    const onRespond = (event: Event) => void handlers.current.respond((event as CustomEvent<Answer>).detail);
-    const onCopy = () => void handlers.current.copy();
-    window.addEventListener(RESPOND_EVENT, onRespond);
-    window.addEventListener(COPY_EVENT, onCopy);
-    return () => {
-      window.removeEventListener(RESPOND_EVENT, onRespond);
-      window.removeEventListener(COPY_EVENT, onCopy);
-    };
-  }, []);
+    navigator.name(name); // the last crumb and the window title name the market
+  }, [navigator, name, route]);
+  useAnswerKeys(
+    (given) => void respond(given),
+    () => void copy(),
+  );
 
   if (loaded.state === "failed" && !shown) {
     return (

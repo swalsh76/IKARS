@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect } from "react";
-import { useRoute } from "../app/hooks";
+import { useRoute, useScreenName } from "../app/hooks";
 import { title, type Route } from "../nav/route";
 import { Guarded } from "./Guarded";
 import { Alerts } from "./Alerts";
@@ -18,9 +18,10 @@ const Recommendation = lazy(() => import("./Recommendation").then((m) => ({ defa
 
 function Screen() {
   const route = useRoute();
+  const name = useScreenName();
   useEffect(() => {
-    document.title = title(route);
-  }, [route]);
+    document.title = title(route, name);
+  }, [route, name]);
   switch (route.screen) {
     case "overview":
       return <Overview />;

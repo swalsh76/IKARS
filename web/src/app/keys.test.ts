@@ -27,6 +27,10 @@ describe("hotkeys", () => {
     expect(actionFor(press("I"))).toEqual({ kind: "respond", answer: "ignored" });
     expect(actionFor(press("d"))).toEqual({ kind: "respond", answer: "dismissed" });
     expect(actionFor(press("C"))).toEqual({ kind: "copy" });
+    expect(actionFor(press("ArrowDown"))).toEqual({ kind: "move", by: 1 });
+    expect(actionFor(press("ArrowUp"))).toEqual({ kind: "move", by: -1 });
+    expect(actionFor(press("ArrowDown", { typing: true }))).toBeNull(); // a text box keeps its arrows
+    expect(actionFor(press("ArrowUp", { altKey: true }))).toBeNull();
     for (const key of ["t", "i", "d", "c"]) expect(actionFor(press(key, { typing: true }))).toBeNull();
     expect(HOTKEYS.filter((h) => h.arrives)).toEqual([]); // M1.12c brought the last ones
   });

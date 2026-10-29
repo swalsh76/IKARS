@@ -63,22 +63,28 @@ a{color:#60cdff;text-decoration:none}a:hover{color:#99ebff;text-decoration:under
             </thead>
             <tbody>
               <sc-for list="{{recs}}" as="r" hint-placeholder-count="5">
-                <tr style="border-top: 1px solid {{t.line}}">
-                  <td style="padding: 8px; max-width: 280px">
-                    <a href="Market.dc.html" style="color: {{t.text}}; font-weight: 600">{{r.market}}</a>
-                    <div style="color: {{t.muted}}; font-size: 12px">{{r.why}}</div>
+                <tr style="{{r.rowStyle}}">
+                  <td style="padding: 0; max-width: 280px">
+                    <a href="Recommendation.dc.html" aria-current="{{r.current}}" style="display: block; padding: 8px; color: {{t.text}}; text-decoration: none"><span style="font-weight: 600">{{r.market}}</span>
+                    <span style="display: block; color: {{t.muted}}; font-size: 12px">{{r.why}}</span></a>
                   </td>
-                  <td style="padding: 8px; white-space: nowrap"><a href="Recommendation.dc.html">{{r.action}}</a></td>
-                  <td style="padding: 8px; text-align: right">{{r.size}}</td>
-                  <td style="padding: 8px; text-align: right; color: {{t.pos}}; font-weight: 600">{{r.ev}}</td>
-                  <td style="padding: 8px; text-align: right">{{r.perday}}</td>
-                  <td style="padding: 8px; text-align: right">{{r.fill}}</td>
-                  <td style="padding: 8px"><span style="padding: 2px 8px; border-radius: 999px; border: 1px solid {{t.line}}; font-size: 12px; white-space: nowrap">{{r.strategy}}</span></td>
-                  <td style="padding: 8px; color: {{t.sub}}; white-space: nowrap">{{r.expires}}</td>
+                  <td style="padding: 0; white-space: nowrap"><a href="Recommendation.dc.html" tabindex="-1" aria-hidden="true" style="display: block; padding: 8px; color: {{t.text}}; text-decoration: none">{{r.action}}<span style="display: block; color: {{t.muted}}; font-size: 12px">{{r.answer}}</span></a></td>
+                  <td style="padding: 0; text-align: right"><a href="Recommendation.dc.html" tabindex="-1" aria-hidden="true" style="display: block; padding: 8px; color: {{t.text}}; text-decoration: none">{{r.size}}</a></td>
+                  <td style="padding: 0; text-align: right; font-weight: 600"><a href="Recommendation.dc.html" tabindex="-1" aria-hidden="true" style="display: block; padding: 8px; color: {{t.pos}}; text-decoration: none">{{r.ev}}</a></td>
+                  <td style="padding: 0; text-align: right"><a href="Recommendation.dc.html" tabindex="-1" aria-hidden="true" style="display: block; padding: 8px; color: {{t.text}}; text-decoration: none">{{r.perday}}</a></td>
+                  <td style="padding: 0; text-align: right"><a href="Recommendation.dc.html" tabindex="-1" aria-hidden="true" style="display: block; padding: 8px; color: {{t.text}}; text-decoration: none">{{r.fill}}</a></td>
+                  <td style="padding: 0"><a href="Recommendation.dc.html" tabindex="-1" aria-hidden="true" style="display: block; padding: 8px; color: {{t.text}}; text-decoration: none"><span style="padding: 2px 8px; border-radius: 999px; border: 1px solid {{t.line}}; font-size: 12px; white-space: nowrap">{{r.strategy}}</span></a></td>
+                  <td style="padding: 0; white-space: nowrap"><a href="Recommendation.dc.html" tabindex="-1" aria-hidden="true" style="display: block; padding: 8px; color: {{t.sub}}; text-decoration: none">{{r.expires}}</a></td>
                 </tr>
               </sc-for>
             </tbody>
           </table>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px 16px; color: {{t.muted}}; font-size: 12px">
+          <span>Click a row to open it</span>
+          <span><kbd style="{{kbd}}">↑</kbd> <kbd style="{{kbd}}">↓</kbd> highlight · <kbd style="{{kbd}}">Enter</kbd> open</span>
+          <span>On the highlighted row: <kbd style="{{kbd}}">C</kbd> copy order · <kbd style="{{kbd}}">T</kbd> taken · <kbd style="{{kbd}}">I</kbd> ignore · <kbd style="{{kbd}}">D</kbd> dismiss</span>
+          <span style="color: {{t.accent}}">Copied: KXHIGHNY-26OCT28-T61 YES 40 @ 42¢</span>
         </div>
       </section>
 
@@ -193,19 +199,25 @@ class Component extends DCLogic {
     const exposure = [['Weather', 38], ['Crypto', 22], ['Economics', 18], ['Politics', 12], ['Other', 10]].map(([name, p]) => ({
       name, pct: p + '%', bar: 'height: 8px; border-radius: 4px; width: ' + p + '%; background: ' + t.accent
     }));
+    const recs = [
+      { market: 'NYC high on Oct 28 above 61°F', why: 'NWS forecast 64°F (σ 2.1) vs market 42¢', action: 'Buy YES @ $0.42', size: '40', ev: '+$3.71', perday: '+3.1%', fill: '0.92', strategy: 'News/data', expires: '3 h 10 m', answer: '' },
+      { market: 'Seattle rain on Oct 27', why: 'Stale ask: radar moved, quote unchanged 38 s', action: 'Buy YES @ $0.31', size: '25', ev: '+$2.05', perday: '+9.8%', fill: '0.60', strategy: 'Snipe', expires: '20 s', answer: 'taken' },
+      { market: 'ETH above $[LEVEL] at 8 pm', why: 'Volume surge ×4, 3 higher closes', action: 'Buy YES @ $0.55', size: '30', ev: '+$1.12', perday: '+2.0%', fill: '0.88', strategy: 'Momentum', expires: '11 m', answer: '' },
+      { market: 'Fed holds rate in December', why: 'Nowcast 91% vs market 86¢', action: 'Buy YES @ $0.86', size: '50', ev: '+$1.90', perday: '+0.1%', fill: '0.97', strategy: 'News/data', expires: '1 d', answer: '' },
+      { market: 'Mayor mentions "transit" at presser', why: 'Pre-released agenda item on buses', action: 'Buy YES @ $0.47', size: '20', ev: '+$1.04', perday: '+0.9%', fill: '0.81', strategy: 'News/data', expires: '5 h', answer: '' }
+    ].map((r, i) => ({
+      ...r,
+      current: i === 0 ? 'true' : 'false',
+      rowStyle: 'border-top: 1px solid ' + t.line + '; cursor: pointer; ' + (i === 0 ? 'background: ' + t.navOn + '; outline: 2px solid ' + t.accent + '; outline-offset: -2px' : '')
+    }));
     return {
       t,
+      recs,
+      kbd: 'padding: 0 5px; border: 1px solid ' + t.line + '; border-radius: 4px; font: inherit; color: ' + t.sub,
       themeLabel: theme === 'light' ? 'Dark theme' : 'Light theme',
       toggle: () => this.setState({ theme: theme === 'light' ? 'dark' : 'light' }),
       nav,
       exposure,
-      recs: [
-        { market: 'NYC high on Oct 28 above 61°F', why: 'NWS forecast 64°F (σ 2.1) vs market 42¢', action: 'Buy YES @ $0.42', size: '40', ev: '+$3.71', perday: '+3.1%', fill: '0.92', strategy: 'News/data', expires: '3 h 10 m' },
-        { market: 'Seattle rain on Oct 27', why: 'Stale ask: radar moved, quote unchanged 38 s', action: 'Buy YES @ $0.31', size: '25', ev: '+$2.05', perday: '+9.8%', fill: '0.60', strategy: 'Snipe', expires: '20 s' },
-        { market: 'ETH above $[LEVEL] at 8 pm', why: 'Volume surge ×4, 3 higher closes', action: 'Buy YES @ $0.55', size: '30', ev: '+$1.12', perday: '+2.0%', fill: '0.88', strategy: 'Momentum', expires: '11 m' },
-        { market: 'Fed holds rate in December', why: 'Nowcast 91% vs market 86¢', action: 'Buy YES @ $0.86', size: '50', ev: '+$1.90', perday: '+0.1%', fill: '0.97', strategy: 'News/data', expires: '1 d' },
-        { market: 'Mayor mentions "transit" at presser', why: 'Pre-released agenda item on buses', action: 'Buy YES @ $0.47', size: '20', ev: '+$1.04', perday: '+0.9%', fill: '0.81', strategy: 'News/data', expires: '5 h' }
-      ],
       movers: [
         { name: 'BTC 15-min, 8 pm above $[LEVEL]', move: '+9¢', vol: '×6.2 vol' },
         { name: 'NYC high Oct 28 above 61°F', move: '+7¢', vol: '×3.0 vol' },

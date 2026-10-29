@@ -11,6 +11,7 @@ export type Action =
   | { kind: "linked" }
   | { kind: "respond"; answer: "taken" | "ignored" | "dismissed" }
   | { kind: "copy" }
+  | { kind: "move"; by: 1 | -1 }
   | { kind: "alert" };
 
 export interface Press {
@@ -37,12 +38,13 @@ export interface Hotkey {
 export const HOTKEYS: readonly Hotkey[] = [
   { keys: "Ctrl+K", does: "Search markets" },
   { keys: "Ctrl+1 … Ctrl+5", does: "Overview, Markets, Ledger, Alerts, Health" },
-  { keys: "Enter", does: "The newest urgent alert" },
-  { keys: "Alt+Left / Alt+Right", does: "Back and forward" },
+  { keys: "Up / Down", does: "Highlight a recommendation (Overview)" },
+  { keys: "Enter", does: "Open the highlighted recommendation; with none, the newest urgent alert" },
+  { keys: "Alt+Left / Alt+Right", does: "Back and forward (or the Back button)" },
   { keys: "X", does: "Show or hide the Linked panel (Market)" },
   { keys: "B", does: "The order book (Market)" },
-  { keys: "T / I / D", does: "Mark the open recommendation taken, ignored or dismissed (Recommendation)" },
-  { keys: "C", does: "Copy the order (ticker, side, size, price) for Kalshi (Recommendation)" },
+  { keys: "T / I / D", does: "Mark the recommendation taken, ignored or dismissed (the highlighted one on the Overview)" },
+  { keys: "C", does: "Copy its order (ticker, side, size, price) for Kalshi (the highlighted one on the Overview)" },
   { keys: "Ctrl+Shift+L", does: "Light or dark theme" },
   { keys: "?", does: "This list" },
   { keys: "Esc", does: "Close this list" },
@@ -82,6 +84,10 @@ export function actionFor(p: Press): Action | null {
     case "c":
     case "C":
       return { kind: "copy" };
+    case "ArrowDown":
+      return { kind: "move", by: 1 };
+    case "ArrowUp":
+      return { kind: "move", by: -1 };
     default:
       return null;
   }

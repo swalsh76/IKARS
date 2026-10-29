@@ -3,7 +3,7 @@ import { ApiFailure } from "../api/client";
 import type { Navigator } from "../nav/route";
 import { startTerminal } from "./terminal";
 
-const navigator: Navigator = { current: () => ({ screen: "overview" }), go: vi.fn(), replace: vi.fn(), listen: () => () => undefined };
+const navigator: Navigator = { current: () => ({ screen: "overview" }), go: vi.fn(), replace: vi.fn(), back: vi.fn(), canBack: () => false, name: vi.fn(), named: () => null, listen: () => () => undefined };
 const quiet = {
   fetch: vi.fn(() => new Promise<Response>(() => undefined)) as unknown as typeof fetch,
   setTimeout: vi.fn(() => 0),

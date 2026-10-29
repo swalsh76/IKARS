@@ -2777,3 +2777,46 @@ problem the watchdog can raise to one. Per-commit review: none.
 - Not now: a trail of the exact path taken (Back covers it).
 
 No engine change, no new packages.
+
+#### 1.12d built (2026-10-28)
+
+**Built** on `m1/12d`: `c6a424f` (the slice), `3b11a27` (the merge-review fixes). After M1.12c (PR #29, `d39f623`).
+
+- **The Overview's list:** a click anywhere on a row opens its Recommendation screen (the market name is the row's
+  one link, for the keyboard; a modified click or a text selection is left alone). `Up`/`Down` highlight a row and
+  focus its link; `Enter` opens the highlighted row even when the focus has moved; `T`/`I`/`D`/`C` act on it, with
+  a note under the list ("<market>: Marked taken.", "Copied: ..."). The highlight follows the recommendation's
+  id, never its place, so a re-ranked list cannot move it onto another. The arrows are the list's from inside it,
+  the top bar or nowhere; from another Overview card and on every other screen they stay the browser's.
+- **Back:** a button left of the breadcrumbs (`Alt+Left`), greyed on the screen the window opened on: the navigator
+  counts its moves in the history entry's state.
+- **Named crumb:** the Recommendation screen names its market for the last crumb and the window title
+  ("Recommendation: <market>").
+- **Reuse:** the answer and Copy order are one helper (`app/answers.ts`), `T`/`I`/`D`/`C` one hook
+  (`useAnswerKeys`), a plain click one test (`plainClick`). The approved mock-up is in `docs/design/mockups/`.
+
+**Verified.** Vitest 232 (the navigator's Back and depth, the screen's name, the arrows, the answer and Copy order
+helpers); Playwright 19 in Edge against demo-api (a click on an empty cell opens the row, the named crumb, Back
+and its greyed state, `Down`, `C` with the clipboard read back, `T` and back, `Enter` after the focus moved); lint,
+types and the data guard clean.
+
+**Live check passed** on v0.1.9 (test pre-release from `66d8699`, published on the owner's word, 2026-10-28): the
+owner used the list, the keys, Back and the named crumb on the workstation: "everything looks good".
+
+**Review.**
+- **Per commit:** `c6a424f` 1 found and fixed before committing (a move clears the screen's name and it was only
+  given again when the name changed: now after every move).
+- **Merge review (medium), 8 findings: 7 fixed in `3b11a27`, 1 no change:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | An answer on the Overview dropped the engine's copy, so the same key again saved it again | The copy is kept until the next list; tested end to end |
+  | 2 | `Enter` went to the alerts when a row was highlighted but the focus had moved | `Enter` opens the highlighted row first; tested end to end |
+  | 3 | The arrows were taken over the whole Overview | Only from the list, the top bar or nowhere |
+  | 4 | The row's link to the Market screen is gone | No change: the approved design (one target per row; the market is linked on the Recommendation screen) |
+  | 5 | A key's note was not shown with an empty list | The note is always there |
+  | 6 | The `T`/`I`/`D`/`C` event wiring was copied from the Recommendation screen | One hook, `useAnswerKeys` |
+  | 7 | The row repeated the link's modified-click test | One helper, `plainClick` |
+  | 8 | A row's element id held the raw recommendation id | Encoded |
+
+**M1.12d built and checked live**, subject to the owner's merge.
