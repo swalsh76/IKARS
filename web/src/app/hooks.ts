@@ -126,6 +126,12 @@ export function useRoute(): Route {
   return useSyncExternalStore(navigator.listen, navigator.current);
 }
 
+/** The name the screen shown now gave itself (its last crumb), or null. */
+export function useScreenName(): string | null {
+  const { navigator } = useTerminal();
+  return useSyncExternalStore(navigator.listen, navigator.named);
+}
+
 /** ``stale``: a refresh failed and ``value`` is the last one that loaded (it is kept, not blanked). */
 export type Loaded<T> = { state: "loading" } | { state: "ready"; value: T; stale?: string } | { state: "failed"; message: string };
 

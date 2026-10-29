@@ -1,8 +1,11 @@
-import { useNow, useSnapshot, useValue } from "../app/hooks";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { answer, copyOrder } from "../app/answers";
+import { useNow, useSnapshot, useTerminal, useValue } from "../app/hooks";
 import { href } from "../nav/route";
 import { latestAlerts, portfolioCard } from "../view/portfolio";
-import { recommendationRow, scoreRows } from "../view/recommendations";
+import { recommendationRow, scoreRows, type Answer } from "../view/recommendations";
 import { Guarded } from "./Guarded";
+import { COPY_EVENT, MOVE_EVENT, RESPOND_EVENT } from "./Keys";
 import { Later, Link } from "./Shell";
 
 function Portfolio() {
@@ -68,9 +71,59 @@ function Alerts() {
   );
 }
 
+const rowLink = (id: string) => `rec-${id}`;
+
+/** The ranked list (M1.12d, owner 2026-10-28): a click anywhere on a row opens its recommendation; Up and
+ * Down highlight a row (its link takes the focus, so Enter opens it) and T, I, D and C act on it. The
+ * highlight follows the recommendation, not the place, so a re-ranked list never moves it to another. */
 function TopRecommendations() {
   const page = useValue("recommendations");
   const now = useNow();
+  const { navigator } = useTerminal();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const items = page?.items ?? [];
+  const chosen = items.find((r) => r.id === selected) ?? null;
+  const latest = useRef({ items, chosen });
+  useEffect(() => {
+    latest.current = { items, chosen };
+  });
+  useEffect(() => {
+    const onMove = (event: Event) => {
+      const { items, chosen } = latest.current;
+      if (items.length === 0) return; // the arrows stay the browser's
+      event.preventDefault();
+      const at = chosen ? items.indexOf(chosen) : -1;
+      const next = items[at < 0 ? 0 : Math.min(items.length - 1, Math.max(0, at + (event as CustomEvent<number>).detail))];
+      if (!next) return;
+      setSelected(next.id);
+      document.getElementById(rowLink(next.id))?.focus();
+    };
+    const onRespond = (event: Event) => {
+      const r = latest.current.chosen;
+      if (!r) return setNote("Highlight a recommendation first (Up, Down).");
+      void answer(r, (event as CustomEvent<Answer>).detail).then(({ note }) => setNote(`${r.title || r.ticker}: ${note}`));
+    };
+    const onCopy = () => {
+      const r = latest.current.chosen;
+      if (!r) return setNote("Highlight a recommendation first (Up, Down).");
+      void copyOrder(r).then(setNote);
+    };
+    window.addEventListener(MOVE_EVENT, onMove);
+    window.addEventListener(RESPOND_EVENT, onRespond);
+    window.addEventListener(COPY_EVENT, onCopy);
+    return () => {
+      window.removeEventListener(MOVE_EVENT, onMove);
+      window.removeEventListener(RESPOND_EVENT, onRespond);
+      window.removeEventListener(COPY_EVENT, onCopy);
+    };
+  }, []);
+  const open = (event: MouseEvent<HTMLTableRowElement>, id: string) => {
+    // the row's own link has moved already; a modified click or a text selection is left alone
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (window.getSelection()?.toString()) return;
+    navigator.go(href({ screen: "recommendation", id }));
+  };
   return (
     <section className="card" aria-labelledby="recs">
       <div className="card-head">
@@ -100,13 +153,15 @@ function TopRecommendations() {
               {page.items.map((r) => {
                 const row = recommendationRow(r, now);
                 return (
-                  <tr key={row.id}>
+                  <tr key={row.id} className={row.id === chosen?.id ? "pick on" : "pick"} onClick={(e) => open(e, row.id)} onFocus={() => setSelected(row.id)}>
                     <td>
-                      <Link to={href({ screen: "market", ticker: r.ticker })}>{row.market}</Link>
+                      <Link to={href({ screen: "recommendation", id: row.id })} id={rowLink(row.id)}>
+                        {row.market}
+                      </Link>
                       <div className="muted small">{row.why}</div>
                     </td>
                     <td className="nowrap">
-                      <Link to={href({ screen: "recommendation", id: row.id })}>{row.action}</Link>
+                      {row.action}
                       {row.answer && <div className="muted small">{row.answer}</div>}
                     </td>
                     <td className="num">{row.size}</td>
@@ -119,6 +174,20 @@ function TopRecommendations() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+      {items.length > 0 && (
+        <div className="muted small hints">
+          <span>Click a row to open it</span>
+          <span>
+            <kbd>Up</kbd> <kbd>Down</kbd> highlight · <kbd>Enter</kbd> open
+          </span>
+          <span>
+            On the highlighted row: <kbd>C</kbd> copy order · <kbd>T</kbd> taken · <kbd>I</kbd> ignore · <kbd>D</kbd> dismiss
+          </span>
+          <span role="status" data-testid="list-note" className="note">
+            {note}
+          </span>
         </div>
       )}
     </section>

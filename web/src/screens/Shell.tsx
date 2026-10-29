@@ -1,12 +1,12 @@
 import { useState, type MouseEvent, type ReactNode } from "react";
-import { useRoute, useTerminal, useValue } from "../app/hooks";
+import { useRoute, useScreenName, useTerminal, useValue } from "../app/hooks";
 import { openNewWindow } from "../app/layout";
 import { crumbs, href, type Route } from "../nav/route";
 import { strip } from "../view/health";
 import { Hotkeys } from "./Keys";
 
 /** An in-app link: the navigator moves, the page does not reload (a modified click opens as usual). */
-export function Link({ to, children, className }: { to: string; children: ReactNode; className?: string }) {
+export function Link({ to, children, className, id }: { to: string; children: ReactNode; className?: string; id?: string }) {
   const { navigator } = useTerminal();
   const follow = (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -14,7 +14,7 @@ export function Link({ to, children, className }: { to: string; children: ReactN
     navigator.go(to);
   };
   return (
-    <a href={to} onClick={follow} className={className}>
+    <a href={to} onClick={follow} className={className} id={id}>
       {children}
     </a>
   );
@@ -50,12 +50,14 @@ function Search() {
 }
 
 export function Shell({ children }: { children: ReactNode }) {
+  const { navigator } = useTerminal();
   const route = useRoute();
+  const name = useScreenName();
   const health = useValue("health");
   const connection = useValue("connection");
   const items = strip(health, connection);
   const pill = items[0];
-  const trail = crumbs(route);
+  const trail = crumbs(route, name);
   return (
     <div className="shell">
       <header className="top">
@@ -66,6 +68,13 @@ export function Shell({ children }: { children: ReactNode }) {
           </svg>
           <strong>IKARS</strong>
         </div>
+        {/* the Edge app window has no Back of its own (owner, 2026-10-28) */}
+        <button type="button" className="back" onClick={() => navigator.back()} disabled={!navigator.canBack()} aria-label="Back" title="Back (Alt+Left)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="M19 12H5" />
+            <path d="M11 6l-6 6 6 6" />
+          </svg>
+        </button>
         <nav aria-label="Breadcrumb" className="crumbs">
           {trail.map((crumb, i) => (
             <span key={`${crumb.label}-${i}`}>

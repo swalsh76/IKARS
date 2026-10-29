@@ -157,7 +157,7 @@ test("hotkeys: the screens, the list, the theme and the Linked panel", async ({ 
   await expect(page).toHaveURL(/\/markets$/);
   await page.locator("body").click({ position: { x: 5, y: 5 } }); // out of the search box
   await page.keyboard.press("Shift+Slash"); // ?
-  await expect(page.getByRole("dialog", { name: "Hotkeys" })).toContainText("Copy the order");
+  await expect(page.getByRole("dialog", { name: "Hotkeys" })).toContainText("Copy its order");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Hotkeys" })).toHaveCount(0);
   const theme = () => page.evaluate(() => document.documentElement.getAttribute("data-theme"));
@@ -197,10 +197,12 @@ test("recommendations: the ranked list, the drill-down, an answer by hotkey and 
   const perDay = (await list.locator("tbody tr td:nth-child(5)").allTextContents()).map((s) => Number(s.replace(/[%,+]/g, "")));
   expect(perDay).toEqual([...perDay].sort((x, y) => y - x)); // ranked by return per day
   await expect(page.getByRole("table", { name: "Scorecard" })).toContainText("momentum 0d6488");
-  await list.getByRole("row").nth(1).getByRole("link", { name: /^Buy YES/ }).click();
+  const back = page.getByRole("button", { name: "Back" });
+  await expect(back).toBeDisabled(); // the screen the window opened on
+  await list.getByRole("row").nth(1).locator("td").nth(4).click(); // a click anywhere on the row (M1.12d)
   await expect(page).toHaveURL(/\/recommendation\/momentum-/);
   await expect(page.getByTestId("headline")).toHaveText(/^Buy YES 10 @ \$0\.\d\d$/);
-  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toHaveText(/Overview\s*›\s*Recommendation/);
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toHaveText(/Overview\s*›\s*Recommendation: \S/); // named
   await expect(page.getByRole("table", { name: "Checks" })).toContainText("not yet");
   await expect(page.getByRole("region", { name: "Provenance" })).toContainText("registered 0d648804a13a");
   await page.keyboard.press("t");
@@ -210,7 +212,26 @@ test("recommendations: the ranked list, the drill-down, an answer by hotkey and 
   await expect(page.getByTestId("note")).toHaveText("Answer taken back.");
   await page.keyboard.press("c");
   await expect(page.getByTestId("note")).toHaveText(/^Copied: KXDEMO-\S+ YES 10 @ \d+¢$/);
-  await page.goBack();
+  await back.click();
   await expect(page.getByTestId("active")).toHaveText("6 active");
+  await expect(back).toBeDisabled();
+
+  // on the Overview: Down highlights a row, C and T act on it, Enter opens it (M1.12d)
+  const rows = list.locator("tbody tr");
+  await page.keyboard.press("ArrowDown");
+  await expect(rows.nth(0)).toHaveClass(/\bon\b/);
+  await page.keyboard.press("c");
+  await expect(page.getByTestId("list-note")).toHaveText(/^Copied: KXDEMO-\S+ YES 10 @ \d+¢$/);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/^KXDEMO-\S+ YES 10 @ \d+¢$/);
+  await page.keyboard.press("t");
+  await expect(page.getByTestId("list-note")).toHaveText(/: Marked taken\.$/);
+  await expect(rows.nth(0)).toContainText("taken");
+  await page.keyboard.press("t"); // taken back
+  await expect(page.getByTestId("list-note")).toHaveText(/: Answer taken back\.$/);
+  await page.keyboard.press("ArrowDown");
+  await expect(rows.nth(1)).toHaveClass(/\bon\b/);
+  const second = await rows.nth(1).getByRole("link").getAttribute("href");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`${second}$`));
   expect(refused).toEqual([]);
 });

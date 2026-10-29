@@ -26,6 +26,10 @@ function fakeTerminal(): { terminal: Terminal; setRoute: (r: Route) => void } {
       current: () => route,
       go: () => undefined,
       replace: () => undefined,
+      back: () => undefined,
+      canBack: () => false,
+      name: () => undefined,
+      named: () => null,
       listen: (l: () => void) => {
         listeners.add(l);
         return () => listeners.delete(l);

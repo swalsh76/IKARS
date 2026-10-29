@@ -52,6 +52,10 @@ describe("breadcrumbs and titles", () => {
     expect(crumbs({ screen: "market", ticker: "KXA" }).map((c) => c.label)).toEqual(["Overview", "Markets", "KXA"]);
     expect(crumbs({ screen: "missing", path: "/x" }).at(-1)?.label).toBe("Not found");
     expect(title({ screen: "health" })).toBe("Health · IKARS");
+    // a screen's own name, once it has loaded (M1.12d)
+    expect(crumbs({ screen: "recommendation", id: "r1" }).at(-1)?.label).toBe("Recommendation");
+    expect(crumbs({ screen: "recommendation", id: "r1" }, "Jamal Murray: 2+ rebounds").at(-1)).toEqual({ label: "Recommendation: Jamal Murray: 2+ rebounds", href: null });
+    expect(title({ screen: "recommendation", id: "r1" }, "KXA")).toBe("Recommendation: KXA · IKARS");
   });
 });
 
@@ -78,5 +82,33 @@ describe("the browser navigator", () => {
     stop();
     navigator.go("/ledger");
     expect(heard).toHaveBeenCalledTimes(3);
+  });
+
+  it("knows when this window has somewhere to go back to, and a screen's name lasts until a move (M1.12d)", () => {
+    window.history.replaceState(null, "", "/overview");
+    const back = vi.spyOn(window.history, "back").mockImplementation(() => undefined);
+    const navigator = browserNavigator(window);
+    expect(navigator.canBack()).toBe(false);
+    navigator.back();
+    expect(back).not.toHaveBeenCalled(); // the screen it opened on: Back would leave IKARS
+    navigator.go("/recommendation/r1");
+    expect(navigator.canBack()).toBe(true);
+    navigator.replace("/recommendation/r2"); // a replace keeps the depth
+    expect(navigator.canBack()).toBe(true);
+    navigator.back();
+    expect(back).toHaveBeenCalledTimes(1);
+    window.history.replaceState({ depth: 0 }, "", "/overview"); // where the browser's back lands
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(navigator.canBack()).toBe(false);
+
+    const heard = vi.fn();
+    navigator.listen(heard);
+    navigator.name("Made-up market");
+    navigator.name("Made-up market"); // the same again tells no one
+    expect(navigator.named()).toBe("Made-up market");
+    expect(heard).toHaveBeenCalledTimes(1);
+    navigator.go("/health");
+    expect(navigator.named()).toBeNull();
+    back.mockRestore();
   });
 });

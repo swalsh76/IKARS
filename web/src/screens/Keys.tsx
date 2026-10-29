@@ -8,6 +8,9 @@ export const LINKED_EVENT = "ikars:linked"; // X: the Market screen shows or hid
 export const BOOK_ID = "order-book"; // B: the Market screen's order book
 export const RESPOND_EVENT = "ikars:respond"; // T, I, D: the Recommendation screen's answer
 export const COPY_EVENT = "ikars:copy"; // C: the Recommendation screen copies its order
+// Up, Down: a list that takes them (the Overview's recommendations) cancels the event; otherwise the
+// arrows stay the browser's, to scroll
+export const MOVE_EVENT = "ikars:move";
 
 /** The hotkeys, for the whole terminal, and the list `?` shows (a dialog; Esc or a click outside closes). */
 export function Hotkeys() {
@@ -31,6 +34,11 @@ export function Hotkeys() {
       });
       if (action === null) return;
       if (action.kind === "close" && !shown.current) return; // Esc is the box's or the browser's then
+      if (action.kind === "move") {
+        if (shown.current) return;
+        if (!window.dispatchEvent(new CustomEvent(MOVE_EVENT, { detail: action.by, cancelable: true }))) event.preventDefault();
+        return;
+      }
       event.preventDefault(); // Edge's own Ctrl+K and Ctrl+1..5 are not wanted in the terminal
       switch (action.kind) {
         case "go":

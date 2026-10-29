@@ -82,20 +82,22 @@ export function href(route: Route): string {
   }
 }
 
-/** Overview first, then where the route sits under it. */
-export function crumbs(route: Route): Crumb[] {
+/** Overview first, then where the route sits under it. ``name``: the screen's own name for its last
+ * crumb, once it has loaded (a recommendation's market). */
+export function crumbs(route: Route, name: string | null = null): Crumb[] {
   if (route.screen === "overview") return [{ label: "Overview", href: null }];
   const trail: Crumb[] = [{ label: "Overview", href: "/overview" }];
   if (route.screen === "missing") return [...trail, { label: "Not found", href: null }];
   if (route.screen === "market") {
     return [...trail, { label: "Markets", href: "/markets" }, { label: route.ticker, href: null }];
   }
-  return [...trail, { label: TITLES[route.screen], href: null }];
+  const label = TITLES[route.screen];
+  return [...trail, { label: name ? `${label}: ${name}` : label, href: null }];
 }
 
 /** The page title for a route. */
-export function title(route: Route): string {
-  const last = crumbs(route).at(-1)?.label ?? "Overview";
+export function title(route: Route, name: string | null = null): string {
+  const last = crumbs(route, name).at(-1)?.label ?? "Overview";
   return `${last} · IKARS`;
 }
 
@@ -104,30 +106,60 @@ export interface Navigator {
   go(to: string): void;
   /** Moves without a new history entry (a search box as the owner types). */
   replace(to: string): void;
+  /** Back one screen in this window (Alt+Left); nothing when it has none to go back to. */
+  back(): void;
+  /** Whether this window has a screen of its own to go back to (the app window shows no Back of its own). */
+  canBack(): boolean;
+  /** Names the screen shown now, for its last crumb and the window title; a move clears it. */
+  name(label: string | null): void;
+  named(): string | null;
   listen(listener: () => void): () => void;
+}
+
+/** How many of this window's moves lie behind its history entry (0: the screen it opened on). */
+function depthOf(state: unknown): number {
+  const depth = typeof state === "object" && state !== null ? (state as { depth?: unknown }).depth : undefined;
+  return typeof depth === "number" ? depth : 0;
 }
 
 /** The navigator over the browser's history (pushState, popstate). */
 export function browserNavigator(win: Window = window): Navigator {
   const listeners = new Set<() => void>();
   let route = parse(win.location.pathname, win.location.search);
+  let depth = depthOf(win.history.state);
+  let label: string | null = null;
+  const tell = () => {
+    for (const listener of listeners) listener();
+  };
   const changed = () => {
     route = parse(win.location.pathname, win.location.search);
-    for (const listener of listeners) listener();
+    depth = depthOf(win.history.state);
+    label = null;
+    tell();
   };
   win.addEventListener("popstate", changed);
   return {
     current: () => route,
     go(to: string) {
       if (to === win.location.pathname + win.location.search) return;
-      win.history.pushState(null, "", to);
+      win.history.pushState({ depth: depth + 1 }, "", to);
       changed();
     },
     replace(to: string) {
       if (to === win.location.pathname + win.location.search) return;
-      win.history.replaceState(null, "", to);
+      win.history.replaceState({ depth }, "", to);
       changed();
     },
+    back() {
+      if (depth > 0) win.history.back();
+    },
+    canBack: () => depth > 0,
+    name(next) {
+      if (next === label) return;
+      label = next;
+      tell();
+    },
+    named: () => label,
     listen(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
