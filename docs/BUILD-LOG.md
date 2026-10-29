@@ -2965,3 +2965,14 @@ against their SHA256SUMS. The engine's last good backup, from which its 24-hour 
 - **Parked:** nothing new.
 
 **M1.11 built and checked live.** It waits for the owner's merge. **The merge closes M1.**
+
+## M2 proposal (APPROVED 2026-10-28)
+
+The owner approved the M2 proposal: PLAN §4.3, with decisions D22 to D30 and slices M2.1 to M2.10. The answers:
+- **The local LLM:** the Strata server on the home network, beside Claude.
+- **The monthly ceiling:** **$20**.
+- **News:** GDELT plus curated RSS.
+- **The plan:** as proposed, with M1.13 after M2.3.
+
+It is all within the frozen scope (D5, D9, D15, D20 A/B, G8, G17), and perp research moves in from M1.10. Each
+slice still gets its own plan before code.

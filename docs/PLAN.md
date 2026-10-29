@@ -686,12 +686,59 @@ recording into memory (about 2.1 GB a day). | None (local files). |
 The order is M1.1 → M1.2 → M1.4a → M1.4b and M1.5 (with M1.3 alongside) → M1.6 → M1.7 → M1.8 → M1.9 → M1.12 →
 M1.11. M1.10 can run any time after M1.2; M1.13 any time after M1.12 and before M3's back-tests. (M1.12 is listed before the close-out because the close-out checks it.)
 
+### 4.3 M2 Sources: decisions and slices (APPROVED 2026-10-28)
+
+**Goal:** weather and news enter IKARS from the first slice, recorded with the time IKARS received them (D20 A).
+Behind them come the LLM layer with its safeguards (D9, D20 B), GPU embeddings (D15), and the settlement rules
+and calendar (G8). **M2 makes no new recommendations:** linking items to markets and turning them into signals
+is M3. Everything here sits under D5, D9, D15, D20 A/B, G8 and G17. Perp research moves in from M1.10. The
+Strata server (D24) is the one new resource: a home-network service, as the NAS is.
+
+**Owner's answers (2026-10-28):**
+- the Strata server is the local LLM backend;
+- the monthly cost ceiling is **$20**: plugins degrade at 80% and cloud calls pause at 100%;
+- news comes from GDELT plus curated RSS;
+- the plan is approved as proposed.
+
+| # | Decision |
+|---|---|
+| **D22 Weather** | NWS `api.weather.gov`, which is free and public domain (a contact User-Agent is required). It covers the stations Kalshi's weather markets settle on, found from each market's rules, not a hand-made list. It records **hourly forecasts**, **observations every 5 min** and the **daily climate report (CLI)**, which is the settlement source itself. |
+| **D23 News** | GDELT DOC 2.0 (free, every 15 min) and a **curated list of public RSS/Atom feeds** kept in Settings. Each feed's terms are checked before it is added (G17). Kept: headline, link, source, publisher time, received time, and the feed's own summary. Full articles are never fetched in M2. Nothing fetched is ever committed. |
+| **D24 LLM backends** | One provider interface (D9) with a backend chosen per task. **Claude:** `claude-haiku-5-5` for the first pass and `claude-sonnet-5-5` for candidates, with the key in `IKARS_ANTHROPIC_API_KEY`. **The local option:** the owner's **Strata server** on the home network (OpenAI-compatible; its key is in the user variable named in the owner's local notes, never in the repository), not a runtime on the workstation. Both are compared on a labelled sample before either is trusted. |
+| **D25 First LLM use** | First-pass classification of news items: relevance, categories and urgency. Every verdict is journalled with its provider and cached by input hash (D20 B). No recommendations are made from it. |
+| **D26 Settlement rules and calendar (G8)** | Each market's rules text is stored and its resolution source parsed (for weather, the station). A calendar of close times and scheduled reports. Signals get a "settles soon, by fine print" guard. Shown on the Market screen and a Calendar panel. |
+| **D27 Embeddings (D15)** | ONNX Runtime (CUDA, with a CPU fallback) and a small open embedding model. It indexes market titles and source items, removes duplicate items, and gives candidate markets for an item, which M3's linking uses. An optional GPU extra. |
+| **D28 GDELT history** | A bounded pull late in M2: 90 days, English and US, flagged as reconstructed (no received time). It is for M3's back-tests. |
+| **D29 Terminal** | The Overview's **Latest source items** goes live. A **Source item** screen (mock-up first). Per-source cards and the **cost meter** on Health. |
+| **D30 Gate** | **Recording:** at least **7 days** for weather and news, with received times and no unlogged gaps. **LLM:** the injection test suite passes, and spend stays within the **$20** monthly ceiling. **Sources:** each one's terms check is recorded. **Perps:** `docs/research/perps.md` exists. |
+
+| Slice | Builds |
+|---|---|
+| **M2.1 Polling-source framework** | The base for polling sources: request budget, backoff, conditional GET, received time, a gap log and health per source, recording through the generic recorder. Also `docs/research/sources.md` with the terms checks. |
+| **M2.2 Weather** | D22, record-only. The 7-day clock for weather starts here. |
+| **M2.3 News** | D23, record-only, with duplicates removed. The 7-day clock for news starts here. |
+| **M1.13 Replay of real recordings** | As planned (§4.1). It comes after M2.3, so the replay covers the news and weather recordings too. |
+| **M2.4 Rules and calendar** | D26. |
+| **M2.5 LLM layer** | D24, D25: the interface, Claude and Strata, the hardening, the cache, the cost meter and daily cap, the injection test suite, and the news first pass. |
+| **M2.6 Embeddings** | D27. |
+| **M2.7 Terminal** | D29, mock-ups first. |
+| **M2.8 GDELT history** | D28. |
+| **M2.9 Perp research** | Moved from M1.10. Read-only: perp endpoints, fees, funding schedule, margin and liquidation rules. Can run any time. |
+| **M2.10 Close-out** | Gate evidence (D30). |
+
+**Machine and outward changes:**
+- **Outbound reads:** NWS, GDELT, the RSS hosts, Anthropic, and Strata on the home network.
+- **The owner's setup:** a Claude API account and key.
+- **Packages,** with licences confirmed per slice: `feedparser` (BSD), `onnxruntime-gpu` (MIT), `tokenizers` (Apache 2.0), the `anthropic` SDK (MIT).
+- **Downloads:** an embedding model of about 100 MB.
+- **Storage:** news and weather recordings are small next to Kalshi's 2.1 GB a day.
+
 ### 4.2 Milestone gates (D21; each is confirmed or tightened in the milestone's own proposal)
 
 | Milestone | Done means | If it fails |
 |---|---|---|
 | **M1** | Installed with Velopack on a clean account; live markets in the terminal through the engine; the ledger reconciles exactly with Kalshi's balance and positions; the restore drill and the workstation-lost runbook pass; the latency and frame-time targets are measured; M1.12's momentum recommendations appear end to end and are journalled. | Fix within M1; nothing in M2 starts. |
-| **M2** | The weather and news plugins have recorded for **at least 7 days** with received times and no unlogged gaps; the LLM injection tests pass; spend is within the budget. | Fix the plugin, or drop that source with the owner. |
+| **M2** | **Tightened by D30 (§4.3):** the weather and news plugins have recorded for **at least 7 days** with received times and no unlogged gaps; the LLM injection tests pass; spend is within the **$20** monthly ceiling; each source's terms check is recorded; the perp research doc exists. | Fix the plugin, or drop that source with the owner. |
 | **M3** | Every signal rule is registered by hash before scoring; replays are reproducible byte for byte; at least one signal is positive after costs on the validation part, which makes it a forward-test candidate. | No candidate: the owner decides whether to narrow the scope or rethink. M4 does not start for a signal without a candidate result. |
 | **M4** | Every recommendation carries a size, fill probability, return per day, tradability check and provenance; alerts meet the latency target. | Fix within M4. |
 | **M5** | **Pre-registered stop rule, per strategy:** at least N scored recommendations (N fixed in M3 when the rule is registered; 300 by default, as in KAPS and SPARQ), a mean P&L after costs above zero, and a 95% lower bound above zero (bootstrap clustered by event). Passing strategies are kept; the rest are demoted (G19). | **Project rule:** if no strategy passes, IKARS does not go to M7. The owner chooses: stop, rethink, or a new pre-registered test. |
@@ -718,7 +765,8 @@ M1.11. M1.10 can run any time after M1.2; M1.13 any time after M1.12 and before 
 | M1.7 Loopback API and contracts | **done** (BUILD-LOG 1.7; PR #10 merged as `0ba5d83`) |
 | M1.R Base hardening (owner, 2026-10-27) | **built** on `m1/r-hardening` (BUILD-LOG 1.R): a whole-code-base review's items 1 to 26 fixed, plus 10 merge-review findings; **done** (PR #14, `fca7941`) |
 | M1.8a-web-1a Engine side of the web terminal | **done** (PR #16, `d70cb83`; BUILD-LOG 1.8a-web-1a): file serving with the browser hardening, cookie sign-in that survives restarts, `ikars open`, contracts 2.0, `demo-api`; security review (1 finding, fixed) and merge review (8, fixed) |
-| M1.11 Close-out | **built** on `m1/11` (BUILD-LOG 1.11): the M1 gate evidence (a clean-account install of v0.1.9, the runbook end to end with an exact reconcile, the drill), `ikars backup restore` and `docs/RUNBOOK.md`, the network wait at start, **Back up now** (approved addition); milestone review 8 + 1 fixed, merge review 10 fixed; Back up now live on v0.1.10; **its merge closes M1** |
+| M2 Sources proposal | **approved 2026-10-28** (§4.3): D22 to D30, slices M2.1 to M2.10, M1.13 after M2.3; Strata as the local LLM; a $20 monthly ceiling; GDELT and curated RSS |
+| M1.11 Close-out | **done** (PR #31, `14fb25d`): **M1 complete** (BUILD-LOG 1.11): the M1 gate evidence (a clean-account install of v0.1.9, the runbook end to end with an exact reconcile, the drill), `ikars backup restore` and `docs/RUNBOOK.md`, the network wait at start, **Back up now** (approved addition); milestone review 8 + 1 fixed, merge review 10 fixed; Back up now live on v0.1.10; **its merge closes M1** |
 | M1.12d Navigation: rows, Back, named crumbs | **done** (PR #30, `40283b4`), live on v0.1.9 (BUILD-LOG 1.12d; merge review 7 fixed, 1 no change): a row opens its recommendation, highlighted row with arrow keys, Enter and C/T/I/D on the Overview, a Back button, the last crumb named |
 | M1.12c The terminal side of momentum | **done** (PR #29; BUILD-LOG 1.12c): the Overview's ranked list and scorecard, the Recommendation screen (T/I/D, C), kept scores, notifications for the top-ranked (3 an hour); merge review (9 fixed, 1 no change); live on v0.1.8 |
 | M1.12b Momentum, P&L after fees | **done** (PR #28, `3f0f8bd`), built on `m1/12b` (BUILD-LOG 1.12b): the registered momentum rule (v1 `0d648804a13a`), tradability, `pnl.py`, scores after fees and at settlement; live on v0.1.7 (a week's run decides the rule); merge review (9, fixed) |
