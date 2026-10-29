@@ -128,7 +128,8 @@ STATE_MIGRATIONS = (
         feed TEXT PRIMARY KEY,
         etag TEXT,
         last_modified TEXT,
-        last_ok_ns INTEGER
+        last_ok_ns INTEGER,
+        wait_s REAL                     -- its healthy wait (the interval, or the server's max-age)
     );
     CREATE TABLE poll_seen (
         feed TEXT NOT NULL,
@@ -208,21 +209,34 @@ class StateStore:
 
     # --- polling sources (M2.1) ----------------------------------------------------------------
 
-    def poll_feed(self, feed: str) -> tuple[str | None, str | None, int | None]:
-        """A feed's ETag, Last-Modified and last good poll, as last kept."""
+    def poll_feed(self, feed: str) -> tuple[str | None, str | None, int | None, float | None]:
+        """A feed's ETag, Last-Modified, last good poll and healthy wait, as last kept."""
         row = self._db.execute(
-            "SELECT etag, last_modified, last_ok_ns FROM poll_feed WHERE feed = ?", (feed,)
+            "SELECT etag, last_modified, last_ok_ns, wait_s FROM poll_feed WHERE feed = ?", (feed,)
         ).fetchone()
-        return (None, None, None) if row is None else (row[0], row[1], row[2])
+        return (None, None, None, None) if row is None else (row[0], row[1], row[2], row[3])
 
     def set_poll_feed(
-        self, feed: str, etag: str | None, last_modified: str | None, last_ok_ns: int
+        self,
+        feed: str,
+        etag: str | None,
+        last_modified: str | None,
+        last_ok_ns: int,
+        wait_s: float | None = None,
     ) -> None:
         self._db.execute(
-            "INSERT INTO poll_feed (feed, etag, last_modified, last_ok_ns) VALUES (?, ?, ?, ?)"
-            " ON CONFLICT (feed) DO UPDATE SET etag = excluded.etag,"
-            " last_modified = excluded.last_modified, last_ok_ns = excluded.last_ok_ns",
-            (feed, etag, last_modified, last_ok_ns),
+            "INSERT INTO poll_feed (feed, etag, last_modified, last_ok_ns, wait_s)"
+            " VALUES (?, ?, ?, ?, ?) ON CONFLICT (feed) DO UPDATE SET etag = excluded.etag,"
+            " last_modified = excluded.last_modified, last_ok_ns = excluded.last_ok_ns,"
+            " wait_s = excluded.wait_s",
+            (feed, etag, last_modified, last_ok_ns, wait_s),
+        )
+
+    def set_poll_ok(self, feed: str, last_ok_ns: int, wait_s: float) -> None:
+        """A good poll that changed nothing (304): the validators stay."""
+        self._db.execute(
+            "UPDATE poll_feed SET last_ok_ns = ?, wait_s = ? WHERE feed = ?",
+            (last_ok_ns, wait_s, feed),
         )
 
     def unseen(self, feed: str, ids: list[str]) -> list[str]:
@@ -246,10 +260,19 @@ class StateStore:
         return fresh
 
     def remember(self, feed: str, ids: list[str], at_ns: int) -> None:
-        self._db.executemany(
-            "INSERT OR IGNORE INTO poll_seen (feed, id, at_ns) VALUES (?, ?, ?)",
-            [(feed, one, at_ns) for one in ids],
-        )
+        """``ids`` seen in ``feed`` now: their time is the last sighting, so an item a feed still
+        lists is never forgotten (merge review 5); one transaction (merge review 9)."""
+        self._db.execute("BEGIN")
+        try:
+            self._db.executemany(
+                "INSERT INTO poll_seen (feed, id, at_ns) VALUES (?, ?, ?)"
+                " ON CONFLICT (feed, id) DO UPDATE SET at_ns = excluded.at_ns",
+                [(feed, one, at_ns) for one in ids],
+            )
+            self._db.execute("COMMIT")
+        except BaseException:
+            self._db.execute("ROLLBACK")
+            raise
 
     def forget_seen(self, before_ns: int) -> int:
         """Drop remembered ids older than ``before_ns`` (feeds list only recent items)."""

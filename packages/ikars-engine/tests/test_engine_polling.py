@@ -10,7 +10,7 @@ import httpx
 import pytest
 from ikars_engine.clocks import VirtualClock
 from ikars_engine.model import Item
-from ikars_engine.plugins import PluginContext, PluginKind, PluginSpec
+from ikars_engine.plugins import PluginContext, PluginError, PluginKind, PluginSpec
 from ikars_engine.polling import (
     GAP_AFTER,
     NS,
@@ -19,6 +19,7 @@ from ikars_engine.polling import (
     Poller,
     PollError,
     PollingSource,
+    backoff_s,
     user_agent,
 )
 from ikars_engine.settings import VERSION, Settings, migrate
@@ -109,7 +110,7 @@ def run_source(
     async def go() -> None:
         try:
             await source.run(ctx)
-        except Done:
+        except* Done:  # the feeds' loops run in a TaskGroup
             pass
         finally:
             await poller.aclose()
@@ -197,7 +198,7 @@ def test_the_server_says_how_long_to_wait(tmp_path: Path) -> None:
     waits = clock.slept  # the first poll needs no wait
     assert waits[0] >= 300 * 0.9  # max-age, less the jitter
     assert waits[1] >= 120 * 0.9  # Retry-After
-    assert waits[2] <= 60 * 1.1  # backoff, never longer than the interval
+    assert 60 * 0.9 <= waits[2] <= 120 * 1.1  # a 503 again: never sooner than the interval
     assert poller.health()["test-news.main"]["errors"] == 2  # type: ignore[index]
     store.close()
 
@@ -301,3 +302,86 @@ def test_settings_version_6_adds_sources_and_the_owners_ceiling() -> None:
     assert chosen["budget"]["monthly_e6"] == 30_000_000  # a ceiling the owner set stays
     assert migrate({"version": 5})["version"] == 6
     assert Settings().sources.contact_email == "" and Settings().budget.monthly_e6 == 20_000_000
+
+
+def test_the_backoff_curve() -> None:
+    # merge review 1 and 4: a first blip retried at half the interval, then never sooner than it
+    assert backoff_s(600, 1, None) == 300
+    assert [backoff_s(600, n, None) for n in (2, 3, 4)] == [900, 900, 900]  # capped at 15 min
+    assert [backoff_s(60, n, None) for n in (2, 3, 4, 5)] == [120, 240, 480, 900]
+    assert backoff_s(60, 5_000, None) == 900  # no overflow after days of failures
+    assert backoff_s(3_600, 3, None) == 3_600  # the cap is the interval when that is longer
+    slow_down = PollError("HTTP 429", throttled=True)
+    assert backoff_s(60, 1, slow_down) == 60  # never sooner than the interval
+    assert backoff_s(60, 1, PollError("HTTP 503", 600, throttled=True)) == 600
+
+
+def test_a_long_max_age_is_not_a_gap(tmp_path: Path) -> None:
+    # merge review 3: a feed polled every 60 s whose server says max-age 300
+    server = Server([items("a", headers={"Cache-Control": "max-age=300"})])
+    _, poller, _, store = run_source(tmp_path, server, sleeps=5)
+    assert store.gaps() == [] and poller.health()["test-news.main"]["gaps"] == 0  # type: ignore[index]
+    store.close()
+
+
+def test_an_item_still_listed_after_two_weeks_is_not_recorded_again(tmp_path: Path) -> None:
+    # merge review 5: each sighting refreshes when the id was last seen
+    server = Server([items("old")])
+    emitted, _, clock, store = run_source(tmp_path, server, sleeps=0)
+    assert [i.ref.id for i in emitted] == ["old"]
+    later = FakeClock(0)
+    later.now = clock.now + 10 * 86_400 * NS  # still listed ten days on
+    run_source(tmp_path, server, sleeps=0, store=store, clock=later)
+    store.forget_seen(later.now - 5 * 86_400 * NS)  # its first sighting is long gone
+    again = FakeClock(0)
+    again.now = later.now + 60 * NS
+    emitted, _, _, _ = run_source(tmp_path, server, sleeps=0, store=store, clock=again)
+    assert emitted == []
+    store.close()
+
+
+class Refuses(News):
+    """Its spec does not let it emit what it reads: a fault in the plugin, not the feed."""
+
+    spec = PluginSpec(name="test-news", kind=PluginKind.SOURCE, version="1", produces=("other",))
+
+
+def test_a_fault_in_the_plugin_is_not_retried_as_a_feed_problem(tmp_path: Path) -> None:
+    # merge review 7: the host counts it as a crash
+    with pytest.raises(ExceptionGroup) as raised:
+        run_source(tmp_path, Server([items("a")]), sleeps=3, source=Refuses())
+    assert raised.group_contains(PluginError)
+
+
+def test_what_went_out_before_an_emit_failed_is_remembered(tmp_path: Path) -> None:
+    # merge review 6: a reply half emitted, then retried, sends only the rest
+    store = StateStore(tmp_path / "state.sqlite")
+    clock = FakeClock(1)
+    poller = Poller(
+        store,
+        clock,
+        user_agent("9.9"),
+        transport=httpx.MockTransport(Server([items("a", "b", "c")])),
+    )
+    sent: list[str] = []
+
+    async def emit(item: Item) -> None:
+        if item.ref.id == "b" and "b" not in sent and len(sent) == 1:
+            sent.append("fail")
+            raise RuntimeError("the queue was full")
+        sent.append(item.ref.id)
+
+    source = News()
+    ctx = PluginContext(source.spec, clock, {}, emit, 30.0, services={"poller": lambda: poller})
+
+    async def go() -> None:
+        try:
+            await source.run(ctx)
+        except* Done:
+            pass
+        finally:
+            await poller.aclose()
+
+    asyncio.run(go())
+    assert [s for s in sent if s != "fail"] == ["a", "b", "c"]  # a once, then b and c on the retry
+    store.close()

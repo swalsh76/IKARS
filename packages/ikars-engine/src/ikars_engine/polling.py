@@ -41,7 +41,7 @@ from ikars_core.ratelimit import TokenBucket
 
 from ikars_engine.clocks import EventClock
 from ikars_engine.model import Item, Ref
-from ikars_engine.plugins import PluginBase, PluginContext
+from ikars_engine.plugins import PluginBase, PluginContext, PluginError
 from ikars_engine.store import StateStore
 
 log = logging.getLogger("ikars_engine.polling")
@@ -82,9 +82,12 @@ class Found(msgspec.Struct, frozen=True, kw_only=True):
 class PollError(Exception):
     """A poll that failed; ``retry_after_s`` when the server said when to come back."""
 
-    def __init__(self, reason: str, retry_after_s: float | None = None) -> None:
+    def __init__(
+        self, reason: str, retry_after_s: float | None = None, *, throttled: bool = False
+    ) -> None:
         super().__init__(reason)
         self.retry_after_s = retry_after_s
+        self.throttled = throttled  # 429 or 503: the server asked IKARS to slow down
 
 
 @dataclass(slots=True)
@@ -96,6 +99,7 @@ class FeedHealth:
     emitted: int = 0
     gaps: int = 0
     last_ok_ns: int | None = None
+    wait_s: float | None = None  # the healthy wait: the interval, or the server's max-age
     last_error: str | None = None
     failing_since_ns: int | None = None
     next_ns: int | None = None
@@ -157,7 +161,7 @@ class Poller:
                 sleep=self._clock.sleep,
             )
         await bucket.acquire(1.0)
-        etag, modified, _ = self._store.poll_feed(feed.name)
+        etag, modified, _, _ = self._store.poll_feed(feed.name)
         headers = {"Accept": feed.accept}
         if etag:
             headers["If-None-Match"] = etag
@@ -168,7 +172,8 @@ class Poller:
                 if reply.status_code == 304:
                     return None
                 if reply.status_code in (429, 503):
-                    raise PollError(f"HTTP {reply.status_code}", _retry_after(reply.headers))
+                    retry = _retry_after(reply.headers, self._clock.now_ns())
+                    raise PollError(f"HTTP {reply.status_code}", retry, throttled=True)
                 if reply.status_code != 200:
                     raise PollError(f"HTTP {reply.status_code}")
                 body = bytearray()
@@ -181,42 +186,46 @@ class Poller:
             raise PollError(type(exc).__name__) from exc
         return Fetched(bytes(body), _max_age(reply.headers), etag, modified)
 
-    def succeeded(self, feed: Feed, health: FeedHealth, fetched: Fetched | None) -> None:
+    def started(self, feed: Feed) -> FeedHealth:
+        """The feed's health, with its last good poll and healthy wait as kept across restarts."""
+        health = self.feeds.setdefault(feed.name, FeedHealth(feed.every_s))
+        _, _, health.last_ok_ns, health.wait_s = self._store.poll_feed(feed.name)
+        return health
+
+    def succeeded(
+        self, feed: Feed, health: FeedHealth, fetched: Fetched | None, wait_s: float
+    ) -> None:
         """A good poll, its items emitted: the reply's validators are kept now (so a reply whose
         items failed to go out is asked for again), and a gap is logged for the window since the
-        last good poll when it was too long."""
+        last good poll when it was longer than ``GAP_AFTER`` healthy waits (the interval, or the
+        server's max-age when longer: merge review 3)."""
         now = self._clock.now_ns()
-        etag, modified, last_ok = self._store.poll_feed(feed.name)
-        if fetched is not None:
-            etag, modified = fetched.etag, fetched.last_modified
-        if last_ok is not None and now - last_ok > GAP_AFTER * feed.every_s * NS:
+        last_ok, healthy = health.last_ok_ns, max(feed.every_s, health.wait_s or 0.0)
+        if last_ok is not None and now - last_ok > GAP_AFTER * healthy * NS:
             cause = health.last_error or "the engine was not running"
             detail = f"no good poll ({cause}); the next one returned the feed's current items"
             gap = self._store.add_gap(feed.name, "unreachable", last_ok, now, "refetched", now)
             self._store.finish_gap(gap, "done", detail)
             health.gaps += 1
-        self._store.set_poll_feed(feed.name, etag, modified, now)
-        health.last_ok_ns = now
+        if fetched is None:  # 304: the validators stay
+            self._store.set_poll_ok(feed.name, now, wait_s)
+        else:
+            self._store.set_poll_feed(feed.name, fetched.etag, fetched.last_modified, now, wait_s)
+        health.last_ok_ns, health.wait_s = now, wait_s
         health.failing_since_ns = None
         health.last_error = None
 
-    def last_ok(self, feed: Feed) -> int | None:
-        """When ``feed`` last answered well (kept across restarts)."""
-        return self._store.poll_feed(feed.name)[2]
-
     def fresh(self, feed: Feed, found: list[Found]) -> list[Found]:
         """The items ``feed`` has not emitted before, each once, in their order."""
-        keep = set(self._store.unseen(feed.name, [f.id for f in found]))
-        out = []
+        first: dict[str, Found] = {}
         for f in found:
-            if f.id in keep:
-                keep.discard(f.id)
-                out.append(f)
-        return out
+            first.setdefault(f.id, f)
+        return [first[i] for i in self._store.unseen(feed.name, list(first))]
 
-    def emitted(self, feed: Feed, found: list[Found]) -> None:
+    def emitted(self, feed: Feed, ids: list[str]) -> None:
+        """``ids`` emitted, or still listed, by ``feed`` now."""
         now = self._clock.now_ns()
-        self._store.remember(feed.name, [f.id for f in found], now)
+        self._store.remember(feed.name, ids, now)
         if self._pruned_ns is None or now - self._pruned_ns > 86_400 * NS:  # once a day
             self._pruned_ns = now
             self.forget_old()
@@ -244,13 +253,16 @@ class PollingSource(PluginBase):
             ctx.log.warning("no poller in this engine: the source stays idle")
             return
         poller: Poller = get()
-        feeds = self.feeds(ctx)
-        await asyncio.gather(*(self._loop(feed, poller, ctx) for feed in feeds))
+        # a TaskGroup: one feed's loop that fails cancels the others, so a restart never leaves
+        # two loops polling one feed (merge review 2)
+        async with asyncio.TaskGroup() as group:
+            for feed in self.feeds(ctx):
+                group.create_task(self._loop(feed, poller, ctx), name=f"poll {feed.name}")
 
     async def _loop(self, feed: Feed, poller: Poller, ctx: PluginContext) -> None:
-        health = poller.feeds.setdefault(feed.name, FeedHealth(feed.every_s))
+        health = poller.started(feed)
         rng = random.Random(feed.name)  # noqa: S311 (jitter, not security; the same per feed)
-        last_ok = poller.last_ok(feed)
+        last_ok = health.last_ok_ns
         now = ctx.clock.now_ns()
         due = now if last_ok is None else max(now, last_ok + int(feed.every_s * NS))
         failures = 0
@@ -267,18 +279,18 @@ class PollingSource(PluginBase):
                     await self._emit_new(feed, fetched.body, poller, ctx, health)
                     if fetched.max_age_s is not None:
                         wait_s = max(wait_s, fetched.max_age_s)
-                poller.succeeded(feed, health, fetched)
+                poller.succeeded(feed, health, fetched, wait_s)
                 failures = 0
+            except PluginError:
+                raise  # a fault in the plugin, not the feed: the host counts it (merge review 7)
             except Exception as exc:  # one feed's trouble never stops the others
                 failures += 1
                 health.errors += 1
                 health.last_error = str(exc) if isinstance(exc, PollError) else type(exc).__name__
                 if health.failing_since_ns is None:
                     health.failing_since_ns = ctx.clock.now_ns()
-                retry = exc.retry_after_s if isinstance(exc, PollError) else None
-                wait_s = min(feed.every_s, 2.0**failures * 5.0, BACKOFF_MAX_S)
-                if retry is not None:
-                    wait_s = max(wait_s, min(retry, RETRY_AFTER_MAX_S))
+                error = exc if isinstance(exc, PollError) else None
+                wait_s = backoff_s(feed.every_s, failures, error)
                 ctx.log.warning(
                     "poll failed", extra={"feed": feed.name, "error": health.last_error}
                 )
@@ -288,19 +300,27 @@ class PollingSource(PluginBase):
     async def _emit_new(
         self, feed: Feed, body: bytes, poller: Poller, ctx: PluginContext, health: FeedHealth
     ) -> None:
-        found = poller.fresh(feed, self.parse(feed, body, ctx))
-        for one in found:
-            await ctx.emit(
-                Item(
-                    ref=Ref(self.item_kind, one.id),
-                    source=self.spec.name,
-                    received_ns=0,  # the host stamps it
-                    published_ns=one.published_ns,
-                    payload={**one.payload, "feed": feed.name},
+        listed = self.parse(feed, body, ctx)
+        sent: list[str] = []
+        done = False
+        try:
+            for one in poller.fresh(feed, listed):
+                await ctx.emit(
+                    Item(
+                        ref=Ref(self.item_kind, one.id),
+                        source=self.spec.name,
+                        received_ns=0,  # the host stamps it
+                        published_ns=one.published_ns,
+                        payload={**one.payload, "feed": feed.name},
+                    )
                 )
-            )
-        poller.emitted(feed, found)
-        health.emitted += len(found)
+                sent.append(one.id)
+            done = True
+        finally:
+            # all went out: every listed id is refreshed (still listed: never forgotten); part
+            # went out: those are remembered, so a retry never sends them twice (merge review 6)
+            poller.emitted(feed, [f.id for f in listed] if done else sent)
+            health.emitted += len(sent)
 
 
 async def _sleep_until(clock: EventClock, due_ns: int) -> None:
@@ -317,7 +337,20 @@ def _max_age(headers: httpx.Headers) -> float | None:
     return float(found.group(1)) if found else None
 
 
-def _retry_after(headers: httpx.Headers) -> float | None:
+def backoff_s(every_s: float, failures: int, error: PollError | None) -> float:
+    """The wait after the ``failures``-th failure in a row. A first ordinary error is retried at
+    half the interval, so one blip stays under the gap rule; then from the interval, doubling up to
+    ``BACKOFF_MAX_S`` (or the interval, when longer). A server that said slow down is never asked
+    sooner than the interval or its Retry-After (merge review 1 and 4)."""
+    if failures == 1 and not (error is not None and error.throttled):
+        return every_s / 2
+    wait = min(every_s * 2.0 ** min(failures - 1, 10), max(BACKOFF_MAX_S, every_s))
+    if error is not None and error.retry_after_s is not None:
+        wait = max(wait, min(error.retry_after_s, RETRY_AFTER_MAX_S))
+    return wait
+
+
+def _retry_after(headers: httpx.Headers, now_ns: int) -> float | None:
     value = headers.get("retry-after", "").strip()
     if not value:
         return None
@@ -327,7 +360,8 @@ def _retry_after(headers: httpx.Headers) -> float | None:
         when = parsedate_to_datetime(value)
     except (TypeError, ValueError):
         return None
-    return max(0.0, (when - datetime.now(UTC)).total_seconds())
+    now = datetime.fromtimestamp(now_ns / NS, UTC)  # the engine's clock (merge review 8)
+    return max(0.0, (when - now).total_seconds())
 
 
 def _health_view(h: FeedHealth) -> dict[str, Any]:
