@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import msgspec
 import pytest
 from ikars_core.fees import FeeSchedule
 from ikars_engine.backup_service import LAST_OK, BackupService
@@ -19,7 +20,7 @@ from ikars_engine.kalshi.runner import PortfolioHealth
 from ikars_engine.ledger import Entry, Ledger
 from ikars_engine.ledger_import import fill_cash, replay
 from ikars_engine.paths import Paths
-from ikars_engine.portfolio import holdings, portfolio
+from ikars_engine.portfolio import Held, holdings, portfolio
 from ikars_engine.share import (
     MARKER,
     SUMS,
@@ -772,3 +773,90 @@ def test_a_share_with_only_a_ledger_backup_restores_the_ledger(nas: Path, tmp_pa
     done = restore_into(share, Paths(tmp_path / "new-machine"))
     assert (done.records, done.checkpoints, done.state_day) == (3, 0, None)
     assert (done.journal, done.settings) == (False, False)
+
+
+# --- Back up now (M1.11) -------------------------------------------------------------------------
+
+
+async def test_a_backup_asked_for_now_restarts_the_clock_and_runs_one_at_a_time(
+    nas: Path, tmp_path: Path
+) -> None:
+    paths = make_data(tmp_path / "ikars-data")
+    state = StateStore(paths.data / "state.sqlite")
+    clock = VirtualClock(T0)
+    off = BackupService(None, paths, state, clock)
+    assert await off.request() == (False, "no share is set (Settings: backups)")
+    service = BackupService(Share(str(nas)), paths, state, clock)
+    made, detail = await service.request()  # the share has no marker yet
+    assert not made and detail == "the backup failed (ShareError)" and str(nas) not in detail
+    Share(str(nas)).init(T0)
+    clock.advance_to(T0 + DAY_NS // 2)
+    assert await service.request() == (True, "backed up and checked on the share")
+    assert state.bookmark(LAST_OK) == T0 + DAY_NS // 2  # the 24-hour clock restarts from it
+    assert await service.run_if_due() is False
+    first = asyncio.create_task(service.request())
+    await asyncio.sleep(0)  # the first holds the lock, copying in its thread
+    assert service.health()["running"] is True
+    assert await service.request() == (False, "a backup is already running")
+    assert (await first)[0] is True and service.health()["running"] is False
+    state.close()
+
+
+async def test_the_backup_route(tmp_path: Path) -> None:
+    import httpx
+    from ikars_engine import contracts as c
+    from ikars_engine.api import ApiContext, create_app
+    from ikars_engine.kalshi.discovery import MarketIndex
+    from ikars_engine.metrics import Metrics
+
+    ledger = Ledger(tmp_path / "ledger.sqlite", UTC)
+    asked: list[int] = []
+
+    async def backup() -> tuple[bool, str]:
+        asked.append(1)
+        return True, "backed up and checked on the share"
+
+    ctx = ApiContext(
+        token="t" * 43, health=dict, index=MarketIndex(), quotes={}, last_price={}, changed_ns={},
+        book_changed_ns={}, books={}, book_version={}, watched=set, ledger=ledger,
+        ledger_health=dict,
+        portfolio=lambda: portfolio({}, lambda s: None, lambda s: None, Held({}, 0)),
+        alert_log=tmp_path / "alerts.jsonl", metrics=Metrics(), now_ns=lambda: 0, backup=backup,
+    )  # fmt: skip
+    auth = {"Authorization": f"Bearer {ctx.token}"}
+    transport = httpx.ASGITransport(app=create_app(ctx))
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as http:
+        assert (await http.post("/v1/backup")).status_code == 401  # the token, as everywhere
+        done = msgspec.json.decode(
+            (await http.post("/v1/backup", headers=auth)).content, type=c.Done
+        )
+        assert done.done and asked == [1]
+        assert (await http.get("/v1/backup", headers=auth)).status_code == 405
+        ctx.backup = None
+        done = msgspec.json.decode(
+            (await http.post("/v1/backup", headers=auth)).content, type=c.Done
+        )
+        assert not done.done and "not running" in done.detail
+    ledger.close()
+
+
+def test_backup_run_goes_through_a_running_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ikars_engine import contracts as c
+    from ikars_engine import ledger_cli
+    from ikars_engine.__main__ import main
+
+    root = tmp_path / "ikars-data"
+    make_data(root)
+    real = ledger_cli.engine_backup
+    monkeypatch.setattr(ledger_cli, "engine_running", lambda folder: True)
+    monkeypatch.setattr(
+        ledger_cli, "engine_backup", lambda paths: c.Done(done=True, detail="backed up")
+    )
+    assert main(["ikars", "backup", "--root", str(root), "run"]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "ok": True, "detail": "backed up", "by": "the running engine"
+    }  # fmt: skip
+    no_api = real(Paths(root))  # no api.json: the engine is not up yet
+    assert not no_api.done and "not up yet" in no_api.detail

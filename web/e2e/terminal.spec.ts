@@ -37,6 +37,13 @@ test("drills into Health and back, with real addresses, and stays signed in on r
   await expect(page.getByRole("region", { name: "Ledger" })).toContainText("Reconciled exactly");
   await expect(page.getByRole("heading", { name: "Gap log (last 7 days)" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toHaveText(/Overview\s*›\s*Health/);
+  // Back up now (M1.11): the made-up backup takes half a second
+  const backups = page.getByRole("region", { name: "Backups" });
+  await expect(backups).toContainText("Last copy 3 h ago");
+  await backups.getByRole("button", { name: "Back up now" }).click();
+  await expect(page.getByTestId("backup-note")).toHaveText(/^Backed up at .+, checked on the share$/);
+  await expect(backups).toContainText("Last copy 0 h ago");
+  await expect(backups).toContainText("next automatic copy in 24 h");
   await page.goBack();
   await expect(page.getByRole("heading", { name: "Portfolio and exposure" })).toBeVisible();
   await page.goForward();

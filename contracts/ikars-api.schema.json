@@ -98,6 +98,17 @@
               "type": "null"
             }
           ]
+        },
+        "running": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -1952,5 +1963,5 @@
     "recommendations": "RecommendationPage"
   },
   "title": "IKARS loopback API",
-  "version": "2.1"
+  "version": "2.2"
 }

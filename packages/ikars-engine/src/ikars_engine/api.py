@@ -120,6 +120,9 @@ class ApiContext:
     candles: "Callable[[str, str, int, int, int], Awaitable[list[Candlestick]]] | None" = None
     # the engine's gap log, ended at or after a time (newest first, at most a limit)
     gaps: "Callable[[int, int], list[Gap]] | None" = None
+    # a backup now (Back up now, M1.11): (made, a line that never names the share); None: no
+    # backup service (tests, demo without one)
+    backup: "Callable[[], Awaitable[tuple[bool, str]]] | None" = None
     streams: dict[str, "Stream"] = field(default_factory=dict)
     # (loop time, body, status): successes and failures alike, for CANDLE_CACHE_S
     candle_cache: dict[tuple[str, int, int], tuple[float, bytes, int]] = field(default_factory=dict)
@@ -416,6 +419,7 @@ def health_view(health: dict[str, Any]) -> c.HealthView:
             configured=_typed(at(health, "backup", "configured"), bool),
             hours_since=_typed(at(health, "backup", "hours_since"), int),
             last_error=_typed(at(health, "backup", "last_error"), str),
+            running=_typed(at(health, "backup", "running"), bool),
         ),
         clock_status=_typed(at(health, "clock", "status"), str),
         clock_offset_ms=_typed(at(health, "clock", "offset_ms"), float),
@@ -821,6 +825,14 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         except (support.BundleRefused, OSError) as exc:
             return _json(c.Done(done=False, detail=str(exc)))
 
+    async def backup_now(request: Request) -> Response:
+        """A backup now (the Health screen's Back up now): made and checked on the share, or why
+        not. One at a time; it restarts the 24-hour clock."""
+        if ctx.backup is None:
+            return _json(c.Done(done=False, detail="backups are not running in this engine"))
+        made, detail = await ctx.backup()
+        return _json(c.Done(done=made, detail=detail))
+
     def updater() -> "Updater":
         return ctx.updates if ctx.updates is not None else Updater()  # none: "not installed"
 
@@ -899,6 +911,7 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         Route("/v1/engine/autostart", autostart_install, methods=["POST"]),
         Route("/v1/engine/restart", restart, methods=["POST"]),
         Route("/v1/support/bundle", support_bundle, methods=["POST"]),
+        Route("/v1/backup", backup_now, methods=["POST"]),
         Route("/v1/update", update_view),
         Route("/v1/update/check", update_check, methods=["POST"]),
         Route("/v1/update/apply", update_apply, methods=["POST"]),

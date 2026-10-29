@@ -343,6 +343,7 @@ async def build(
             metrics=metrics,
             now_ns=clock.now_ns,
             gaps=state.gaps_since,
+            backup=backups.request,
             candles=lambda series, ticker, start, end, interval: data.candlesticks(
                 series, ticker, start_ts=start, end_ts=end, period_interval=interval
             ),

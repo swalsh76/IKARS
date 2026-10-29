@@ -126,6 +126,29 @@ def made_up_candles(start_s: int, end_s: int, minutes: int, seed: str) -> list[C
     return rows
 
 
+class DemoBackup:
+    """A made-up backup for the Health screen's Back up now (no share is touched)."""
+
+    def __init__(self) -> None:
+        self.hours_since: int | None = 3
+        self.running = False
+
+    async def request(self) -> tuple[bool, str]:
+        if self.running:
+            return False, "a backup is already running"
+        self.running = True
+        try:
+            await asyncio.sleep(0.5)
+        finally:
+            self.running = False
+        self.hours_since = 0
+        return True, "backed up and checked on the share"
+
+    def health(self) -> dict[str, Any]:
+        return {"configured": True, "hours_since": self.hours_since, "last_error": None,
+                "running": self.running}  # fmt: skip
+
+
 def demo_health(market: Market) -> dict[str, Any]:
     return {
         "kalshi": {"feed": {"connected": True, "seconds_since_last_frame": 0.1},
@@ -133,7 +156,6 @@ def demo_health(market: Market) -> dict[str, Any]:
                    "watched": {"markets": len(market.books)}, "trading_active": True,
                    "storage": {"state": "ok"}},
         "ledger": {"verified": True, "reconciled_exact": True, "records": 3, "errors": 0},
-        "backup": {"configured": False, "hours_since": None, "last_error": None},
         "clock": {"status": "ok", "offset_ms": 1.5}, "gpu": {"device": "Made-up GPU"},
         "plugins": {}, "demo": True,
     }  # fmt: skip
@@ -206,9 +228,14 @@ async def serve(
     made_up_recommendations(market, recommendations, time.time_ns())
     await recommendations.refresh_card()
 
+    backups = DemoBackup()
+
+    def health() -> dict[str, Any]:
+        return {**demo_health(market), "backup": backups.health(), "api": server.health()}
+
     def context_for(token: str) -> ApiContext:
         api = ApiContext(
-            token=token, health=lambda: {**demo_health(market), "api": server.health()},
+            token=token, health=health,
             index=market.index, quotes=market.quotes, last_price=market.last,
             changed_ns=market.changed, book_changed_ns=market.book_changed, books=market.books,
             book_version=market.book_version, watched=lambda: set(market.books), ledger=ledger,
@@ -216,7 +243,7 @@ async def serve(
             portfolio=lambda: portfolio(market.quotes, lambda s: None, lambda s: None, held),
             alert_log=alerts, metrics=Metrics(), now_ns=time.time_ns, sessions=sessions,
             web_root=terminal_root(), candles=candles, config=config, journal=journal,
-            recommendations=recommendations,
+            recommendations=recommendations, backup=backups.request,
         )  # fmt: skip
         return api
 

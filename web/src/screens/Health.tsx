@@ -45,6 +45,36 @@ function Gaps() {
 }
 
 const BUNDLE_WAIT_MS = 120_000; // up to 50 MB of logs are redacted and checked
+const BACKUP_WAIT_MS = 900_000; // a full copy to a slow share takes minutes
+
+/** Back up now (M1.11): the engine makes its backup at once; one at a time, and it restarts the
+ * 24-hour clock. The card's own lines show the new time when the next health arrives. */
+function BackupNow({ configured, running }: { configured: boolean; running: boolean }) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const make = () => {
+    setBusy(true);
+    setNote("");
+    change("/v1/backup", "Done", {}, { method: "POST", timeoutMs: BACKUP_WAIT_MS })
+      .then((done) => {
+        const at = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        setNote(done.done ? `Backed up at ${at}, checked on the share` : `Not backed up: ${done.detail}`);
+      })
+      .catch((error: unknown) => setNote(`Not backed up: ${error instanceof ApiFailure ? error.message : "the engine did not answer"}`))
+      .finally(() => setBusy(false));
+  };
+  const working = busy || running;
+  return (
+    <div className="actions">
+      <button type="button" onClick={make} disabled={working || !configured} title={configured ? undefined : "Set a share in Settings first"}>
+        {working ? "Backing up…" : "Back up now"}
+      </button>
+      <span className="note small" role="status" data-testid="backup-note">
+        {note}
+      </span>
+    </div>
+  );
+}
 
 /** A redacted support bundle, saved in IKARS's support folder (D20 I; M1.8b-2). */
 function SupportBundle() {
@@ -96,6 +126,7 @@ export function Health() {
               {line}
             </div>
           ))}
+          {card.action === "backup" && <BackupNow configured={health.backup.configured === true} running={health.backup.running === true} />}
         </section>
       ))}
       <Gaps />

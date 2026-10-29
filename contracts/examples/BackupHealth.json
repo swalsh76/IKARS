@@ -1,5 +1,6 @@
 {
   "configured": true,
   "hours_since": 3,
-  "last_error": null
+  "last_error": null,
+  "running": false
 }

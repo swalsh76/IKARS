@@ -13,7 +13,10 @@ export interface Card {
   state: string;
   big: string;
   lines: string[];
+  action?: "backup"; // the card carries Back up now (M1.11)
 }
+
+const BACKUP_EVERY_H = 24; // the engine's automatic copy (backup_service.py)
 
 const STATE: Record<Level, string> = { ok: "OK", watch: "WATCH", problem: "PROBLEM", unknown: "NOT YET" };
 
@@ -70,9 +73,19 @@ export function healthCards(h: HealthView): Card[] {
       `chain ${yes(h.ledger.verified, "verified", "broken: nothing is appended")}`,
       `${h.ledger.records ?? "?"} records · ${h.ledger.errors ?? "?"} import errors`,
     ]),
-    card("Backups", backupLevel, !backup.configured ? "No share set" : backup.hours_since === null ? "None yet" : `Last copy ${backup.hours_since} h ago`, [
-      backup.last_error === null ? "no errors" : `last error: ${backup.last_error}`,
-    ]),
+    {
+      ...card(
+        "Backups",
+        backupLevel,
+        !backup.configured ? "No share set" : backup.hours_since === null ? "None yet" : `Last copy ${backup.hours_since} h ago`,
+        [
+          backup.last_error === null ? "no errors" : `last error: ${backup.last_error}`,
+          ...(backup.configured && backup.hours_since !== null ? [`next automatic copy in ${Math.max(0, BACKUP_EVERY_H - backup.hours_since)} h`] : []),
+        ],
+        backup.running ? "BACKING UP" : STATE[backupLevel],
+      ),
+      action: "backup",
+    },
     card("Storage", storageLevel, h.storage_state === null ? "Not checked" : h.storage_state === "ok" ? "Within budget" : "Near its budget", [
       `state: ${h.storage_state ?? "not checked"}`,
     ]),
