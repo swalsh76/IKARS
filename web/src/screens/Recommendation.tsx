@@ -7,7 +7,7 @@ import { ANSWERS, checkRows, figures, headline, inputText, ruleName, type Answer
 import { local } from "../view/health";
 import { contracts, e2 } from "../money";
 import { Guarded } from "./Guarded";
-import { COPY_EVENT, RESPOND_EVENT } from "./Keys";
+import { useAnswerKeys } from "./Keys";
 import { Link } from "./Shell";
 
 const LABELS: Record<Answer, string> = { taken: "Mark taken", ignored: "Ignore", dismissed: "Dismiss" };
@@ -78,20 +78,10 @@ export function Recommendation({ id }: { id: string }) {
   useEffect(() => {
     navigator.name(name); // the last crumb and the window title name the market
   }, [navigator, name, route]);
-  const handlers = useRef({ respond, copy });
-  useEffect(() => {
-    handlers.current = { respond, copy };
-  });
-  useEffect(() => {
-    const onRespond = (event: Event) => void handlers.current.respond((event as CustomEvent<Answer>).detail);
-    const onCopy = () => void handlers.current.copy();
-    window.addEventListener(RESPOND_EVENT, onRespond);
-    window.addEventListener(COPY_EVENT, onCopy);
-    return () => {
-      window.removeEventListener(RESPOND_EVENT, onRespond);
-      window.removeEventListener(COPY_EVENT, onCopy);
-    };
-  }, []);
+  useAnswerKeys(
+    (given) => void respond(given),
+    () => void copy(),
+  );
 
   if (loaded.state === "failed" && !shown) {
     return (

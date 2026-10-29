@@ -5,11 +5,16 @@ import { crumbs, href, type Route } from "../nav/route";
 import { strip } from "../view/health";
 import { Hotkeys } from "./Keys";
 
+/** A plain left click (a modified one opens a link as the browser does). */
+export function plainClick(event: MouseEvent): boolean {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
 /** An in-app link: the navigator moves, the page does not reload (a modified click opens as usual). */
 export function Link({ to, children, className, id }: { to: string; children: ReactNode; className?: string; id?: string }) {
   const { navigator } = useTerminal();
   const follow = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!plainClick(event)) return;
     event.preventDefault();
     navigator.go(to);
   };

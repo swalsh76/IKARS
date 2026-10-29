@@ -3,10 +3,11 @@ import { answer, copyOrder } from "../app/answers";
 import { useNow, useSnapshot, useTerminal, useValue } from "../app/hooks";
 import { href } from "../nav/route";
 import { latestAlerts, portfolioCard } from "../view/portfolio";
-import { recommendationRow, scoreRows, type Answer } from "../view/recommendations";
+import type { RecommendationView } from "../api/contracts";
+import { recommendationRow, scoreRows } from "../view/recommendations";
 import { Guarded } from "./Guarded";
-import { COPY_EVENT, MOVE_EVENT, RESPOND_EVENT } from "./Keys";
-import { Later, Link } from "./Shell";
+import { ENTER_EVENT, MOVE_EVENT, useAnswerKeys } from "./Keys";
+import { Later, Link, plainClick } from "./Shell";
 
 function Portfolio() {
   const portfolio = useValue("portfolio");
@@ -71,18 +72,27 @@ function Alerts() {
   );
 }
 
-const rowLink = (id: string) => `rec-${id}`;
+const rowLink = (id: string) => `rec-${encodeURIComponent(id)}`; // a valid element id whatever the id holds
+const FIRST = "Highlight a recommendation first (Up, Down).";
 
 /** The ranked list (M1.12d, owner 2026-10-28): a click anywhere on a row opens its recommendation; Up and
- * Down highlight a row (its link takes the focus, so Enter opens it) and T, I, D and C act on it. The
- * highlight follows the recommendation, not the place, so a re-ranked list never moves it to another. */
+ * Down highlight a row (its link takes the focus) and Enter, T, I, D and C act on it. The highlight
+ * follows the recommendation, not the place, so a re-ranked list never moves it to another. */
 function TopRecommendations() {
   const page = useValue("recommendations");
   const now = useNow();
   const { navigator } = useTerminal();
+  const table = useRef<HTMLTableElement>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [note, setNote] = useState("");
-  const items = page?.items ?? [];
+  // the engine's copy after an answer, until the next list (so the same key again takes it back: merge review 1)
+  const [kept, setKept] = useState<ReadonlyMap<string, RecommendationView>>(new Map());
+  const [seen, setSeen] = useState(page);
+  if (page !== seen) {
+    setSeen(page);
+    setKept(new Map());
+  }
+  const items = (page?.items ?? []).map((r) => kept.get(r.id) ?? r);
   const chosen = items.find((r) => r.id === selected) ?? null;
   const latest = useRef({ items, chosen });
   useEffect(() => {
@@ -91,7 +101,11 @@ function TopRecommendations() {
   useEffect(() => {
     const onMove = (event: Event) => {
       const { items, chosen } = latest.current;
-      if (items.length === 0) return; // the arrows stay the browser's
+      const focus = document.activeElement;
+      const main = table.current?.closest("main");
+      // the focus elsewhere on the Overview (another card's link) keeps the arrows the browser's; in the list,
+      // the top bar (Back) or nowhere, they are the list's (merge review 3)
+      if (items.length === 0 || (focus && main?.contains(focus) && !table.current?.contains(focus))) return;
       event.preventDefault();
       const at = chosen ? items.indexOf(chosen) : -1;
       const next = items[at < 0 ? 0 : Math.min(items.length - 1, Math.max(0, at + (event as CustomEvent<number>).detail))];
@@ -99,29 +113,36 @@ function TopRecommendations() {
       setSelected(next.id);
       document.getElementById(rowLink(next.id))?.focus();
     };
-    const onRespond = (event: Event) => {
-      const r = latest.current.chosen;
-      if (!r) return setNote("Highlight a recommendation first (Up, Down).");
-      void answer(r, (event as CustomEvent<Answer>).detail).then(({ note }) => setNote(`${r.title || r.ticker}: ${note}`));
-    };
-    const onCopy = () => {
-      const r = latest.current.chosen;
-      if (!r) return setNote("Highlight a recommendation first (Up, Down).");
-      void copyOrder(r).then(setNote);
+    const onEnter = (event: Event) => {
+      const r = latest.current.chosen; // highlighted, though the focus has moved off it (merge review 2)
+      if (!r) return;
+      event.preventDefault();
+      navigator.go(href({ screen: "recommendation", id: r.id }));
     };
     window.addEventListener(MOVE_EVENT, onMove);
-    window.addEventListener(RESPOND_EVENT, onRespond);
-    window.addEventListener(COPY_EVENT, onCopy);
+    window.addEventListener(ENTER_EVENT, onEnter);
     return () => {
       window.removeEventListener(MOVE_EVENT, onMove);
-      window.removeEventListener(RESPOND_EVENT, onRespond);
-      window.removeEventListener(COPY_EVENT, onCopy);
+      window.removeEventListener(ENTER_EVENT, onEnter);
     };
-  }, []);
+  }, [navigator]);
+  useAnswerKeys(
+    (given) => {
+      const r = chosen;
+      if (!r) return setNote(FIRST);
+      void answer(r, given).then(({ value, note }) => {
+        if (value) setKept((last) => new Map(last).set(value.id, value));
+        setNote(`${r.title || r.ticker}: ${note}`);
+      });
+    },
+    () => {
+      if (!chosen) return setNote(FIRST);
+      void copyOrder(chosen).then(setNote);
+    },
+  );
   const open = (event: MouseEvent<HTMLTableRowElement>, id: string) => {
     // the row's own link has moved already; a modified click or a text selection is left alone
-    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    if (window.getSelection()?.toString()) return;
+    if (event.defaultPrevented || !plainClick(event) || window.getSelection()?.toString()) return;
     navigator.go(href({ screen: "recommendation", id }));
   };
   return (
@@ -137,7 +158,7 @@ function TopRecommendations() {
       {page !== null && page.items.length === 0 && <p className="muted small">No active recommendations.</p>}
       {page !== null && page.items.length > 0 && (
         <div className="scroll recs">
-          <table aria-label="Top recommendations">
+          <table aria-label="Top recommendations" ref={table}>
             <thead>
               <tr>
                 <th>Market</th>
@@ -176,20 +197,23 @@ function TopRecommendations() {
           </table>
         </div>
       )}
-      {items.length > 0 && (
-        <div className="muted small hints">
-          <span>Click a row to open it</span>
-          <span>
-            <kbd>Up</kbd> <kbd>Down</kbd> highlight · <kbd>Enter</kbd> open
-          </span>
-          <span>
-            On the highlighted row: <kbd>C</kbd> copy order · <kbd>T</kbd> taken · <kbd>I</kbd> ignore · <kbd>D</kbd> dismiss
-          </span>
-          <span role="status" data-testid="list-note" className="note">
-            {note}
-          </span>
-        </div>
-      )}
+      <div className="muted small hints">
+        {items.length > 0 && (
+          <>
+            <span>Click a row to open it</span>
+            <span>
+              <kbd>Up</kbd> <kbd>Down</kbd> highlight · <kbd>Enter</kbd> open
+            </span>
+            <span>
+              On the highlighted row: <kbd>C</kbd> copy order · <kbd>T</kbd> taken · <kbd>I</kbd> ignore · <kbd>D</kbd> dismiss
+            </span>
+          </>
+        )}
+        {/* shown with an empty list too: a key pressed then still says something (merge review 5) */}
+        <span role="status" data-testid="list-note" className="note">
+          {note}
+        </span>
+      </div>
     </section>
   );
 }

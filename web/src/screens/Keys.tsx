@@ -3,6 +3,7 @@ import { useTerminal } from "../app/hooks";
 import { HOTKEYS, actionFor, isControl, takesText } from "../app/keys";
 import { change } from "../api/client";
 import { applyTheme, currentTheme, toggled } from "../app/theme";
+import type { Answer } from "../view/recommendations";
 
 export const LINKED_EVENT = "ikars:linked"; // X: the Market screen shows or hides its Linked panel
 export const BOOK_ID = "order-book"; // B: the Market screen's order book
@@ -11,6 +12,27 @@ export const COPY_EVENT = "ikars:copy"; // C: the Recommendation screen copies i
 // Up, Down: a list that takes them (the Overview's recommendations) cancels the event; otherwise the
 // arrows stay the browser's, to scroll
 export const MOVE_EVENT = "ikars:move";
+// Enter with no control focused: a highlighted row opens (and cancels it); otherwise the newest urgent alert
+export const ENTER_EVENT = "ikars:enter";
+
+/** T, I, D and C for a screen that answers a recommendation (the Recommendation screen, the Overview's
+ * highlighted row): the handlers are read when a key comes, so they may close over the latest render. */
+export function useAnswerKeys(respond: (answer: Answer) => void, copy: () => void) {
+  const handlers = useRef({ respond, copy });
+  useEffect(() => {
+    handlers.current = { respond, copy };
+  });
+  useEffect(() => {
+    const onRespond = (event: Event) => handlers.current.respond((event as CustomEvent<Answer>).detail);
+    const onCopy = () => handlers.current.copy();
+    window.addEventListener(RESPOND_EVENT, onRespond);
+    window.addEventListener(COPY_EVENT, onCopy);
+    return () => {
+      window.removeEventListener(RESPOND_EVENT, onRespond);
+      window.removeEventListener(COPY_EVENT, onCopy);
+    };
+  }, []);
+}
 
 /** The hotkeys, for the whole terminal, and the list `?` shows (a dialog; Esc or a click outside closes). */
 export function Hotkeys() {
@@ -78,7 +100,7 @@ export function Hotkeys() {
           window.dispatchEvent(new CustomEvent(COPY_EVENT));
           break;
         case "alert":
-          navigator.go("/alerts");
+          if (window.dispatchEvent(new CustomEvent(ENTER_EVENT, { cancelable: true }))) navigator.go("/alerts");
           break;
       }
     };

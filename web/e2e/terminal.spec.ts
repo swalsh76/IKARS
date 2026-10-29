@@ -231,7 +231,8 @@ test("recommendations: the ranked list, the drill-down, an answer by hotkey and 
   await page.keyboard.press("ArrowDown");
   await expect(rows.nth(1)).toHaveClass(/\bon\b/);
   const second = await rows.nth(1).getByRole("link").getAttribute("href");
-  await page.keyboard.press("Enter");
+  await page.getByRole("heading", { name: "Top recommendations" }).click(); // the focus leaves the row
+  await page.keyboard.press("Enter"); // the highlighted row still opens, not the alerts
   await expect(page).toHaveURL(new RegExp(`${second}$`));
   expect(refused).toEqual([]);
 });
