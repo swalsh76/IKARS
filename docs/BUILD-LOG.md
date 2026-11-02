@@ -3510,6 +3510,43 @@ made-up frames and replays its recording to the very same items and state. Cover
   - ticker rows for every market.
 - **Pending:** an hour of recording, then the momentum parity and the book check.
 
+**The live check: passed** (2026-11-02, read only; counts only). The engine restarted at 21:47, 22:03 (v0.1.14),
+23:05 and 23:29 MST (the `feed` channel's `start` events), so the window is the one uninterrupted hour,
+**22:02:59 to 23:05:00 MST**, with no warm-up (`ikars replay --compare --check-books --warmup-min 0`, 1 m 40 s):
+- **Replayed:** 6.08 million rows (3.11 million ticker, 2.08 million book deltas, 521,000 trades, 352,000 market
+  rows), no late rows, digest `21d9b3b7cf74b56b`.
+- **Books:** 29,617 comparisons, 98.3% agree; **7,060 of 7,060 settled (100%)**.
+- **Momentum, as the command runs it:** 239 live, 249 replayed, 179 matched. Agreement grew through the hour (36 of
+  63 in the first 10 minutes, 42 of 45 in the last 12). Every mismatch traced to the restart at 22:03, which the
+  replay does not reproduce:
+  - the replay's plugins start at the hour's start (22:00), so momentum carried three minutes of memory across the
+    restart. Its "last mid before the window" (a quiet market's price) lasts until a market is idle for an hour;
+  - the live journal held recommendations from before the restart, still valid (30 minutes) and holding repeats
+    back; the replay's scratch journal did not;
+  - one recommendation made at a different time moves every later one on that market (one at a time, 30 minutes).
+- **Momentum, with both sides starting equal** (a scratch run: momentum sees nothing before the window's start, and
+  the scratch journal starts with the 74 live recommendations still valid then): **239 live, 239 replayed, 239
+  matched**, the same digest.
+- **Found:** the replay does not reproduce a restart.
+
+**Fixed in M1.13** (owner, 2026-11-02: fix now; `06557b2` on `m1/13`, `m1/14` rebased onto it):
+- A recorded `start` restarts the signal plugins: each goes on as a new instance (`PluginHost.restart`), as the new
+  process's did.
+- Plugins get items only from the warm-up's start; the state is still read from that hour's start (its checkpoint).
+  The report gives both (`from`, `read_from`).
+- `--compare` starts the scratch journal with the live recommendations of the re-run plugins still valid when the
+  plugins begin, unless superseded by then (`carried_in`, through `Journal.add`).
+- **Tests:** 2 new (a restart and the warm-up start with a made-up signal; what is carried in, and that it holds a
+  repeat back). Python: 1,634 tests on `m1/13`, `replay.py` 97%. Lint, types and the data guard are clean.
+- **The real hour again, with the command as shipped:**
+  - no warm-up: 74 carried in, **239 live, 239 replayed, 239 matched**;
+  - the default 40-minute warm-up: 223 of 239. Every one of the 30 mismatches is on a market live recommended
+    between 21:23 and 21:47, in the v0.1.12 run: it recorded no market details, so the replay could make nothing
+    there. A warm-up inside recordings with market details (v0.1.13 on) has no such stretch.
+- **Review:** per commit (`/code-review low`), nothing found.
+- After the rebase, M1.14's commits are `64d1094`, `014d0ea` and `c74bf41` (were `ba99efe`, `81b08ab`, `a6b2c44`;
+  the release tags keep the old ones).
+
 **Fixed during the live check (owner, 2026-11-01).** On a settled market's screen, the price chart grew without
 bound. The cause: with nothing taller beside it (an empty book), the chart's box took its height from the chart,
 which sizes itself to its box, so each resize grew the next.
@@ -3518,3 +3555,117 @@ which sizes itself to its box, so each resize grew the next.
 - **Review:** per commit, nothing found.
 - **Seen beside it and parked (PLAN §9):** after a restart, a settled market is not in the index, so its Market
   screen answers 404. A full discovery reads only unopened and open markets.
+
+## 1.14 Settled markets after a restart (plan APPROVED 2026-11-01)
+
+Brought forward from PLAN §9 (owner, 2026-11-01). Branch `m1/14`, stacked on `m1/13`.
+
+**Found while planning:**
+- **A settled market drops out of the index at a restart.** The index keeps a settled market for 3 days after it
+  closes (`CLOSED_KEPT_NS`), but only while the engine runs: a full discovery reads unopened and open markets only.
+  Its Market screen then answers 404.
+- **The journal never settles such a market.** It settles a recommendation from the index's result, so a market
+  that settled while the engine was down, or more than 3 days before, is never settled and its scores never land.
+- **Kalshi's listing helps:** it filters by close time (`min_close_ts`, with status closed or settled) and fetches
+  markets by name (`tickers=`); markets past the cutoff come from its historical store.
+
+**Owner, 2026-11-01:** approved as proposed.
+- **Both:** at start, the full discovery also reads markets closed in the last 3 days; on request, a market the
+  index lacks is looked up by ticker, with a short cache.
+- **The journal:** an unsettled recommendation's market that the index lacks is looked up, batched, at most once
+  every 10 minutes per market, until it settles.
+- **The rest as shown:** tests with made-up markets, a dry run measuring the start-up requests, a test release, then
+  the check that the settled NBA market seen on 2026-11-01 opens again.
+
+#### 1.14 built (2026-11-01)
+
+**Built** on `m1/14` (stacked on `m1/13`):
+
+| Commit | What |
+|---|---|
+| `64d1094` | the slice |
+| `014d0ea` | merge-review fixes |
+
+**No new packages.**
+
+**Dry run** (Kalshi's public listing, 2026-11-01):
+- **Closed, waiting for a result:** 18,290 markets, 19 pages, 3 s.
+- **Settled in the last 3 days:** 310,459 markets, 311 pages, 130 s.
+- **Owner:** settled markets are read in the background once the feed is live, so they never hold the feed back.
+
+- **At start:** a full discovery reads unopened, open and every closed market. Once the feed is live, a background pass
+  (`recent_settled`) reads the markets settled in the last 3 days.
+  - It pauses half a second between pages, so the gap backfill and the discovery cycles get the request budget.
+  - It moves the index version once, at the end.
+  - The index after a restart is then a running engine's.
+- **`kalshi/lookup.py` (`MarketLookup`)** finds a market the index lacks: Kalshi's live store, then its historical
+  store, with a bounded cache.
+  - A recent market goes into the index, and so into the market channel.
+  - Concurrent asks of one ticker share one request.
+  - A ticker not shaped like Kalshi's is never asked.
+- **The Market screen and its chart** use it, with candlesticks from the historical store past the cutoff. The
+  recommendation drill-down uses it for the title and fees. The recommendation lists look up missing titles in the
+  background.
+  - A Kalshi failure answers 503 ("try again"), never "no such market".
+- **The journal:** each minute, the unsettled recommendations whose market the index lacks are looked up, batched by
+  ticker, each at most once every 10 minutes, until settled. `result`, `trading` and fees read through the lookup.
+
+**Verified.** Python: 1,645 tests, 11 new for the lookups, with made-up markets on a fake Kalshi. Coverage:
+`kalshi/lookup.py` 86%. Lint, types and the data guard are clean.
+
+**Review.**
+- **Per commit:** `64d1094`, 1 found before committing, fixed. The recommendation drill-down awaited a lookup
+  unguarded, so a busy Kalshi made it a 500.
+- **Merge review:** `/code-review medium`, 10 findings, fixed in `014d0ea` unless marked. A second, sub-agent reviewer
+  was not used: the slice is small and self-contained (R16: where it helps).
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | Closed markets waiting for a result over 3 days went missing after a restart | Every closed market is read (3 s) |
+  | 2 | Concurrent lookups of one ticker each called Kalshi | One shared request; tested |
+  | 3 | The settled load could hold the gap backfill and discovery behind it for minutes | A pause between pages |
+  | 4 | Each of ~300,000 puts moved the index version, so lists re-sorted on every poll | The version moves once at the end; tested |
+  | 5 | The lookups' version moved even when nothing changed | Only on a change; tested |
+  | 6 | A settled market with a result other than yes or no was asked about for 30 days | Settled is final; tested |
+  | 7 | A failed batch stopped the pass, and the rest still waited 10 minutes | Each batch marked and guarded alone; tested |
+  | 8 | The ticker from the address went into Kalshi URLs unchecked | A ticker shape check; tested |
+  | 9 | Combos bumped the index's skipped count; a cached open market's "trading" can lag | Combos stay out of the index. The lag: no change. The journal's pass refreshes it every 10 minutes, and marks fall at 30 and 60 minutes |
+  | 10 | A Kalshi failure read as "no such market" | 503 "try again"; tested |
+
+**Live check passed** on **v0.1.15** (test pre-release from `4f28b12`, published 2026-11-01 23:01 MST; installed
+by the owner, engine started 23:04:37; read through the API with GET only and the journal opened read-only):
+- After the restart, `KXNBATOTAL-26NOV01TORLAL-254` opens again with its chart: `finalized`, 253 one-minute candles,
+  and the journal has its result.
+- The settled pass completes in the background: the full discovery (248,587 markets) at 23:05:40, then the
+  recently settled markets (311,016) at 23:10:31, about 4 min 51 s after the feed went live; the feed was not held
+  back.
+- The journal's lookups settle what was missed: 527 settlements learned since the restart, no lookup warnings.
+
+**Found by the check: scalar settlements were never scored.** 111 closed-market checks on 65 markets still waited:
+5 markets were still closed or inactive (correct), but **60 were finalized with result `scalar`**: binary
+markets that paid a fraction (50c a contract on a tennis walkover, 54c on an exact-match market; mostly ATP and
+ITF tennis, some golf and MLB, per Kalshi's public listing). The journal scored only yes or no, a gap from the
+M1.12b settlement scoring (`f810687`) rather than from M1.14. **Owner (2026-11-01): fix it in M1.14**, before
+momentum v1's review (~2026-11-04), whose scorecard left these checks out.
+
+- **Built** (`c74bf41`): `MarketInfo` keeps Kalshi's settlement value, and `settlement()` gives the result with what
+  a YES contract paid ($1, nothing, or the scalar value; a scalar without a value is never guessed). The `market`
+  channel records it (older recordings read it as null). The journal keeps `yes_paid_e6` with each settlement
+  (migration 4, backed up first; earlier rows backfilled as $1 or nothing) and scores a closed check at that payout,
+  a NO check at the rest, after the entry fee. The lookup counts a scalar as settled.
+- **Tests:** a 54c scalar scored for YES (+$0.62) and NO (-$0.18) on 10 contracts bought at 46c; the journal keeps
+  and scores it; the upgrade backfill; `settlement()` for each result; a scalar found by the lookup; a replay's
+  market row. 1,654 passed, coverage 93.4%.
+- **Review** (`/code-review low`): 1 finding. A replay of a recording made before the change might fail on the
+  missing column. No change: Arrow parts go through `conform`, and real Parquet files from v0.1.15 read with the
+  new schema give the column as null (483,999 rows checked).
+- **Live check of the fix passed** on **v0.1.16** (test pre-release from `93610d8`, published 2026-11-01 23:27 MST;
+  installed by the owner; the journal opened read-only, the API with GET only):
+  - The journal was backed up first (23:28:15), then migrated to version 4; the 47,551 earlier settlements were
+    backfilled exactly (27,430 no at nothing, 20,121 yes at $1, none empty).
+  - All 60 scalar markets settled (145 scalar settlements in all), and their 105 closed checks are scored, 35 at
+    settlement; each of those is the payout less the cost less a whole-cent entry fee. The other 70 had a bid
+    when marked, so they are scored as sold at it (the M1.12b rule).
+  - The scorecard counts them. The 6 markets left waiting are Kalshi's 5 closed and 1 inactive, without a result.
+  - The lookups worked off the restart's backlog at their cap (100 a minute): 1,600 settled with 0 failures, all
+    done by 23:46, about 18 minutes after the start.

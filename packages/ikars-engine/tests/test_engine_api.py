@@ -958,3 +958,67 @@ async def test_without_a_journal_the_recommendations_are_empty(ctx: ApiContext) 
     put = await call(ctx, "PUT", "/v1/recommendations/r1/response", body={"answer": "taken"})
     assert put.status_code == 404
     assert (await get(ctx, "/v1/scorecard", c.ScoreCard)).lines == []
+
+
+# --- markets the index lacks (M1.14) -----------------------------------------------------------
+
+
+async def test_a_market_the_index_lacks_is_looked_up_for_its_screen(ctx: ApiContext) -> None:
+    from ikars_engine.kalshi.lookup import MarketLookup
+    from kalshi_fakes import FakeKalshi, market
+
+    kalshi = FakeKalshi()
+    gone = {
+        **market("GONE", status="settled"),
+        "result": "yes",
+        "close_time": "2025-06-01T17:00:00Z",
+    }
+    kalshi.markets = [gone]
+    ctx.lookup = MarketLookup(kalshi.data(), ctx.index, ctx.now_ns)
+    found = await call(ctx, "GET", "/v1/markets/GONE")
+    assert found.status_code == 200 and found.json()["ticker"] == "GONE"
+    assert found.json()["title"] == gone["title"]
+    assert (await call(ctx, "GET", "/v1/markets/NOWHERE")).status_code == 404
+
+
+async def test_candles_come_from_the_historical_store_past_the_cutoff() -> None:
+    from ikars_core.config import Environment, KalshiConfig
+    from ikars_core.endpoints import MarketData
+    from ikars_core.ratelimit import TokenBucket
+    from ikars_core.rest import KalshiPublicClient
+    from ikars_engine.kalshi.runner import candles_of
+
+    fixtures = Path(__file__).parents[2] / "ikars-core" / "tests" / "fixtures"
+    candle = json.loads((fixtures / "candle_historical.json").read_text(encoding="utf-8"))
+    asked: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        asked.append(request.url.path)
+        if "/historical/" in request.url.path:
+            return httpx.Response(200, json={"candlesticks": [candle]})
+        return httpx.Response(404, json={"error": "not found"})
+
+    client = KalshiPublicClient(
+        KalshiConfig(environment=Environment.PRODUCTION),
+        bucket=TokenBucket(rate=1e9, capacity=1e9),
+        transport=httpx.MockTransport(handle),
+    )
+    rows = await candles_of(MarketData(client), "KXDEMO", "T", 0, 3_600, 1)
+    assert len(rows) == 1 and any("/historical/markets/T/" in p for p in asked)
+    await client.aclose()
+
+
+async def test_kalshi_failing_answers_503_not_no_such_market(ctx: ApiContext) -> None:
+    from ikars_engine.kalshi.lookup import MarketLookup
+    from kalshi_fakes import FakeKalshi
+
+    kalshi = FakeKalshi()
+    ctx.lookup = MarketLookup(kalshi.data(), ctx.index, ctx.now_ns)
+
+    async def broken(ticker: str) -> Any:
+        raise RuntimeError("Kalshi is down")
+
+    ctx.lookup.get = broken  # type: ignore[method-assign]
+    assert (await call(ctx, "GET", "/v1/markets/GONE")).status_code == 503
+    assert (await call(ctx, "GET", "/v1/markets/GONE/candles")).status_code == 503
+    assert ctx.lookup.failures == 2

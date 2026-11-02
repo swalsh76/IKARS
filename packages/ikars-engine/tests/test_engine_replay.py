@@ -660,9 +660,10 @@ async def test_a_full_cycle_records_changes_as_they_come(tmp_path: Path) -> None
     rows.clear()
     rig.kalshi.markets = [market("A", status="closed"), market("B"), market("C")]
     await rig.discovery.full()
-    # A's change and B's arrival are recorded as they come; the dump writes only C
+    # B's arrival and A's change (closed: read in its own pass, M1.14) are recorded as they
+    # come; the dump writes only C
     assert [(r["ticker"], r["status"], r["full"]) for r in rows] == [
-        ("A", "closed", False), ("B", "active", False), ("C", "active", True)
+        ("B", "active", False), ("A", "closed", False), ("C", "active", True)
     ]  # fmt: skip
 
 
@@ -681,6 +682,22 @@ def test_a_market_the_index_drops_is_dropped_in_a_replay_too() -> None:
         markets.apply(row)
     assert "S" not in markets.markets and markets.rows == 2
     assert market_row(info, None, T0)["removed"] is False
+
+
+def test_a_replay_knows_what_a_scalar_settlement_paid() -> None:
+    from ikars_engine.replay import ReplayMarkets
+
+    rows: list[dict[str, Any]] = []
+    index = MarketIndex(now_ns=lambda: T0)
+    index.record = rows.append
+    index.put(Market.model_validate({**market("W", status="finalized"), "result": "scalar",
+                                     "settlement_value_dollars": "0.5000"}))  # fmt: skip
+    markets = ReplayMarkets()
+    markets.apply(rows[-1])
+    assert markets.markets["W"].settlement() == ("scalar", 500_000)
+    older = {**rows[-1], "settlement_value_e6": None}  # recorded before the column: not guessed
+    markets.apply(older)
+    assert markets.markets["W"].settlement() is None
 
 
 async def test_a_checkpoint_lands_between_the_frames_the_pump_really_handled(

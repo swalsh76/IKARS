@@ -129,6 +129,7 @@ SCHEMAS: dict[str, pa.Schema] = {
             ("status", _STR),
             ("close_ns", _I64),
             ("result", _STR),
+            ("settlement_value_e6", _I64),  # what a YES contract paid (null before M1.14's fix)
             ("climate_code", _STR),
             ("fee_type", _STR),  # the series' fee terms then
             ("fee_multiplier_e6", _I64),

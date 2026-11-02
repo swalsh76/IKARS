@@ -56,6 +56,7 @@ class FakeKalshi:
 
     def __init__(self) -> None:
         self.markets: list[dict[str, Any]] = []
+        self.historical: list[dict[str, Any]] = []  # markets past the cutoff (M1.14)
         self.updated: list[dict[str, Any]] = []  # returned for min_updated_ts queries
         self.status = fixture("exchange_status.json")
         self.trades: list[dict[str, Any]] = []
@@ -77,6 +78,19 @@ class FakeKalshi:
         body: dict[str, Any]
         if path == "/series":
             body = {"series": [fixture("series.json")]}
+        elif path == "/markets" and "tickers" in params:  # a lookup by name (M1.14)
+            wanted = set(params["tickers"].split(","))
+            body = {"markets": [m for m in self.markets if m["ticker"] in wanted], "cursor": ""}
+        elif path.startswith("/markets/") and path.count("/") == 2 and path != "/markets/trades":
+            found = next((m for m in self.markets if m["ticker"] == path.split("/")[2]), None)
+            if found is None:
+                return httpx.Response(404, content=b'{"error": "not found"}')
+            body = {"market": found}
+        elif path.startswith("/historical/markets/") and path.count("/") == 3:
+            found = next((m for m in self.historical if m["ticker"] == path.split("/")[3]), None)
+            if found is None:
+                return httpx.Response(404, content=b'{"error": "not found"}')
+            body = {"market": found}
         elif path == "/markets" and "min_updated_ts" in params:
             body = {"markets": self.updated, "cursor": ""}
         elif path == "/markets":
@@ -90,10 +104,13 @@ class FakeKalshi:
                 ],
                 "cursor": "",
             }
-            if params.get("status") == "unopened":
-                body["markets"] = [m for m in self.markets if m["status"] == "unopened"]
+            status = params.get("status")
+            if status in ("unopened", "closed", "settled"):  # as Kalshi filters (M1.14)
+                body["markets"] = [m for m in self.markets if m["status"] == status]
             else:
-                body["markets"] = [m for m in self.markets if m["status"] != "unopened"]
+                body["markets"] = [
+                    m for m in self.markets if m["status"] not in ("unopened", "closed", "settled")
+                ]
         elif path == "/exchange/status":
             body = self.status
         elif path == "/exchange/schedule":

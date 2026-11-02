@@ -26,6 +26,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from ikars_core.endpoints import MarketData
 from ikars_core.fees import FeeSchedule, fee_schedule
+from ikars_core.fixedpoint import E6
 from ikars_core.markets import is_combo, series_ticker_of
 from ikars_core.models import Market
 
@@ -36,6 +37,7 @@ BOOKMARK = "discovery.updated_s"
 OVERLAP_SECONDS = 120
 OPEN_STATUSES = frozenset({"active", "open"})  # Kalshi's REST and WebSocket names for trading
 CLOSED_KEPT_NS = 3 * 86_400 * 1_000_000_000  # a settled market stays in the index this long
+SETTLED_PAGE_PAUSE_S = 0.5  # between the pages of the recently settled markets (M1.14)
 SETTLED_STATUSES = frozenset({"settled", "finalized"})  # paid out: nobody holds it any more
 log = logging.getLogger("ikars_engine.kalshi.discovery")
 
@@ -54,12 +56,28 @@ class MarketInfo:
     # the NWS climate report its rules name, such as "CLINYC" (M2.2: weather markets settle on The
     # Weather Company's value from that government station); None when the rules name none
     climate_code: str | None = None
+    # what a YES contract paid once settled (Kalshi's settlement value, dollar millionths); a
+    # scalar result pays a fraction, such as 50c on a tennis walkover (M1.14 live check)
+    settlement_value_e6: int | None = None
     # the ticker and title in lower case, made once: the markets search reads it on every request
     # (review 1.R2 item 5)
     search: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "search", f"{self.ticker}\n{self.title}".lower())
+
+    def settlement(self) -> tuple[str, int] | None:
+        """Its result once settled and what a YES contract paid: $1 on yes, nothing on no, the
+        settlement value on scalar; None before, or for a scalar result without a value (never
+        guessed)."""
+        if self.result == "yes":
+            return "yes", E6
+        if self.result == "no":
+            return "no", 0
+        value = self.settlement_value_e6
+        if self.result == "scalar" and value is not None and 0 <= value <= E6:
+            return "scalar", value
+        return None
 
 
 def _long_settled(
@@ -97,7 +115,8 @@ def market_row(
         "series_ticker": info.series_ticker, "category": info.category, "title": info.title,
         "status": info.status,
         "close_ns": None if info.close_time is None else exact_ns(info.close_time),
-        "result": info.result, "climate_code": info.climate_code,
+        "result": info.result, "settlement_value_e6": info.settlement_value_e6,
+        "climate_code": info.climate_code,
         "fee_type": None if fee_terms is None else fee_terms[0],
         "fee_multiplier_e6": None if fee_terms is None else fee_terms[1],
         "full": full, "removed": removed,
@@ -129,7 +148,9 @@ class MarketIndex:
         self.version = 0  # moves whenever a market is added, changed or removed
         # (change ``markets`` only through put and prune, so the version stays true)
 
-    def put(self, market: Market) -> None:
+    def put(self, market: Market, *, quietly: bool = False) -> None:
+        """Keep ``market`` (or drop it, long settled). ``quietly``: the version is left for the
+        caller to move once (a bulk load: M1.14)."""
         if is_combo(market.ticker):
             self.combos_skipped += 1
             return
@@ -139,14 +160,24 @@ class MarketIndex:
                 self.version += 1  # a removal, so the API's sorted list is rebuilt
                 self._removed(gone)
             return
-        self.version += 1
+        if not quietly:
+            self.version += 1
         before = self.markets.get(market.ticker)
+        info = self.markets[market.ticker] = self.info_of(market, before)
+        if self.record is not None and (before is None or not _same(before, info)):
+            self.record(market_row(info, self.fee_terms.get(info.series_ticker), self.now_ns()))
+            if self.cycle is not None:
+                self.cycle.add(info.ticker)
+
+    def info_of(self, market: Market, before: MarketInfo | None = None) -> MarketInfo:
+        """A market's details as the index keeps them (also for one looked up and not kept:
+        M1.14)."""
         code = climate_code(market.rules_primary)
         if market.rules_primary is None and before is not None:  # an update without its rules
             code = before.climate_code  # (rules that name no station clear it: merge review 6)
         event = market.event_ticker or ""
         series = series_ticker_of(event) or ""
-        info = self.markets[market.ticker] = MarketInfo(
+        return MarketInfo(
             ticker=market.ticker,
             event_ticker=event,
             series_ticker=series,
@@ -157,11 +188,8 @@ class MarketIndex:
             result=market.result,
             volume_24h_e2=market.volume_24h_e2 or 0,
             climate_code=code,
+            settlement_value_e6=market.settlement_value_e6,
         )
-        if self.record is not None and (before is None or not _same(before, info)):
-            self.record(market_row(info, self.fee_terms.get(series), self.now_ns()))
-            if self.cycle is not None:
-                self.cycle.add(info.ticker)
 
     def _removed(self, info: MarketInfo) -> None:
         """A market the index dropped, so a replay drops it when live did (sub-agent 4)."""
@@ -253,7 +281,8 @@ class Discovery:
         self.cycles = 0
 
     async def full(self) -> int:
-        """Series and every unopened and open market; returns how many markets were read."""
+        """Series, and every unopened, open and closed (not yet settled) market; returns how many
+        markets were read."""
         began = self._clock.now_ns() // 1_000_000_000
         for series in await self._data.series_list():
             if series.category:
@@ -264,7 +293,10 @@ class Discovery:
         count = 0
         self.index.cycle = set()  # the dump below records every market not recorded meanwhile
         try:
-            for status in ("unopened", "open"):
+            # the markets that trade or will, then every one closed and waiting for its result (the
+            # owner may hold it: merge review 1); the settled ones come after the start
+            # (``recent_settled``, M1.14)
+            for status in ("unopened", "open", "closed"):
                 async for page in self._data.markets(
                     status=status, mve_filter="exclude", tolerant=True
                 ):
@@ -279,6 +311,29 @@ class Discovery:
         self._state.set_bookmark(BOOKMARK, began - OVERLAP_SECONDS)
         self.cycles += 1
         log.info("discovery: full cycle", extra={"markets": count, "rejects": self.index.rejects})
+        return count
+
+    async def recent_settled(self) -> int:
+        """Markets settled in the last ``CLOSED_KEPT_NS``, so after a restart the index is what a
+        running engine's is (M1.14). About 300,000 markets and two minutes of requests, so read
+        after the start, in the background, never before the feed goes live (owner, 2026-11-01);
+        returns how many were read."""
+        since = self._clock.now_ns() // 1_000_000_000 - CLOSED_KEPT_NS // 1_000_000_000
+        count = 0
+        try:
+            async for page in self._data.markets(
+                status="settled", mve_filter="exclude", tolerant=True, min_settled_ts=since
+            ):
+                for market in page.items:
+                    self.index.put(market, quietly=True)  # one version change at the end
+                count += len(page.items)
+                self.index.rejects += len(page.invalid)
+                # a pause between pages leaves the request budget to the gap backfill and the
+                # discovery cycles (merge review 3)
+                await self._clock.sleep(SETTLED_PAGE_PAUSE_S)
+        finally:
+            self.index.version += 1  # the lists rebuild once, not for every market (review 4)
+        log.info("discovery: recently settled markets", extra={"markets": count})
         return count
 
     async def incremental(self) -> int:

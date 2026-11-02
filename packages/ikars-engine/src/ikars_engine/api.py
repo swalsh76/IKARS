@@ -26,13 +26,14 @@ arrival to its event leaving is measured (``api.feed_to_stream_ns``, PLAN D20 J)
 """
 
 import asyncio
+import contextlib
 import hmac
 import json
 import logging
 import os
 import secrets
 import urllib.request
-from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -55,6 +56,7 @@ from ikars_engine import runmode, support
 from ikars_engine.files import write_text_atomic
 from ikars_engine.journal import Entry, Journal, JournalService
 from ikars_engine.kalshi.discovery import OPEN_STATUSES, MarketIndex, MarketInfo
+from ikars_engine.kalshi.lookup import MarketLookup
 from ikars_engine.ledger import KINDS, Ledger
 from ikars_engine.metrics import Metrics
 from ikars_engine.pnl import mark_score_e6
@@ -119,6 +121,8 @@ class ApiContext:
     # Kalshi's candlesticks through the engine's request budget: (series, ticker, start_s, end_s,
     # interval minutes); None when the engine has no REST client (tests, offline)
     candles: "Callable[[str, str, int, int, int], Awaitable[list[Candlestick]]] | None" = None
+    # markets the index lacks (M1.14): looked up for a screen, and for a list's titles
+    lookup: "MarketLookup | None" = None
     # the engine's gap log, ended at or after a time (newest first, at most a limit)
     gaps: "Callable[[int, int], list[Gap]] | None" = None
     # a backup now (Back up now, M1.11): (made, a line that never names the share); None: no
@@ -142,7 +146,7 @@ class ApiContext:
     # their service: the ranking, the responses and the scorecard (M1.12c); None: none
     recommendations: "JournalService | None" = None
     # the ranked active page, the journal change it was built at, and its encoding
-    active_cache: "tuple[tuple[int, int], c.RecommendationPage, bytes] | None" = None
+    active_cache: "tuple[tuple[int, int, int], c.RecommendationPage, bytes] | None" = None
 
 
 @dataclass
@@ -326,7 +330,7 @@ def recommendation_view(
         if not m.scored:
             value, settled = (None, False) if schedule is None else mark_score_e6(
                 schedule, rec.side, rec.count_e2, rec.entry_price_e6, m.yes_bid_e6, m.yes_ask_e6,
-                m.closed, entry.settled,
+                m.closed, entry.yes_paid_e6,
             )  # fmt: skip
         marks.append(c.MarkView(horizon_s=m.horizon_s, at_utc=utc_text(m.at_ns),
                                 yes_bid_e6=m.yes_bid_e6, yes_ask_e6=m.yes_ask_e6, score_e6=value,
@@ -346,7 +350,13 @@ def recommendation_view(
     )  # fmt: skip
 
 
-def market_fees(index: MarketIndex) -> "Callable[[str], FeeSchedule | None]":
+def market_fees(
+    index: MarketIndex, lookup: "MarketLookup | None" = None
+) -> "Callable[[str], FeeSchedule | None]":
+    """A ticker's fee schedule, from the index or, for a market it lacks, the lookups (M1.14)."""
+    if lookup is not None:
+        return lookup.fees
+
     def fees(ticker: str) -> FeeSchedule | None:
         info = index.markets.get(ticker)
         return None if info is None else index.fees.get(info.series_ticker)
@@ -354,12 +364,26 @@ def market_fees(index: MarketIndex) -> "Callable[[str], FeeSchedule | None]":
     return fees
 
 
-def market_title(index: MarketIndex) -> Callable[[str], str]:
+def market_title(index: MarketIndex, lookup: "MarketLookup | None" = None) -> Callable[[str], str]:
+    """A ticker's title, from the index or, for a market it lacks, the lookups (M1.14)."""
+    if lookup is not None:
+        return lookup.title
+
     def title(ticker: str) -> str:
         info = index.markets.get(ticker)
         return "" if info is None else info.title
 
     return title
+
+
+class LookupFailed(Exception):
+    """Kalshi could not be asked about a market the index lacks (M1.14)."""
+
+
+def wanted(ctx: "ApiContext", tickers: "Iterable[str]") -> None:
+    """The titles a page lacks, looked up in the background for its next refresh (M1.14)."""
+    if ctx.lookup is not None:
+        ctx.lookup.want(tickers)
 
 
 def active_page(ctx: "ApiContext") -> "tuple[c.RecommendationPage, bytes]":
@@ -370,10 +394,12 @@ def active_page(ctx: "ApiContext") -> "tuple[c.RecommendationPage, bytes]":
         empty = c.RecommendationPage(items=[], total=0)
         return empty, msgspec.json.encode(empty)
     cached = ctx.active_cache
-    key = (service.journal.changes, ctx.index.version)  # titles and fees too (merge review 6)
+    looked = 0 if ctx.lookup is None else ctx.lookup.version
+    key = (service.journal.changes, ctx.index.version, looked)  # titles, fees (merge review 6)
     if cached is None or cached[0] != key:
-        fees, title = market_fees(ctx.index), market_title(ctx.index)
+        fees, title = market_fees(ctx.index, ctx.lookup), market_title(ctx.index, ctx.lookup)
         entries = service.journal.entries(service.board.top())
+        wanted(ctx, (e.recommendation.ticker for e in entries))
         page = c.RecommendationPage(items=[recommendation_view(e, fees, title) for e in entries],
                                     total=service.board.shown())  # fmt: skip
         cached = ctx.active_cache = (key, page, msgspec.json.encode(page))
@@ -614,10 +640,28 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         page = [market_view(ctx, m) for m in found[offset : offset + limit]]
         return _json(c.MarketPage(items=page, total=len(found), offset=offset))
 
+    async def known(ticker: str) -> MarketInfo | None:
+        """The index's market, else one looked up (settled before a restart, or long ago: M1.14).
+        Kalshi failing to answer raises ``LookupFailed``, never reads as "no such market"."""
+        info = ctx.index.markets.get(ticker)
+        if info is not None or ctx.lookup is None:
+            return info
+        try:
+            return await ctx.lookup.get(ticker)
+        except Exception as exc:
+            ctx.lookup.failures += 1
+            log.warning("market lookup failed", extra={"error": type(exc).__name__})
+            raise LookupFailed from exc
+
+    unreachable = "Kalshi could not be asked about this market now; try again shortly"
+
     async def market(request: Request) -> Response:
-        info = ctx.index.markets.get(request.path_params["ticker"])
+        try:
+            info = await known(request.path_params["ticker"])
+        except LookupFailed:  # (merge review 10)
+            return _error(503, "unavailable", unreachable)
         if info is None:
-            return _error(404, "not_found", "no such market in the index")
+            return _error(404, "not_found", "no such market at Kalshi")
         return _json(market_view(ctx, info))
 
     async def book(request: Request) -> Response:
@@ -659,9 +703,12 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         if interval not in (1, 60):
             raise _BadRequest("interval must be 1 or 60 (minutes)")
         hours = _int(request, "hours", 24, 1, MAX_CANDLE_HOURS) or 24
-        info = ctx.index.markets.get(ticker)
+        try:
+            info = await known(ticker)
+        except LookupFailed:
+            return _error(503, "unavailable", unreachable)
         if info is None or ctx.candles is None:
-            return _error(404, "not_found", "no such market in the index, or no price history")
+            return _error(404, "not_found", "no such market at Kalshi, or no price history")
         key = (ticker, interval, hours)
         now = asyncio.get_running_loop().time()
         cached = ctx.candle_cache.get(key)
@@ -700,8 +747,9 @@ def create_app(ctx: ApiContext) -> ASGIApp:
             return Response(active_page(ctx)[1], media_type="application/json")
         if ctx.journal is None:
             return _json(c.RecommendationPage(items=[], total=0))
-        fees, title = market_fees(ctx.index), market_title(ctx.index)
+        fees, title = market_fees(ctx.index, ctx.lookup), market_title(ctx.index, ctx.lookup)
         entries = ctx.journal.recent()
+        wanted(ctx, (e.recommendation.ticker for e in entries))
         return _json(c.RecommendationPage(
             items=[recommendation_view(e, fees, title) for e in entries], total=len(entries)
         ))  # fmt: skip
@@ -711,7 +759,12 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         entry = None if ctx.journal is None else ctx.journal.get(rid)
         if entry is None:
             return _error(404, "not_found", "no such recommendation")
-        return _json(recommendation_view(entry, market_fees(ctx.index), market_title(ctx.index)))
+        # its market's title and fees, even when the index lacks it; a failing Kalshi only leaves
+        # the title out (per-commit review)
+        with contextlib.suppress(LookupFailed):
+            await known(entry.recommendation.ticker)
+        fees, title = market_fees(ctx.index, ctx.lookup), market_title(ctx.index, ctx.lookup)
+        return _json(recommendation_view(entry, fees, title))
 
     async def respond(request: Request) -> Response:
         rid = request.path_params["rid"]
