@@ -3825,3 +3825,5 @@ closed checks sold at a kept quote, so they are scored again at settlement; the 
   | 17 | (sub-agent) A writer thread started after a close shared the stopped one's queue: the close could hang | Each thread its own queue; the join has a limit; tested |
   | 18 | (sub-agent) Every bad book frame wrote a break event (hundreds a second) | Once per broken book; the no-ticker case clears the snapshot requests; tested |
   | 19 | (sub-agent) A snapshot the state ignores was still handed on as an item | No item (live and replay) |
+
+**v0.1.17 published** (test pre-release from `ad44ffd`, 2026-11-02; release run green). Live checks pending the owner's install.
