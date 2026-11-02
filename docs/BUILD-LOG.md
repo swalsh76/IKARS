@@ -3827,3 +3827,27 @@ closed checks sold at a kept quote, so they are scored again at settlement; the 
   | 19 | (sub-agent) A snapshot the state ignores was still handed on as an item | No item (live and replay) |
 
 **v0.1.17 published** (test pre-release from `ad44ffd`, 2026-11-02; release run green). Live checks pending the owner's install.
+
+**Live check on v0.1.17** (2026-11-02, installed by the owner; the engine started 10:48:11 MST; the API with GET
+only, the journal, ledger and state read-only, counts only):
+
+| Check | Result |
+|---|---|
+| Upgrade | journal backed up, then schema 5; API 2.3; the real ledger bound to `production` |
+| C4 re-score | every closed check sold at a kept quote is now scored at its settlement (53,584 at settlement, none left sold); none given up for want of fees (the lookups: 706, 0 failures); 7 closed checks wait for their markets' results |
+| C2 scorecard | 30 min: 107,880 checks, 0 late; 60 min: 107,506 checks, 111 late, counted apart |
+| Ledger | verified, reconciles exactly, 0 errors |
+| Feed and recorder | connected, 100 of 100 books ready, no open gaps, every channel recording, no recording losses |
+| B3 flush stall | a bench at the live rates (864 ticker, 578 delta, 145 trade rows a second), measured with `sleep(0)` (Windows' timer floors `sleep(0.001)` at ~16 ms): the loop's worst gap per flush **10 to 15 ms**, against 26 to 32 ms before |
+| B11 and the restart replay | `ikars replay --compare --check-books --warmup-min 0` from 10:48:00 to 11:00:00 (across the recorded start): **120 of 120** recommendations matched, books 9,155 of 9,333 (all 2,072 settled ones agree); from 10:48:30 (19 s after the start, so momentum's first 19 s unseen) 111 of 120, as expected |
+
+**Found by the live check, fixed** (`2537c63`): the scoring query's `NOT (m.closed = 1 AND s.ticker IS NULL)` is
+NULL, not true, for a mark whose market state was not known, so **515 checks from v0.1.7 (2026-10-28, before the
+`closed` column) were never scored**, and since merge review 5 a check on a paused market would not be either.
+Now `m.closed IS NOT 1 OR s.ticker IS NOT NULL`; tested (fails on the old code); on a scratch copy of the live
+journal the 515 are scored at their kept bid and only the 7 closed ones still wait. Its live check needs a test
+release.
+
+**Seen, not R3a's** (to R3b): `/v1/hello` reports `engine_version` 0.0.0 (the release stamps Velopack's version,
+not the package's; `program.version` says 0.1.17); an open terminal's one-second stream pass costs about 25 to 35
+ms of loop time each second (portfolio, alerts, the recommendations page), older than R3a.
