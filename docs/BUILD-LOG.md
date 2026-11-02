@@ -3401,3 +3401,101 @@ it moves onto `main` once PR #35 merges.
   - live vs replay parity: momentum v1 on a recorded hour against the live journal;
   - the rebuilt book's best bid and ask agree with the recorded ticker at least 99% of the time.
 - **No new packages.** A test release is needed for the recording changes.
+
+#### 1.13 built (2026-11-01)
+
+**Built** on `m1/13` (stacked on `m2/3`):
+
+| Commit | What |
+|---|---|
+| `d3f26fa` | the slice |
+| `3d2d972` | merge-review fixes |
+
+**No new packages.**
+
+- **One row, one item.**
+  - `kalshi/rows.py` builds each feed message's recorded row, then the engine's item from that row, for the live
+    source and the replay alike.
+  - Live items now carry the recorded fields: momentum reads only those. Kalshi item payloads were slimmed; only
+    momentum read them.
+- **One path for the kept state.** `KalshiState` holds quotes, last prices, books and the watched set, and is changed
+  only from rows and recorded **feed events**:
+  - `start`, before the first subscription;
+  - `reconnect`, which clears every book;
+  - `sequence_gap`, which now breaks every book until its snapshot;
+  - `watch` and `unwatch`;
+  - `forget`.
+  - Each event is stamped just after the newest frame the pump handled, strictly increasing, so a replay puts it
+    exactly where it fell among the frames.
+- **Recording changes:**
+  - every market's ticker frames (owner);
+  - a `market` channel: details on change, a dump after each full discovery, removals, and the series' fee terms;
+  - the `feed` channel;
+  - an hourly checkpoint of each sound book, with the watched set restated;
+  - empty snapshots;
+  - the books' `clock`.
+  - Columns are only ever added. A file written before a column existed reads with it null (`conform`), so the hour
+    spanning the upgrade still compacts.
+- **The streaming reader** (`replay.py`): a k-way merge of every channel's hour files in received-time order, ties by
+  channel and then file and row order.
+  - A compacted hour is streamed in batches; an open or split hour is read whole and sorted.
+  - It reads one hour past the window, for late rows.
+  - It re-reads an hour that a compaction renamed mid-read.
+- **`ikars replay --from --to [--plugins] [--compare] [--check-books] [--out]`.**
+  - Only signal plugins run, with a scratch journal (`JournalService.step` each virtual second).
+  - Recorded items of the plugins being run again are left out.
+  - The market details come as they were (25 hours looked back), with a 40-minute warm-up that is not reported.
+  - It reports a digest of the items and their payloads, the logged gaps, the comparison with the live journal, and
+    the book check.
+  - It never writes inside IKARS's folder, never reuses a journal, and reads the settings without migrating them.
+- **The book check:** Kalshi's ticker marks an empty side as 0c or $1 (SPARQ's lesson). The 99% target is held
+  against **settled** books (unchanged for 500 ms). On real data on 2026-11-01, every mismatch fell within 500 ms
+  of a book change: the ticker and the deltas are separate messages.
+- **Retired:** the generic-schema `ReplaySource`, `RECORDING_SCHEMA` and `write_recording`. The smoke run and the
+  tests use the recorder's own layout (`write_items`).
+- **Moved:** `exact_ns` and `ns_time` to `clocks.py`; the shared Kalshi test fakes to `tests/helpers`.
+
+**Checked on real data** (the live workstation's recordings of 2026-11-01 19:00 to 19:30 MST, read only):
+- **Replayed:** 1.36 million items (436,000 trades, ticker, books, and weather and news items), with no late rows.
+  Two runs gave one digest (`08744fcdbb9794c4`), and so did a run after the fixes.
+- **Books:** 3,019 comparisons; 94.7% agree overall and 396 of 396 (100%) settled.
+- **Momentum:** made nothing, and the replay said why: the window predates the `market` channel ("partial").
+- **Live vs replay parity** of momentum needs recordings made with this release. It is the live check.
+
+**Verified.** Python: 1,632 tests, 22 for the replay, with made-up frames. The strongest runs the live source over
+made-up frames and replays its recording to the very same items and state. Coverage: `replay.py` 95%,
+`kalshi/rows.py` 98%. Lint, types and the data guard are clean.
+
+**Review.**
+- **Per commit:** `d3f26fa`, 3 found before committing, all fixed:
+  1. Watched combo markets lost their quote in a replay: watched tracking.
+  2. An hour compacting while read could be read twice: the files are listed before and after.
+  3. A checkpoint moved a book's change time: it now only sets a missing book.
+- **Merge review:** `/code-review medium`, 10 findings, plus a fresh-eyes reviewer sub-agent (PLAN R16), 8 more open
+  after the first fixes. All fixed in `3d2d972` unless marked:
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | The start, reconnect and gap events took the pump's clock: a replay put the start after the first snapshots and cleared them | The start before the first subscription; pump events just after the newest frame handled |
+  | 2 | A stream that failed part-way was re-read whole, repeating rows | The re-read skips what was sent |
+  | 3 | `--out` could be the live data folder, or reuse an earlier replay's journal | Both refused; tested |
+  | 4 | A full discovery that failed part-way never dumped | The dump runs in `finally` |
+  | 5 | An open hour was read 5 times (its size grows with every flush) | Re-read only when a compaction renamed files |
+  | 6 | Watched combos lost their quotes after a reconnect | `watch` and `unwatch` events keep the watched set |
+  | 7 | Late rows in the next hour's file were missed at a window's end | One hour past the window is read |
+  | 8 | The digest left out payloads | Payloads included |
+  | 9 | `JournalService.flush` duplicated `step` | `flush` calls `step` |
+  | 10 | Snapshot levels were split twice; constants were repeated | Split once; shared `NS` and `HOUR_NS` |
+  | 11 | The checkpoint took wall time, so queued deltas replayed before it (sub-agent) | Stamped among the frames handled, in its own hour; tested |
+  | 12 | Watch, unwatch and forget took wall time; an add's snapshot could beat its watch (sub-agent) | Same stamps; an add is watched before asking and restored when refused |
+  | 13 | A full discovery held every market change back for minutes, until the dump (sub-agent) | Changes recorded as they come; the dump writes the rest; tested |
+  | 14 | Markets the index dropped stayed in a replay (sub-agent) | A `removed` row; tested |
+  | 15 | A feed event and a checkpoint could tie and swap (sub-agent) | Strictly increasing stamps |
+  | 16 | Re-reading after a failed stream counts rows, not positions (sub-agent) | No change: Windows does not replace an open file, so the hour cannot change under the read |
+  | 17 | Leaving out a re-run plugin's items relied on it naming itself as the source (sub-agent) | `emit` stamps the plugin's name |
+  | 18 | A settings error printed a traceback; temporary folders stay (sub-agent) | A plain error; the folders stay on purpose (they hold the journal to inspect) |
+
+**Live check: pending** (a test release on the owner's word):
+- the upgrade compacts the open hour;
+- the new channels record;
+- after an hour, a replay of momentum against the live journal (parity), and the book check at 99% settled or more.
