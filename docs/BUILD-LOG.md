@@ -3767,3 +3767,61 @@ the publish job only (question 3).
    releases from PR branches), with a `SHA256SUMS` file and a build-provenance attestation.
 4. **A6: fee unit.** Kalshi charges your account at $0.0001; scores round each fee up to a cent (conservative).
    Recommended: keep cents through v1's review, then decide with v2 (parked).
+
+#### 1.R3a built (2026-11-02)
+
+**Built** on `m1/r3a`, stacked on `m1/14`: `c2530b3` (A), `cd07cf2` (B), `0348da7` (C), merge-review fixes
+`8ead5f1`. No new packages. The API goes to 2.3 (`ScoreLineView.late`); the scorecard's "scored" cell reads
+"106 of 237 (9 late)" (the existing cell, no new screen).
+
+**What changed on the workstation when installed:** journal migration 5 (backed up first) clears the scores of
+closed checks sold at a kept quote, so they are scored again at settlement; the real ledger is bound to
+`production` at its first start (a bookmark); nothing else.
+
+**As built, against the plan:**
+- **A10 narrowed:** only the Kalshi environment is bound, not the key fingerprint. Binding the fingerprint would
+  stop every import at a routine key rotation; each start already records the fingerprint as an `app` record.
+  *Question for the owner* (below).
+- **A7:** the settlement time, else the market's close time (the plan); never the archive's time.
+- **B3:** the recorder's own writer thread builds and writes the batches; closing hours and reading trade ids run
+  there too, awaited off the loop. A failed write is a loss the heartbeat logs as a gap for its channel and time
+  range. The conversion holds the GIL, so it is done in 2,000-row parts (the loop runs between them).
+- **B5:** the version moves only on a real change, the dump yields every 5,000 markets, the prune runs every 10
+  minutes. Still on the loop: when volumes move, the next Markets request re-sorts the index (about 280 ms at
+  560k markets, at most once a minute). Parked in PLAN §9.
+- **B11:** a snapshot makes a book only for a watched market, once the recording has watch events (since
+  v0.1.13); an older recording keeps its books. The first subscription now watches before it asks.
+- **C2:** the scorecard counts checks taken more than 11 minutes after they fell due as `late`, apart from the
+  figures. A paused market is no longer "closed" (one `trading()` rule, live and replay).
+- **C3:** a run's first poll of a feed reads the whole reply (so the poller knows what it lists); a later 304
+  keeps those ids.
+
+**Tests:** 1,690 Python tests pass (93.5% coverage), 232 web unit tests, 20 Playwright screens; ruff, mypy
+(both runs), the data guard and gitleaks clean. Each new test was run against the old code and fails there.
+
+**Review.**
+- **Per commit** (`/code-review low`): `c2530b3` 1 fixed (the rest of a pass used a book another writer had
+  changed: rebuilt at once); `cd07cf2` none; `0348da7` none.
+- **Merge review** (`/code-review medium` and a fresh-eyes sub-agent, R16), 19 findings:
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | Migration 5 re-scores checks whose market left the index; with no fees and an old mark time they were given up at once (both reviewers; proved by the sub-agent) | The journal asks the lookup for those markets; the fees wait runs from the start; tested (`8ead5f1`) |
+  | 2 | A 304 refreshed every id of a shared scope (all news feeds), so none was ever forgotten | Only that feed's last listed ids; a run's first poll reads the whole reply; tested |
+  | 3 | The yielding dump could write a market's older details after a change made meanwhile | Each row is the market as it is when written, stamped then; tested |
+  | 4 | A7 fell back to the expiration time, which can be a scheduled date after the settlement | The settlement, else the close time (the plan) |
+  | 5 | A paused market counted as closed: its check waited for the settlement | Only ended statuses are closed; one `trading()` for live and replay; tested |
+  | 6 | A failed write was raised twice (to the waiter and to the next writer) | Losses kept for the gap log, raised only to the waiter (with 8) |
+  | 7 | A cancelled heartbeat's compaction and the shutdown's could share the pending list | `pop` guarded; two at once are safe |
+  | 8 | The unsettled set never dropped markets past the 30-day window | Dropped as the window moves; tested |
+  | 9 | `Ledger.append_all` kept its own BEGIN/ROLLBACK beside the new helper | On `transaction(immediate=True)` |
+  | 10 | A crash between write and rename leaves a uniquely named `.tmp` file | No change: a window of milliseconds on a few small files; a scan per write would cost more |
+  | 11 | (sub-agent) The batch conversion holds the GIL, so the loop still stalled per channel (27 ms measured) | Converted in 2,000-row parts |
+  | 12 | (sub-agent) Recordings before v0.1.13 have no watch events: B11 dropped all their books | Every snapshot kept until a recording names its watched markets; tested |
+  | 13 | (sub-agent) A replay across a recorded restart kept the old quotes and quote wait | A recorded start forgets the quotes; the replay restarts the journal's wait; tested |
+  | 14 | (sub-agent) A10 binds the environment only | Question for the owner |
+  | 15 | (sub-agent) Taking the buffer and queueing it were two lock sections: a trade-id read could pass between | One lock section; queued at once |
+  | 16 | (sub-agent) A failed write was raised into whichever caller wrote next | A loss logged by the heartbeat as a gap for its channel and times; tested |
+  | 17 | (sub-agent) A writer thread started after a close shared the stopped one's queue: the close could hang | Each thread its own queue; the join has a limit; tested |
+  | 18 | (sub-agent) Every bad book frame wrote a break event (hundreds a second) | Once per broken book; the no-ticker case clears the snapshot requests; tested |
+  | 19 | (sub-agent) A snapshot the state ignores was still handed on as an item | No item (live and replay) |
