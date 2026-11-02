@@ -639,7 +639,8 @@ def create_app(ctx: ApiContext) -> ASGIApp:
     async def hello(request: Request) -> Response:
         # the installed program's version (Velopack's), never the packages' own 0.0.0 (M1.R3 F1)
         installed = None if ctx.updates is None else ctx.updates.current()
-        return _json(c.Hello(api_version=c.API_VERSION, engine_version=installed or engine_version(),
+        return _json(c.Hello(api_version=c.API_VERSION,
+                             engine_version=installed or engine_version(),
                              schema_sha256=c.schema_sha256()))  # fmt: skip
 
     async def health(request: Request) -> Response:
@@ -923,7 +924,8 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         if not config.restartable:  # nothing would start it again (as for a restart)
             return _json(c.Done(done=False, detail="this engine runs in the foreground: stop it "
                                 "and start IKARS from the Start menu to update"))  # fmt: skip
-        return _json(updater().apply(lambda: runmode.request_stop(config.paths.data)))
+        until = runmode.update_deadline()  # a failed update: restarted, not left down (M1.R3 E6)
+        return _json(updater().apply(lambda: runmode.request_stop(config.paths.data, until)))
 
     async def layouts(request: Request) -> Response:
         try:

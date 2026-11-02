@@ -19,6 +19,7 @@ import logging
 import secrets
 import shutil
 import sqlite3
+from collections.abc import Callable
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -205,6 +206,14 @@ def restore(
 ) -> dict[str, Any]:
     """Set the current data aside and put back the snapshot taken when leaving ``version`` (the
     engine must be stopped). A failure part way puts the current data back as it was."""
+    return restore_undoable(paths, version, current, now)[0]
+
+
+def restore_undoable(
+    paths: Paths, version: str, current: str, now: datetime | None = None
+) -> tuple[dict[str, Any], Callable[[], None]]:
+    """As ``restore``, with a function that puts the current data back afterwards: the rollback
+    calls it when the install it hands over to cannot start (M1.R3 E5)."""
     name, manifest = require_snapshot(paths, version)
     at = now or datetime.now(UTC)
     source = paths.backups / "pre-upgrade" / name
@@ -227,16 +236,26 @@ def restore(
             copied.append(target)
             shutil.copytree(copy, target) if copy.is_dir() else shutil.copy2(copy, target)
     except Exception as exc:  # undo exactly what was done, nothing else (merge review 1)
-        for target in copied:
-            with contextlib.suppress(OSError):
-                shutil.rmtree(target) if target.is_dir() else target.unlink(missing_ok=True)
-        for kept, live in reversed(moved):
-            with contextlib.suppress(OSError):
-                shutil.move(kept, live)
+        _put_back(copied, moved)
         problem = f"the snapshot could not be restored ({exc}); nothing changed"
         raise RollbackRefused(problem) from exc
     write_text_atomic(paths.data / VERSION_FILE, version + "\n")
+
+    def undo() -> None:
+        _put_back(copied, moved)
+        write_text_atomic(paths.data / VERSION_FILE, current + "\n")
+
     head, kept = int(manifest["ledger_head"]), aside / "ledger.sqlite"
     return {"restored": name, "set_aside": str(aside.name),
             "annotations_to_enter_again": records_since(kept, head, "annotation"),
-            "own_records_kept_aside": records_since(kept, head, "app")}  # fmt: skip
+            "own_records_kept_aside": records_since(kept, head, "app")}, undo  # fmt: skip
+
+
+def _put_back(copied: list[Path], moved: list[tuple[Path, Path]]) -> None:
+    """Undo a swap: what the snapshot put back goes, and the data set aside returns."""
+    for target in copied:
+        with contextlib.suppress(OSError):
+            shutil.rmtree(target) if target.is_dir() else target.unlink(missing_ok=True)
+    for kept, live in reversed(moved):
+        with contextlib.suppress(OSError):
+            shutil.move(kept, live)

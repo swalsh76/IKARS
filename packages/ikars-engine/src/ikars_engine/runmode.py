@@ -115,18 +115,39 @@ def _unlock(handle: IO[str]) -> None:
 # --- stopping -----------------------------------------------------------------------------------
 
 
-def request_stop(folder: Path) -> None:
+UPDATE_GRACE_NS = 15 * 60 * 1_000_000_000  # an update that has not started IKARS again by then
+
+
+def update_deadline() -> int:
+    """When an update's stop stops counting as the owner's (M1.R3 E6)."""
+    return time.time_ns() + UPDATE_GRACE_NS
+
+
+def request_stop(folder: Path, until_ns: int | None = None) -> None:
+    """Ask the engine to stop, marked as the owner's stop so the watchdog leaves it; ``until_ns``:
+    only until then (an update, which starts IKARS again: one that fails must not leave the engine
+    down for good, unseen: M1.R3 E6)."""
     folder.mkdir(parents=True, exist_ok=True)
     (folder / STOP).write_text("stop\n", encoding="utf-8")
-    (folder / STOPPED_BY_OWNER).write_text("the owner stopped the engine\n", encoding="utf-8")
+    why = "the owner stopped the engine" if until_ns is None else f"updating until {until_ns}"
+    (folder / STOPPED_BY_OWNER).write_text(why + "\n", encoding="utf-8")
 
 
 def stop_requested(folder: Path) -> bool:
     return (folder / STOP).exists()
 
 
-def stopped_by_owner(folder: Path) -> bool:
-    return (folder / STOPPED_BY_OWNER).exists()
+def stopped_by_owner(folder: Path, now_ns: int | None = None) -> bool:
+    """Whether the engine was stopped on purpose and is to stay down; an update's stop counts only
+    until its deadline."""
+    try:
+        text = (folder / STOPPED_BY_OWNER).read_text(encoding="utf-8")
+    except OSError:
+        return False
+    head, _, until = text.strip().rpartition(" ")
+    if head != "updating until" or not until.isdigit():
+        return True
+    return (time.time_ns() if now_ns is None else now_ns) < int(until)
 
 
 def clear_stop(folder: Path) -> None:

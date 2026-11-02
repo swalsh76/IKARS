@@ -142,14 +142,23 @@ def main(argv: list[str]) -> int:
         return 0
     if args.command == "run":
         from ikars_engine.kalshi.runner import default_paths, run
+        from ikars_engine.runmode import AlreadyRunning, EngineLock
         from ikars_engine.settings import load
 
         paths = default_paths(args.root)
-        before_start(paths)
+        lock = EngineLock(paths.data)  # never two engines on one data folder (M1.R3 E4)
         try:
+            lock.acquire(wait_s=3.0)
+        except AlreadyRunning:
+            print(json.dumps({"refused": "the engine is already running: ikars stop first"}))
+            return 1
+        try:
+            before_start(paths)
             health = asyncio.run(run(paths, load(paths.settings), args.minutes))
         except KeyboardInterrupt:
             return 0
+        finally:
+            lock.release()
         print(json.dumps(health.get("kalshi"), indent=2, default=str))
         return 0
     if args.command == "demo-api":

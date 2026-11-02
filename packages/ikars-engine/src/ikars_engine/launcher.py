@@ -24,13 +24,16 @@ MB_ICONERROR = 0x10
 
 
 def stop_engine(
-    paths: Paths, wait_s: float = STOP_WAIT_S, sleep: Callable[[float], None] = time.sleep
+    paths: Paths,
+    wait_s: float = STOP_WAIT_S,
+    sleep: Callable[[float], None] = time.sleep,
+    until_ns: int | None = None,
 ) -> None:
     """Stop the engine and wait for it: its Python runs from the program folder Velopack is about to
-    replace or remove (merge review 8). Marked as the owner's stop, so the watchdog leaves it; the
-    next start (the program, after an update) clears the mark."""
+    replace or remove (merge review 8). Marked as the owner's stop, so the watchdog leaves it (for
+    an update, until ``until_ns``); the next start (the program, after an update) clears it."""
     if runmode.engine_running(paths.data):
-        runmode.request_stop(paths.data)
+        runmode.request_stop(paths.data, until_ns)
         deadline = time.monotonic() + wait_s
         while runmode.engine_running(paths.data) and time.monotonic() < deadline:
             sleep(0.5)
@@ -68,7 +71,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         App()
         .set_args(args)
         .set_auto_apply_on_startup(False)
-        .on_before_update_fast_callback(lambda version: stop_engine(paths))
+        .on_before_update_fast_callback(  # an update starts IKARS again: only so long (M1.R3 E6)
+            lambda version: stop_engine(paths, until_ns=runmode.update_deadline())
+        )
         .on_before_uninstall_fast_callback(lambda version: before_uninstall(paths))
         .run()
     )

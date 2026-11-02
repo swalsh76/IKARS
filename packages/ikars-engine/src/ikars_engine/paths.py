@@ -63,12 +63,15 @@ def resolve(program: Path | None = None, environ: dict[str, str] | None = None) 
     (``LOCALAPPDATA`` on Windows; ``~/.local/share`` elsewhere, for tests on other systems)."""
     env = dict(os.environ) if environ is None else environ
     folder = program or program_folder()
-    if (folder / PORTABLE_MARKER).is_file():
-        return Paths(folder / "data-portable")
-    if folder.name.lower() == "python" and folder.parent.name.lower() == "current":
+    installed = folder.name.lower() == "python" and folder.parent.name.lower() == "current"
+    if installed:
         root = folder.parent.parent
         if (root / VELOPACK_PORTABLE).is_file():
             return Paths(root / PORTABLE_DATA)
+    # the older marker beside the interpreter: never in Velopack's program folder, which an update
+    # replaces with everything in it (M1.R3 E8)
+    elif (folder / PORTABLE_MARKER).is_file():
+        return Paths(folder / "data-portable")
     base = env.get("LOCALAPPDATA")
     if base:
         return Paths(Path(base) / APP_NAME)

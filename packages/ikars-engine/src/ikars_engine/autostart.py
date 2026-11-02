@@ -115,17 +115,37 @@ def _quoted(command: list[str]) -> str:
     return " ".join(f'"{part}"' if " " in part else part for part in command)
 
 
+def _rooted(root: Path | None) -> list[str]:
+    return ["--root", str(root)] if root is not None else []
+
+
+def _engine(python: str, root: Path | None) -> str:
+    return _quoted([python, "-I", "-m", "ikars_engine", "serve", *_rooted(root)])  # isolated
+
+
+def _create_task(run: Run, python: str, root: Path | None) -> bool:
+    # isolated as the engine is: a user's PYTHONPATH or PYTHONHOME (set for another project) must
+    # never make the watchdog fail unseen (M1.R3 E7)
+    watchdog = _quoted([python, "-I", "-m", "ikars_engine", "watchdog", *_rooted(root)])
+    return run(["schtasks", "/Create", "/F", "/TN", TASK, "/SC", "MINUTE",
+                "/MO", str(EVERY_MINUTES), "/TR", watchdog]) == 0  # fmt: skip
+
+
 def install(registry: Registry, run: Run, python: str, root: Path | None = None) -> dict[str, bool]:
     """``root``: a data folder other than the usual, passed to both the engine and the watchdog,
     so the watchdog looks where the engine runs."""
-    rooted = ["--root", str(root)] if root is not None else []
-    engine = _quoted([python, "-I", "-m", "ikars_engine", "serve", *rooted])  # isolated
-    registry.set(RUN_KEY, RUN_VALUE, engine)
+    registry.set(RUN_KEY, RUN_VALUE, _engine(python, root))
     registry.set(APP_KEY, "DisplayName", "IKARS")
-    watchdog = _quoted([python, "-m", "ikars_engine", "watchdog", *rooted])
-    task = run(["schtasks", "/Create", "/F", "/TN", TASK, "/SC", "MINUTE",
-                "/MO", str(EVERY_MINUTES), "/TR", watchdog])  # fmt: skip
-    return {"autostart": True, "notification_name": True, "watchdog_task": task == 0}
+    return {"autostart": True, "notification_name": True,
+            "watchdog_task": _create_task(run, python, root)}  # fmt: skip
+
+
+def refresh_task(registry: Registry, run: Run, python: str, root: Path | None = None) -> bool:
+    """At an engine start: the watchdog's task written again as this version writes it (one made
+    before M1.R3 lacked ``-I``), when this program's auto-start is the one installed; True if so."""
+    if registry.get(RUN_KEY, RUN_VALUE) != _engine(python, root):
+        return False
+    return _create_task(run, python, root)
 
 
 def remove(registry: Registry, run: Run) -> dict[str, bool]:
