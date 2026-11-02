@@ -171,11 +171,15 @@ def main(argv: list[str]) -> int:
         return runmode_cli.run(args, paths, load(paths.settings))
     if args.command == "replay":
         from ikars_engine.kalshi.runner import default_paths
-        from ikars_engine.settings import read
+        from ikars_engine.settings import SettingsError, read
 
         paths = default_paths(Path(args.root) if args.root else None)
-        # read, never migrated: a replay changes nothing of the live engine's
-        return replay_cli.run(args, paths, read(paths.settings).plugin_settings)
+        try:  # read, never migrated: a replay changes nothing of the live engine's
+            plugin_settings = read(paths.settings).plugin_settings
+        except SettingsError as exc:
+            print(json.dumps({"error": str(exc)}))
+            return 2
+        return replay_cli.run(args, paths, plugin_settings)
     if args.command in ("ledger", "backup"):
         from ikars_engine.kalshi.runner import default_paths
         from ikars_engine.settings import load

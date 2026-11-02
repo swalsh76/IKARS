@@ -133,6 +133,7 @@ SCHEMAS: dict[str, pa.Schema] = {
             ("fee_type", _STR),  # the series' fee terms then
             ("fee_multiplier_e6", _I64),
             ("full", pa.bool_()),
+            ("removed", pa.bool_()),  # the index dropped it (long settled)
         ]
     ),  # fmt: skip
     # what the live feed did to its kept state: a start, a reconnect (every book cleared), a
@@ -508,15 +509,11 @@ def read_hour(root: Path, channel: str, hour: Hour, attempts: int = 5) -> pa.Tab
     return table
 
 
-def _listing(root: Path, channel: str, hour: Hour) -> list[tuple[str, int]]:
-    """An hour's files by name and size: a compaction renames or rewrites one."""
-    out = []
-    for path in hour_files(root, channel, hour):
-        try:
-            out.append((path.name, path.stat().st_size))
-        except OSError:
-            out.append((path.name, -1))
-    return out
+def _listing(root: Path, channel: str, hour: Hour) -> list[str]:
+    """An hour's files by name: a compaction renames the stream it folds in (``.arrow`` to
+    ``.arrow.merged`` to gone), while an open hour that only grows keeps its names (merge review
+    5: appends are new rows, never rows read twice)."""
+    return [path.name for path in hour_files(root, channel, hour)]
 
 
 def iter_hour(
@@ -526,15 +523,19 @@ def iter_hour(
     is streamed a batch at a time, so a replay holds about one batch per channel, not the hour; an
     hour still open or in parts is read whole and sorted first."""
     files = hour_files(root, channel, hour)
+    sent = 0
     if len(files) == 1 and files[0].name.endswith(".parquet"):
         try:
             source = pq.ParquetFile(files[0])
             if source.schema_arrow.equals(SCHEMAS[channel]):
-                yield from source.iter_batches(batch_size=batch_rows)
+                for batch in source.iter_batches(batch_size=batch_rows):
+                    yield batch
+                    sent += batch.num_rows
                 return
         except (pa.ArrowInvalid, OSError):
             pass  # replaced this instant, or older columns: read whole below
-    yield from read_hour(root, channel, hour).to_batches(max_chunksize=batch_rows)
+    # whole, past what was already sent (a stream that failed part-way: merge review 2)
+    yield from read_hour(root, channel, hour).slice(sent).to_batches(max_chunksize=batch_rows)
 
 
 def in_order(table: pa.Table) -> bool:

@@ -37,7 +37,6 @@ from typing import Any, Protocol
 from ikars_core.auth import DataSigner
 from ikars_core.book import Applied
 from ikars_core.endpoints import MarketData
-from ikars_core.markets import is_combo
 from ikars_core.ws import Data, Reconnected, ResubscribeFailed, SequenceGap
 from ikars_core.ws_models import (
     ORDERBOOK_CHANNEL,
@@ -67,7 +66,7 @@ from ikars_engine.kalshi.rows import (
 from ikars_engine.kalshi.watched import WatchedSet
 from ikars_engine.metrics import Metrics
 from ikars_engine.model import Item
-from ikars_engine.recorder import Recorder
+from ikars_engine.recorder import HOUR_NS, Recorder  # a book checkpoint this often (M1.13)
 from ikars_engine.skew import SkewMonitor
 from ikars_engine.sources import LiveSource
 from ikars_engine.store import StateStore
@@ -77,7 +76,6 @@ FULL_BOOKMARK = "discovery.full_ns"
 MINUTE_NS = 60 * 1_000_000_000
 BACKFILL_RECENT_NS = 2 * 60 * MINUTE_NS  # earlier backfills' rows, by when they were fetched
 NS = 1_000_000_000
-HOUR_NS = 3_600 * NS  # a checkpoint of every kept book this often (M1.13)
 CHANNEL_OF_TYPE = {
     "ticker": "ticker",
     "trade": "trade",
@@ -175,7 +173,7 @@ class KalshiSource:
         self.last_received: dict[str, int] = {}
         # the kept state, changed only from rows and feed events, as a replay changes it (M1.13);
         # the source shows its dicts under their old names (the API and the journal read them)
-        self.state = KalshiState(keep=lambda t: not is_combo(t) or t in self.watched.current)
+        self.state = KalshiState()  # a combo's quote is kept while it is watched (state.watched)
         self.books = self.state.books
         self.last_price_e6 = self.state.last_price_e6
         self.quotes = self.state.quotes  # ticker -> (YES bid, YES ask)
@@ -183,6 +181,8 @@ class KalshiSource:
         self.book_changed_ns = self.state.book_changed_ns
         self.book_version = self.state.book_version
         self._checkpoint_ns = 0  # the start of the hour last checkpointed
+        self._pump_at = 0  # the received time of the newest frame the pump has handled
+        self._stamp = 0  # the newest feed event's or checkpoint's stamp: they never tie or reorder
         self._live_since = 0  # when the subscriptions went live: a loss starts here at the latest
         self._snapshots = 0
         self._snapshot_wanted: set[str] = set()  # asked for, not yet arrived
@@ -210,15 +210,16 @@ class KalshiSource:
         self._state.set_bookmark(FULL_BOOKMARK, now)  # the next cycle is an incremental one
         await self.exchange.poll()
         await self.exchange.refresh_schedule()
+        # before the first subscription: every frame of this run comes after it (merge review 1)
+        self._feed_event("start", "", "subscribing", at=self._clock.now_ns())
         await self._feed.start()
         for channel in ("ticker", "trade", "market_lifecycle_v2"):
             await self._feed.subscribe(channel)  # every market
-        self.watched.current = self.watched.choose(self.discovery.index, self.last_price_e6, now)
+        self._watch(self.watched.choose(self.discovery.index, self.last_price_e6, now))
         self.watched.measure(now)
         if self.watched.current:
             await self._feed.subscribe(ORDERBOOK_CHANNEL, sorted(self.watched.current))
         self._live_since = self._clock.now_ns()
-        self._feed_event("start", "", "the subscriptions are live")
         # every channel is missing from its last heartbeat until now, when the subscriptions are
         # live again (not when start() began: discovery takes minutes)
         self._gaps_from_downtime(*previous)
@@ -316,6 +317,7 @@ class KalshiSource:
         if channel is None or message is None:
             return
         self.last_received[channel] = at
+        self._pump_at = max(self._pump_at, at)
         self.counts[frame.type] += 1
         if frame.sending_ts_ms:
             self._skew.add_frame(at // 1_000_000, frame.sending_ts_ms)
@@ -338,10 +340,9 @@ class KalshiSource:
             self.state.snapshot(message, at)
             self._snapshot_wanted.discard(message.market_ticker)
             self._snapshots += 1
-            rows = snapshot_rows(message, self._snapshots, at)
-            for row in rows:
+            for row in snapshot_rows(message, self._snapshots, at):
                 self.recorder.write("book_snapshot", row)
-            item = snapshot_item(rows)
+            item = snapshot_item(message, self._snapshots, at)
         elif isinstance(message, OrderbookDeltaMsg):
             ticker = message.market_ticker
             self.watched.note_delta(ticker)
@@ -360,11 +361,19 @@ class KalshiSource:
         if item is not None:
             await self._out.put(item)
 
-    def _feed_event(self, event: str, channel: str, detail: str) -> None:
+    def _next_stamp(self) -> int:
+        """Just after the newest frame the pump has handled, and after every earlier event: a change
+        to the kept state, from the pump or a background loop, lands between the frames it really
+        fell between, however far behind the pump is (merge review 1; sub-agent 1, 2, 5)."""
+        self._stamp = max(self._stamp + 1, self._pump_at + 1)
+        return self._stamp
+
+    def _feed_event(self, event: str, channel: str, detail: str, *, at: int | None = None) -> None:
         """A feed event that changes the kept state: recorded, then applied through the state, as a
-        replay applies it (M1.13)."""
-        row = {"received_ns": self._clock.now_ns(), "event": event, "channel": channel,
-               "detail": detail}  # fmt: skip
+        replay applies it (M1.13). ``at``: only the start, before any frame of the run."""
+        stamp = self._next_stamp() if at is None else at
+        self._stamp = max(self._stamp, stamp)
+        row = {"received_ns": stamp, "event": event, "channel": channel, "detail": detail}
         self.recorder.write("feed", row)
         self.state.feed_event(row)
 
@@ -375,10 +384,16 @@ class KalshiSource:
         if hour <= self._checkpoint_ns:
             return
         self._checkpoint_ns = hour
+        # in this hour, so a replay that starts on it has them, and never before a frame the pump
+        # has handled (a pump idle across the hour: nothing is queued from before it)
+        self._stamp = max(self._stamp, hour - 1)
+        for ticker in sorted(self.watched.current):  # the watched set, restated for a replay
+            self._feed_event("watch", "book", ticker)
         for book in list(self.books.values()):
             if book.ready:
                 self._snapshots += 1
-                rows = snapshot_rows(book_snapshot(book), self._snapshots, now, checkpoint=True)
+                stamp = self._next_stamp()  # where the books are, among the frames handled
+                rows = snapshot_rows(book_snapshot(book), self._snapshots, stamp, checkpoint=True)
                 for row in rows:
                     self.recorder.write("book_snapshot", row)
 
@@ -611,18 +626,31 @@ class KalshiSource:
                 return  # refused after a reconnect and being sent again: not a second subscription
             if wanted:
                 await self._feed.subscribe(ORDERBOOK_CHANNEL, sorted(wanted))
-                self.watched.current = wanted
+                self._watch(wanted)
             return
         # removals first, so the set never grows past its cap; the exchange's answer is the
         # truth after each step (a failed step leaves the set as it really is)
         if removed:
-            held = await self._feed.update_subscription(sid, "delete_markets", removed)
-            self.watched.current = set(held)
-            for ticker in removed:
-                self._feed_event("unwatch", "book", ticker)
+            self._watch(set(await self._feed.update_subscription(sid, "delete_markets", removed)))
         if added:
-            held = await self._feed.update_subscription(sid, "add_markets", added)
-            self.watched.current = set(held)
+            # watched before asking: a new market's snapshot can come before the answer
+            before = set(self.watched.current)
+            self._watch(before | set(added))
+            try:
+                held = await self._feed.update_subscription(sid, "add_markets", added)
+            except Exception:
+                self._watch(before)  # refused: the set is what the exchange holds (review 8)
+                raise
+            self._watch(set(held))
+
+    def _watch(self, now_watched: set[str]) -> None:
+        """The watched set as it is now, with a feed event for each market that joined or left it
+        (a market that left drops its book), so a replay keeps the same set (merge review 6)."""
+        for ticker in sorted(now_watched - self.watched.current):
+            self._feed_event("watch", "book", ticker)
+        for ticker in sorted(self.watched.current - now_watched):
+            self._feed_event("unwatch", "book", ticker)
+        self.watched.current = now_watched
 
     async def _govern(self) -> None:
         if self._governor is None:

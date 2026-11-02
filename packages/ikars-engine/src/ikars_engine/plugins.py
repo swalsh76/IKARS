@@ -114,8 +114,11 @@ class PluginContext:
         the wall clock; replayed, the replay's, so a back-test sees it when IKARS would have."""
         if item.ref.kind not in self.spec.produces:
             raise PluginError(f"{self.spec.name} may not emit {item.ref.kind!r}")
-        stamped = msgspec.structs.replace(
-            item, hops=_handling_hops.get() + 1, received_ns=self.clock.now_ns()
+        stamped = msgspec.structs.replace(  # the source is the plugin, whatever it wrote (M1.13)
+            item,
+            hops=_handling_hops.get() + 1,
+            received_ns=self.clock.now_ns(),
+            source=self.spec.name,
         )
         await self._emit(stamped)
 

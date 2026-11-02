@@ -118,7 +118,15 @@ async def test_feed_events_keep_the_replayed_books_as_live(tmp_path: Path) -> No
     _, source = await replayed(tmp_path / "rec", T0, T0 + 2 * HOUR)
     assert source.state.books["M1"].broken
     rows = list(merged_rows(tmp_path / "rec", T0, T0 + 2 * HOUR, ("feed",)))
-    assert [r["event"] for _, r in rows] == ["start", "sequence_gap"]
+    events = [(r["event"], r["detail"], r["received_ns"] - T0) for _, r in rows]
+    # the start before the first frame; the gap just after the last frame the pump handled
+    assert [e[:2] for e in events] == [
+        ("start", "subscribing"),
+        ("watch", "M1"),
+        ("sequence_gap", "expected 2, got 5"),
+        ("watch", "M1"),  # the hourly checkpoint restates the watched set
+    ]
+    assert events[0][2] == 0 and events[2][2] == 11 and events[3][2] == HOUR
 
 
 def test_the_state_follows_snapshots_deltas_and_feed_events() -> None:
@@ -471,7 +479,7 @@ async def test_a_checkpoint_sets_a_book_and_a_backfilled_trade_is_no_item(tmp_pa
     back, source = await replayed(tmp_path / "rec", T0 + HOUR, T0 + 2 * HOUR)
     assert back == []  # a checkpoint and a backfilled trade: neither was ever an item live
     assert source.state.books["M1"].best_bid("yes") == rig.source.books["M1"].best_bid("yes")
-    assert source.stats.rows == {"book_snapshot": 1, "trade": 1}
+    assert source.stats.rows == {"feed": 1, "book_snapshot": 1, "trade": 1}  # watch, checkpoint
 
 
 def test_the_command_replays_compares_and_checks_books(
@@ -481,7 +489,7 @@ def test_the_command_replays_compares_and_checks_books(
 
     from ikars_engine.paths import Paths
 
-    made_up_window(tmp_path / "data" / "recordings")
+    made_up_window(tmp_path / "ikars" / "data" / "recordings")
     monkeypatch.setattr("ikars_engine.plugins.discover", lambda: ([Mover()], []))
     args = argparse.Namespace(
         start="2026-01-01T01:00+00:00",
@@ -492,7 +500,7 @@ def test_the_command_replays_compares_and_checks_books(
         compare=True,
         check_books=True,
     )
-    assert replay_cli.run(args, Paths(tmp_path), {}) == 0
+    assert replay_cli.run(args, Paths(tmp_path / "ikars"), {}) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["recommendations"] == 1 and report["gaps"] == []
     assert (
@@ -500,7 +508,11 @@ def test_the_command_replays_compares_and_checks_books(
     )  # no live journal
     assert report["books"]["compared"] == 0 and report["books"]["share"] is None
     wrong = argparse.Namespace(**{**vars(args), "plugins": "nothing"})
-    assert replay_cli.run(wrong, Paths(tmp_path), {}) == 2
+    assert replay_cli.run(wrong, Paths(tmp_path / "ikars"), {}) == 2
+    inside = argparse.Namespace(**{**vars(args), "out": tmp_path / "ikars" / "data"})
+    assert replay_cli.run(inside, Paths(tmp_path / "ikars"), {}) == 2  # never the live journal
+    again = argparse.Namespace(**{**vars(args), "compare": False, "check_books": False})
+    assert replay_cli.run(again, Paths(tmp_path / "ikars"), {}) == 2  # an earlier run's journal
 
 
 def test_an_hour_compacted_while_it_is_read_is_never_read_twice(
@@ -541,6 +553,9 @@ def test_a_watched_combo_keeps_its_quote_and_a_checkpoint_is_no_change() -> None
         "count_e2": 100,
     }
     replay._apply(
+        "feed", {"received_ns": T0, "event": "watch", "channel": "book", "detail": "KXMVE-C"}
+    )
+    replay._apply(
         "book_snapshot",
         {"received_ns": T0, "rows": [{**level, "received_ns": T0, "checkpoint": False}]},
     )
@@ -555,10 +570,64 @@ def test_a_watched_combo_keeps_its_quote_and_a_checkpoint_is_no_change() -> None
             "yes_ask_e6": 3,
         },
     )
-    assert replay.state.quotes["KXMVE-C"] == (2, 3)  # watched (it has a book): kept, as live
+    assert replay.state.quotes["KXMVE-C"] == (2, 3)  # watched: kept, as live
     changed = replay.state.book_changed_ns["KXMVE-C"]
     replay._apply(
         "book_snapshot",
         {"received_ns": T0 + 5, "rows": [{**level, "received_ns": T0 + 5, "checkpoint": True}]},
     )
     assert replay.state.book_changed_ns["KXMVE-C"] == changed  # a checkpoint changes nothing
+
+
+async def test_a_full_cycle_records_changes_as_they_come(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, [market("A"), market("B")])
+    rows: list[dict[str, Any]] = []
+    index = rig.discovery.index
+    index.record = rows.append
+    index.categories["KXDEMO"] = "Crypto"  # as the cycle's series list says
+    index.fee_terms["KXDEMO"] = ("quadratic", 500_000)
+    index.put(Market.model_validate(market("A")))
+    index.put(Market.model_validate(market("C")))  # known before, unchanged by the cycle
+    rows.clear()
+    rig.kalshi.markets = [market("A", status="closed"), market("B"), market("C")]
+    await rig.discovery.full()
+    # A's change and B's arrival are recorded as they come; the dump writes only C
+    assert [(r["ticker"], r["status"], r["full"]) for r in rows] == [
+        ("A", "closed", False), ("B", "active", False), ("C", "active", True)
+    ]  # fmt: skip
+
+
+def test_a_market_the_index_drops_is_dropped_in_a_replay_too() -> None:
+    from ikars_engine.replay import ReplayMarkets
+
+    rows: list[dict[str, Any]] = []
+    index = MarketIndex(now_ns=lambda: T0)
+    index.record = rows.append
+    index.put(Market.model_validate(market("S", status="settled")))
+    info = index.markets["S"]
+    assert index.prune(T0 + 10**18) == ["S"]  # long after it closed
+    assert rows[-1]["removed"] is True and rows[-1]["ticker"] == "S"
+    markets = ReplayMarkets()
+    for row in rows:
+        markets.apply(row)
+    assert "S" not in markets.markets and markets.rows == 2
+    assert market_row(info, None, T0)["removed"] is False
+
+
+async def test_a_checkpoint_lands_between_the_frames_the_pump_really_handled(
+    tmp_path: Path,
+) -> None:
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    book = rig.feed.book_sid()
+    await rig.feed.queue.put(
+        frame("orderbook_snapshot", SNAPSHOT_MSG, T0 + HOUR - 5, seq=1, sid=book)
+    )
+    await rig.items(1)
+    rig.clock.advance_to(T0 + HOUR + 30)
+    rig.source._pump_at = T0 + HOUR + 10  # the pump has handled frames up to here...
+    rig.source._checkpoint(T0 + HOUR + 30)  # ...when the heartbeat copies the books
+    await rig.source.stop()
+    rows = list(merged_rows(tmp_path / "rec", T0 + HOUR, T0 + 2 * HOUR, ("book_snapshot",)))
+    stamps = {r["received_ns"] - T0 - HOUR for _, r in rows if r["checkpoint"]}
+    assert stamps and all(10 < s < 30 for s in stamps)  # after what was handled, not "now"

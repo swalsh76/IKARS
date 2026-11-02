@@ -21,7 +21,6 @@ point integers, times as integer nanoseconds received and Kalshi's milliseconds.
 """
 
 import json
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -140,22 +139,22 @@ def item_of(channel: str, row: dict[str, Any]) -> Item | None:
     )
 
 
-def snapshot_item(rows: list[dict[str, Any]]) -> Item:
-    """The item for one snapshot's rows (all one ticker, one number, one received time)."""
-    first = rows[0]
-    yes = [[r["price_e6"], r["count_e2"]] for r in rows if r["side"] == "yes"]
-    no = [[r["price_e6"], r["count_e2"]] for r in rows if r["side"] == "no"]
+def snapshot_item(
+    message: OrderbookSnapshotMsg, number: int, at: int, *, checkpoint: bool = False
+) -> Item:
+    """The item for one snapshot (live: from the message; replayed: from the message its rows
+    make, so both read the same levels the same way)."""
     return Item(
-        ref=Ref(KIND["book_snapshot"], first["ticker"]),
+        ref=Ref(KIND["book_snapshot"], message.market_ticker),
         source="kalshi",
-        received_ns=first["received_ns"],
+        received_ns=at,
         payload={
-            "snapshot": first["snapshot"],
-            "clock": first["clock"],
-            "yes": yes,
-            "no": no,
-            "checkpoint": bool(first["checkpoint"]),
-        },  # fmt: skip
+            "snapshot": number,
+            "clock": message.clock,
+            "yes": [[price, count] for price, count in message.yes],
+            "no": [[price, count] for price, count in message.no],
+            "checkpoint": checkpoint,
+        },
     )
 
 
@@ -181,10 +180,9 @@ def delta_message(row: dict[str, Any]) -> OrderbookDeltaMsg:
 @dataclass
 class KalshiState:
     """What the source keeps between messages, changed only from rows and feed events (live and
-    replay alike). ``keep(ticker)``: whether a market's quote is kept (the live source: not a combo
-    unless watched)."""
+    replay alike). A market's quote is kept unless it is a combo that is not watched."""
 
-    keep: Callable[[str], bool] = lambda ticker: not is_combo(ticker)
+    watched: set[str] = field(default_factory=set)  # the markets whose books are subscribed
     books: dict[str, OrderBook] = field(default_factory=dict)
     last_price_e6: dict[str, int] = field(default_factory=dict)
     quotes: dict[str, tuple[int | None, int | None]] = field(default_factory=dict)
@@ -198,7 +196,7 @@ class KalshiState:
         ticker, at = row["ticker"], row["received_ns"]
         # the ticker channel carries every market, combos included: combos are never kept, and
         # a market the index still lacks after a discovery cycle is forgotten then (M1.R 16)
-        if not self.keep(ticker):
+        if is_combo(ticker) and ticker not in self.watched:
             return
         before = (self.quotes.get(ticker), self.last_price_e6.get(ticker))
         if row["price_e6"] is not None:
@@ -239,7 +237,10 @@ class KalshiState:
             for kept in (self.quotes, self.last_price_e6, self.changed_ns, self.books,
                          self.book_version, self.book_changed_ns):  # fmt: skip
                 kept.pop(row["detail"], None)
+        elif event == "watch":
+            self.watched.add(row["detail"])
         elif event == "unwatch":
+            self.watched.discard(row["detail"])
             self.books.pop(row["detail"], None)
         elif event in ("start", "reconnect"):
             for ticker in list(self.books):

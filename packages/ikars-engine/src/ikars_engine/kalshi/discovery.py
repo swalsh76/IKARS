@@ -84,7 +84,12 @@ def climate_code(rules: str | None) -> str | None:
 
 
 def market_row(
-    info: MarketInfo, fee_terms: tuple[str, int] | None, at: int, *, full: bool = False
+    info: MarketInfo,
+    fee_terms: tuple[str, int] | None,
+    at: int,
+    *,
+    full: bool = False,
+    removed: bool = False,
 ) -> dict[str, Any]:
     """A market's details (and its series' fee terms) as the ``market`` channel keeps them."""
     return {
@@ -95,7 +100,7 @@ def market_row(
         "result": info.result, "climate_code": info.climate_code,
         "fee_type": None if fee_terms is None else fee_terms[0],
         "fee_multiplier_e6": None if fee_terms is None else fee_terms[1],
-        "full": full,
+        "full": full, "removed": removed,
     }  # fmt: skip
 
 
@@ -116,7 +121,9 @@ class MarketIndex:
         # the market channel's writer (M1.13): a row when a market's details first appear or change,
         # and every market after a full discovery (``dump``); None: nothing recorded
         self.record: Callable[[dict[str, Any]], None] | None = None
-        self.quiet = False  # during a full discovery: its dump records every market once
+        # during a full discovery: the markets it recorded as they changed (its dump writes the
+        # rest), so a change is recorded when it comes, never held back for the cycle (sub-agent 3)
+        self.cycle: set[str] | None = None
         self.rejects = 0
         self.combos_skipped = 0
         self.version = 0  # moves whenever a market is added, changed or removed
@@ -127,8 +134,10 @@ class MarketIndex:
             self.combos_skipped += 1
             return
         if _long_settled(market.status or "", market.close_time, self.now_ns()):
-            if self.markets.pop(market.ticker, None) is not None:  # long settled: not kept
+            gone = self.markets.pop(market.ticker, None)
+            if gone is not None:  # long settled: not kept
                 self.version += 1  # a removal, so the API's sorted list is rebuilt
+                self._removed(gone)
             return
         self.version += 1
         before = self.markets.get(market.ticker)
@@ -149,22 +158,31 @@ class MarketIndex:
             volume_24h_e2=market.volume_24h_e2 or 0,
             climate_code=code,
         )
-        if (
-            self.record is not None
-            and not self.quiet
-            and (before is None or not _same(before, info))
-        ):
+        if self.record is not None and (before is None or not _same(before, info)):
             self.record(market_row(info, self.fee_terms.get(series), self.now_ns()))
+            if self.cycle is not None:
+                self.cycle.add(info.ticker)
 
-    def dump(self) -> int:
-        """Every market's details into the market channel (after a full discovery), so a replay
-        that starts at any time finds them all within a day; returns how many."""
+    def _removed(self, info: MarketInfo) -> None:
+        """A market the index dropped, so a replay drops it when live did (sub-agent 4)."""
+        if self.record is not None:
+            terms = self.fee_terms.get(info.series_ticker)
+            self.record(market_row(info, terms, self.now_ns(), removed=True))
+
+    def dump(self, skip: set[str] | frozenset[str] = frozenset()) -> int:
+        """Every market's details into the market channel (after a full discovery), except those
+        in ``skip`` (recorded during the cycle), so a replay that starts at any time finds them
+        all within a day; returns how many."""
         if self.record is None:
             return 0
         now = self.now_ns()
+        count = 0
         for info in self.markets.values():
-            self.record(market_row(info, self.fee_terms.get(info.series_ticker), now, full=True))
-        return len(self.markets)
+            if info.ticker not in skip:
+                terms = self.fee_terms.get(info.series_ticker)
+                self.record(market_row(info, terms, now, full=True))
+                count += 1
+        return count
 
     def climate_codes(self) -> dict[str, list[str]]:
         """Each NWS climate-report code named by an open market's rules, and those markets."""
@@ -193,7 +211,7 @@ class MarketIndex:
             if _long_settled(m.status, m.close_time, now_ns, keep_ns)
         ]
         for ticker in gone:
-            del self.markets[ticker]
+            self._removed(self.markets.pop(ticker))
         if gone:
             self.version += 1
         return gone
@@ -244,7 +262,7 @@ class Discovery:
             if series.fee_type is not None and series.fee_multiplier_e6 is not None:
                 self.index.fee_terms[series.ticker] = (series.fee_type, series.fee_multiplier_e6)
         count = 0
-        self.index.quiet = True  # the dump below records every market once (M1.13)
+        self.index.cycle = set()  # the dump below records every market not recorded meanwhile
         try:
             for status in ("unopened", "open"):
                 async for page in self._data.markets(
@@ -255,8 +273,9 @@ class Discovery:
                     count += len(page.items)
                     self.index.rejects += len(page.invalid)
         finally:
-            self.index.quiet = False
-        self.index.dump()
+            # even when the cycle failed part-way: every market is recorded (merge review 4)
+            recorded, self.index.cycle = self.index.cycle, None
+            self.index.dump(recorded or frozenset())
         self._state.set_bookmark(BOOKMARK, began - OVERLAP_SECONDS)
         self.cycles += 1
         log.info("discovery: full cycle", extra={"markets": count, "rejects": self.index.rejects})

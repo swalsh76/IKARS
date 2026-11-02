@@ -37,11 +37,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import msgspec
 from ikars_core.fees import FeeSchedule, fee_schedule
 from ikars_core.fixedpoint import E6
-from ikars_core.markets import is_combo
 
-from ikars_engine.clocks import VirtualClock, ns_time
+from ikars_engine.clocks import NS, VirtualClock, ns_time
 from ikars_engine.kalshi.discovery import MarketInfo
 from ikars_engine.kalshi.rows import (
     KalshiState,
@@ -53,7 +53,6 @@ from ikars_engine.kalshi.rows import (
 from ikars_engine.model import Item
 from ikars_engine.recorder import HOUR_NS, hour_of, item_from_row, iter_hour
 
-NS = 1_000_000_000
 TICK_NS = NS  # the journal writes, expires and marks once a (virtual) second, as live
 MARKET_LOOKBACK_NS = 25 * HOUR_NS
 ORDER = ("market", "feed", "lifecycle", "book_snapshot", "book_delta", "ticker", "trade", "item")
@@ -69,7 +68,9 @@ def merged_rows(
     def one(channel: str) -> Iterator[tuple[int, int, int, str, dict[str, Any]]]:
         rank, n = RANK[channel], 0
         hour = start_ns - start_ns % HOUR_NS
-        while hour < end_ns:
+        # one hour past the end: a row received before it may sit in the next hour's file (its own
+        # hour was closed when the recorder wrote it: merge review 7)
+        while hour < end_ns + HOUR_NS:
             for batch in iter_hour(root, channel, hour_of(hour)):
                 for row in batch.to_pylist():
                     at = row["received_ns"]
@@ -92,6 +93,9 @@ class ReplayMarkets:
 
     def apply(self, row: dict[str, Any]) -> None:
         self.rows += 1
+        if row.get("removed"):  # live dropped it: so does the replay
+            self.markets.pop(row["ticker"], None)
+            return
         series = row["series_ticker"] or ""
         close = row["close_ns"]
         self.markets[row["ticker"]] = MarketInfo(
@@ -136,9 +140,7 @@ class RecordingReplay:
         self.clock = clock
         self.rerun = rerun  # plugins run again: their recorded items are left out
         self.tick = tick  # the journal's pass, once a virtual second
-        # a combo's quote is kept only while it is watched, as live: here, while it has a book
-        # (the live source only gets books for the markets it watches)
-        self.state = KalshiState(keep=lambda t: not is_combo(t) or t in self.state.books)
+        self.state = KalshiState()
         self.markets = ReplayMarkets()
         self.stats = ReplayStats()
         self._snapshot: list[dict[str, Any]] = []
@@ -168,7 +170,11 @@ class RecordingReplay:
             if item is None:
                 continue
             self.stats.items[item.ref.kind] += 1
-            self.stats.digest.update(f"{item.received_ns}|{item.ref.kind}|{item.ref.id}\n".encode())
+            digest = (
+                self.stats.digest
+            )  # the payload too: two runs agree on content (merge review 8)
+            digest.update(f"{item.received_ns}|{item.ref.kind}|{item.ref.id}|".encode())
+            digest.update(msgspec.json.encode(item.payload))
             yield item
         if self.tick is not None:  # the last pass: what is due at the end is marked
             self.clock.advance_to(max(self.end_ns, self.clock.now_ns()))
@@ -206,16 +212,16 @@ class RecordingReplay:
             return None if row["source"] in self.rerun else item_from_row(row)
         if channel == "book_snapshot":
             rows = row["rows"]
-            item = snapshot_item(rows)
-            if item.payload["checkpoint"]:
+            message = snapshot_message(rows)  # the levels split once (merge review 10)
+            if rows[0]["checkpoint"]:
                 # never an item live, and never a change: it only sets a book this replay lacks (at
                 # its start), so each book's change time stays as live (per-commit review)
-                kept = self.state.books.get(item.ref.id)
+                kept = self.state.books.get(message.market_ticker)
                 if kept is None or not kept.ready:
-                    self.state.snapshot(snapshot_message(rows), at)
+                    self.state.snapshot(message, at)
                 return None
-            self.state.snapshot(snapshot_message(rows), at)
-            return item
+            self.state.snapshot(message, at)
+            return snapshot_item(message, rows[0]["snapshot"], at)
         if channel == "book_delta":
             self.state.delta(delta_message(row), at)
         elif channel == "ticker":
@@ -332,6 +338,8 @@ async def run_replay(
     unknown = sorted(set(plugins or ()) - {p.spec.name for p in chosen})
     if unknown:
         raise ValueError(f"not a signal plugin here: {', '.join(unknown)}")
+    if (out / "journal.sqlite").exists():  # an earlier run's would answer "active" (merge review 3)
+        raise ValueError(f"{out} already holds a replay's journal: give a new folder")
     clock = VirtualClock(begin)
     journal = Journal(out / "journal.sqlite")
     service: JournalService | None = None

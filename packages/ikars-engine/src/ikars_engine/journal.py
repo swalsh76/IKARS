@@ -527,10 +527,7 @@ class JournalService:
 
     def flush(self) -> None:
         """At shutdown, once the plugins have stopped: what is still queued is written."""
-        items: list[Item] = []
-        while not self.queue.empty():
-            items.append(self.queue.get_nowait())
-        self._write(items)
+        self.step()
 
     def health(self) -> dict[str, object]:
         return {"recorded": self.recorded, "rejected": self.rejected, "dropped": self.dropped,

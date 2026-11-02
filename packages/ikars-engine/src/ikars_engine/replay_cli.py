@@ -45,6 +45,11 @@ def run(args: argparse.Namespace, paths: Paths, plugin_settings: dict[str, Any])
         print(json.dumps({"error": "--to must be after --from"}))
         return 2
     out = args.out or Path(tempfile.mkdtemp(prefix="ikars-replay-"))
+    if out.resolve().is_relative_to(
+        paths.root.resolve()
+    ):  # never the live journal (merge review 3)
+        print(json.dumps({"error": "--out must be outside IKARS's own folder"}))
+        return 2
     out.mkdir(parents=True, exist_ok=True)
     names = [n.strip() for n in args.plugins.split(",")] if args.plugins else None
     try:
