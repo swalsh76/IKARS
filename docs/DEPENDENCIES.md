@@ -25,7 +25,7 @@ replaced) in its slice plan, with its licence checked then.
 
 | Package | Used for | Licence |
 |---|---|---|
-| `cryptography` | Kalshi request signing (RSA-PSS) | Apache-2.0 / BSD |
+| `cryptography` | Kalshi request signing (Ed25519; RSA keys are refused) | Apache-2.0 / BSD |
 | `httpx` | REST client | BSD-3 |
 | `pydantic` | Kalshi REST and WebSocket models | MIT |
 | `websockets` | the Kalshi market-data feed | BSD-3 |
@@ -35,11 +35,15 @@ replaced) in its slice plan, with its licence checked then.
 | `tzdata` | the time-zone database `zoneinfo` needs on Windows (the tax zone, M1.5a) | Apache-2.0 |
 | `starlette` | the loopback API (M1.7, D3) | BSD-3-Clause |
 | `uvicorn` | the API's server, inside the engine's event loop (M1.7); with `h11` (MIT), `click` (BSD-3-Clause) | BSD-3-Clause |
-| `velopack` | the installed program's install, update and uninstall steps (`ikars_engine.launcher`, M1.9a); updates in M1.9b | MIT |
+| `velopack` | the installed program's install, update and uninstall steps (`ikars_engine.launcher`, M1.9a); updates in M1.9b. Pinned to `vpk`'s version: the two move together (M1.R3 E9) | MIT |
 | `defusedxml` | reading RSS and Atom feeds safely: no entity expansion, no external entities (M2.3) | PSF-2.0 |
 
 Development only: `ruff`, `mypy`, `pytest` (with `pytest-asyncio`, `pytest-cov`, `hypothesis`), `pip-audit`; the
 exact set and versions are in `uv.lock`.
+
+Build backend: `hatchling` 1.32.4 (MIT), pinned in both packages' `pyproject.toml` and, with its dependencies and
+their hashes, in `tools/release/build-constraints.txt`, which the release build uses (M1.R3 E2). Dependabot does not
+watch that file: refresh it by hand (`uv pip compile --generate-hashes --exclude-newer <7 days ago>`).
 
 ### Terminal
 
@@ -65,7 +69,12 @@ in use since M1.8a-web-2a (above).
 | Service | Used for | Needs |
 |---|---|---|
 | Kalshi REST and WebSocket (production) | markets, trades, books, exchange status | IKARS's own **read-only** key in `IKARS_KALSHI_KEY_ID` and `IKARS_KALSHI_PRIVATE_KEY_PATH` (D8, D21-3) |
-| GitHub (Actions, Releases, Dependabot) | CI and, later, downloads | nothing on the user's machine |
+| GitHub (Actions, Releases, Dependabot) | CI and the downloads; releases carry `SHA256SUMS` and a build-provenance attestation (M1.R3 E1, E3) | nothing on the user's machine |
+| Windows Task Scheduler, the HKCU Run value | the watchdog's 5-minute task and the start at sign-in (M1.6) | built in; no admin |
+| Windows notifications (toasts) | alerts on the workstation (M1.6), through Windows PowerShell's WinRT classes | built in; no package (phone pushes dropped, owner 2026-10-27) |
+| DPAPI | the session key and other secrets at rest (M1.8a-web, D8), through `ctypes` | built in |
+| NVIDIA driver (`nvidia-smi`) | GPU detection in health (M1.6); CPU paths when there is none | the driver, when there is a GPU |
+| **Microsoft Edge** | the terminal's app window, with its own IKARS profile under `%LOCALAPPDATA%\IKARS\browser` (M1.8a-web) | part of Windows 11 |
 | GitHub CodeQL (`github/codeql-action`, MIT) | static security analysis in CI (2026-10-27) | nothing on the user's machine |
 | NWS `api.weather.gov` (public domain) | weather observations, forecasts and climate reports (M2.2) | no key; the User-Agent names IKARS |
 | GDELT (GKG files and the DOC 2.0 API; free, citation required) | news (M2.3) | no key; about 240 MB a day downloaded |
@@ -75,17 +84,12 @@ in use since M1.8a-web-2a (above).
 
 | What | Slice | Base or optional | Licence | Install note |
 |---|---|---|---|---|
-| **GPU detection** | M1.6 | base | — | Reads the NVIDIA driver through `nvidia-smi` (ships with the driver) or NVML (`nvidia-ml-py`, BSD); chosen in M1.6's plan. No GPU means CPU paths only, reported in health. |
-| Windows Task Scheduler | M1.6 | base | built in | A per-user logon task and a watchdog task; no admin. |
-| Windows notifications (toasts) | M1.6 | base | built in | Through Windows PowerShell's WinRT notification classes; no package. (Phone pushes with ntfy were dropped by the owner, 2026-10-27.) |
-| DPAPI | M1.5 / M1.6 | base | built in | Through the standard library (`ctypes`) or `pywin32`; chosen in the slice. |
 | DuckDB | M1.5 onward (queries, D4) | base | MIT | Python wheel. |
 | PDF/A writer for the tax package | M5 (D18) | base | to choose | Library chosen in M5's plan. |
-| Claude API (`anthropic` SDK) | M2 (D9) | base | MIT | An API key in an environment variable or DPAPI; a monthly cost ceiling (D21-5). |
+| Claude API (`anthropic` SDK) | an M3 decision (D24 as amended: M2 uses the local model only) | base | MIT | An API key in an environment variable or DPAPI; a monthly cost ceiling (D21-5). |
 | **NVIDIA driver with CUDA 12.8 or later** | M2 onward (D15) | optional | proprietary | Blackwell (`sm_120`) needs CUDA 12.8+. The user installs the driver; IKARS never does. |
 | ONNX Runtime (CUDA) and sentence-transformers models | M2 (D15 embeddings) | optional extra | MIT; model licences per model | Downloaded on demand from the terminal's settings, never bundled (D12). |
 | Local LLM runtime (llama.cpp server, Ollama or ONNX Runtime GenAI) and a 7 to 14B quantised model | M2 (D9) | optional extra | MIT (runtimes); model licences per model | Chosen by measured speed and quality in the slice; downloaded on demand. |
 | XGBoost (CUDA) or LightGBM; PyTorch (cu128) for sequence models; CuPy for sweeps | M3 to M5 (D15, D16) | optional extra | Apache-2.0; MIT; BSD-3; MIT | CUDA wheels run to gigabytes: optional, on demand. CPU fallbacks for each. |
 | Other-venue prices (exchange WebSockets, odds APIs) | later milestones (D19 G7) | plugin | per source | A paid odds API counts against the cost ceiling. |
-| **Microsoft Edge** | in use since M1.8a-web-1a (`ikars open`) | base | built into Windows 11 | Shows the terminal as an app window with its own IKARS profile under `%LOCALAPPDATA%\IKARS\browser`. |
 | Code signing (SignPath free plan or Azure Trusted Signing) | M1.9 (D12) | build only | service | Removes SmartScreen warnings; chosen in the packaging slice. |
