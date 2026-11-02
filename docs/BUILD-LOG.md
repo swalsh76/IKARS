@@ -3331,7 +3331,7 @@ After M2.2 (PR #34, `436bef2`).
   | 14 | Only the newest file has an MD5 in the index | No change: documented; a backfilled file is checked by unzipping (sub-agent) |
   | 15 | `max_bytes or default` read 0 as the default | `is None` (sub-agent) |
 
-**Live check: pending** (test release on the owner's word):
+**Live check: pending** (test release **v0.1.12**, published on the owner's word 2026-11-01 from `b2548b5`):
 - settings version 7 upgrades cleanly;
 - both plugins record;
 - after a day, no unlogged gaps.
