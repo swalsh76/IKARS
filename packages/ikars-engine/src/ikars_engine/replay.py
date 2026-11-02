@@ -21,9 +21,16 @@ replay holds about one batch per channel, never the whole recording (review 1.R2
 **What it never touches.** The recordings and the live state are only read; the replay's journal is
 a scratch file. Only signal plugins run: a source plugin would fetch from the network.
 
-**Warm-up.** Plugins need history (momentum: 5 minutes; one recommendation per market for 30). A
-replay starts ``warmup`` before the window it reports on, from the start of that hour (where the
-hour's book checkpoint is); recommendations made in the warm-up are not reported.
+**Warm-up.** Plugins need history (momentum: 5 minutes; one recommendation per market for 30). The
+plugins get items from ``warmup`` before the window it reports on; the state is read from the start
+of that hour (where the hour's book checkpoint is), and items before the warm-up reach no plugin.
+Recommendations made in the warm-up are not reported.
+
+**As live did (M1.13 live check).** A recorded engine start (the feed's ``start``) restarts the
+plugins: they go on as new instances that remember nothing, as the new process's did. A replay
+compared with the live journal starts its journal with the live recommendations still valid when
+its plugins begin, as the live journal held them; without both, one recommendation made at another
+time moves every later one on its market.
 """
 
 import hashlib
@@ -50,7 +57,7 @@ from ikars_engine.kalshi.rows import (
     snapshot_item,
     snapshot_message,
 )
-from ikars_engine.model import Item
+from ikars_engine.model import Item, Ref
 from ikars_engine.recorder import HOUR_NS, hour_of, item_from_row, iter_hour
 
 TICK_NS = NS  # the journal writes, expires and marks once a (virtual) second, as live
@@ -133,6 +140,8 @@ class RecordingReplay:
         *,
         rerun: frozenset[str] = frozenset(),
         tick: Callable[[], None] | None = None,
+        items_from: int | None = None,
+        restart: Callable[[], None] | None = None,
     ) -> None:
         self.root = root
         self.start_ns = start_ns
@@ -140,6 +149,8 @@ class RecordingReplay:
         self.clock = clock
         self.rerun = rerun  # plugins run again: their recorded items are left out
         self.tick = tick  # the journal's pass, once a virtual second
+        self.items_from = start_ns if items_from is None else items_from  # earlier: state only
+        self.restart = restart  # a recorded engine start: the plugins start afresh
         self.state = KalshiState()
         self.markets = ReplayMarkets()
         self.stats = ReplayStats()
@@ -167,7 +178,7 @@ class RecordingReplay:
             self.clock.advance_to(at)  # time reaches the row before anything sees it
             self.stats.rows[channel] += 1
             item = self._apply(channel, row)
-            if item is None:
+            if item is None or at < self.items_from:
                 continue
             self.stats.items[item.ref.kind] += 1
             digest = (
@@ -207,6 +218,8 @@ class RecordingReplay:
             return None
         if channel == "feed":
             self.state.feed_event(row)
+            if row["event"] == "start" and self.restart is not None:
+                self.restart()
             return None
         if channel == "item":
             return None if row["source"] in self.rerun else item_from_row(row)
@@ -288,6 +301,28 @@ def recommendations(path: Path, start_ns: int, end_ns: int) -> list[tuple[str, s
     ]
 
 
+def carried_in(path: Path, at_ns: int, sources: frozenset[str]) -> list[Item]:
+    """A journal's recommendations by ``sources`` still valid at ``at_ns``, as the items that made
+    them (read only): a replay compared with that journal starts with them, as the live engine
+    did (M1.13 live check). None when there is no journal."""
+    if not path.is_file() or not sources:
+        return []
+    names = sorted(sources)
+    holes = ",".join("?" * len(names))
+    with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)) as db:
+        rows = db.execute(
+            "SELECT r.id, r.source, r.received_ns, r.payload FROM recommendation r"  # noqa: S608
+            " LEFT JOIN recommendation s ON s.id = r.superseded_by"
+            f" WHERE r.source IN ({holes}) AND r.received_ns < ? AND r.expires_ns > ?"
+            " AND (s.id IS NULL OR s.received_ns >= ?) ORDER BY r.received_ns, r.id",
+            (*names, at_ns, at_ns, at_ns),
+        ).fetchall()
+    return [
+        Item(ref=Ref("recommendation", rid), source=source, received_ns=made, payload=json.loads(p))
+        for rid, source, made, p in rows
+    ]
+
+
 def compare(
     live: list[tuple[str, str, str, int, int]], replayed: list[tuple[str, str, str, int, int]]
 ) -> dict[str, int]:
@@ -318,18 +353,20 @@ async def run_replay(
     plugins: list[str] | None = None,
     plugin_settings: dict[str, dict[str, Any]] | None = None,
     warmup_ns: int = WARMUP_NS,
+    live_journal: Path | None = None,
 ) -> dict[str, Any]:
     """Replay [``window``) of ``recordings`` through the signal plugins (all, or those named),
-    with a scratch journal in ``out`` (an existing folder); returns the summary. Nothing
-    outside ``out`` is written."""
+    with a scratch journal in ``out`` (an existing folder); returns the summary. With
+    ``live_journal`` (to compare with), the scratch journal starts with its recommendations still
+    valid when the plugins begin. Nothing outside ``out`` is written."""
     from ikars_engine.engine import Engine
     from ikars_engine.journal import Journal, JournalService
     from ikars_engine.kalshi.discovery import OPEN_STATUSES
     from ikars_engine.plugins import HostOptions, PluginKind, discover
 
     start_ns, end_ns = window
-    begin = start_ns - warmup_ns
-    begin -= begin % HOUR_NS  # from the hour's start, where its book checkpoint is
+    first = start_ns - warmup_ns  # the plugins' first item
+    begin = first - first % HOUR_NS  # the state from the hour's start, where its book checkpoint is
     found, _ = discover()
     chosen = [
         p for p in found
@@ -342,14 +379,24 @@ async def run_replay(
         raise ValueError(f"{out} already holds a replay's journal: give a new folder")
     clock = VirtualClock(begin)
     journal = Journal(out / "journal.sqlite")
+    rerun = frozenset(p.spec.name for p in chosen)
+    carried = carried_in(live_journal, first, rerun) if live_journal is not None else []
+    for valid in carried:
+        journal.add(valid)
     service: JournalService | None = None
+    engine: Engine | None = None
 
     def tick() -> None:
         if service is not None:
             service.step()
 
-    replay = RecordingReplay(recordings, begin, end_ns, clock,
-                             rerun=frozenset(p.spec.name for p in chosen), tick=tick)  # fmt: skip
+    def restart() -> None:  # a recorded engine start: the plugins start afresh, as live
+        if engine is not None:
+            for name in sorted(rerun):
+                engine.host.restart(name)
+
+    replay = RecordingReplay(recordings, begin, end_ns, clock, rerun=rerun, tick=tick,
+                             items_from=first, restart=restart)  # fmt: skip
     markets = replay.markets
 
     def result(ticker: str) -> str | None:
@@ -382,7 +429,9 @@ async def run_replay(
     stats = replay.stats
     return {
         "window": [ns_time(start_ns).isoformat(), ns_time(end_ns).isoformat()],
-        "from": ns_time(begin).isoformat(),
+        "from": ns_time(first).isoformat(),
+        "read_from": ns_time(begin).isoformat(),
+        "carried_in": len(carried),
         "plugins": sorted(p.spec.name for p in chosen),
         "rows": dict(sorted(stats.rows.items())),
         "items": dict(sorted(stats.items.items())),

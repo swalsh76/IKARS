@@ -391,6 +391,75 @@ async def test_a_signal_on_a_replay_is_deterministic_and_reported_from_its_windo
     assert nothing["recommendations"] == 0  # made before this window: not reported
 
 
+async def test_plugins_see_items_from_the_warm_up_and_start_afresh_with_the_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # the bids at +0 s to +3 s: 40, 40, 42, 43 cents. Mover recommends on a bid it has seen change
+    made_up_window(tmp_path / "rec")
+    monkeypatch.setattr("ikars_engine.plugins.discover", lambda: ([Mover()], []))
+    end = T0 + 2 * HOUR
+
+    def made(out: str) -> list[int]:
+        return [r[3] for r in recommendations(tmp_path / out / "journal.sqlite", T0, end)]
+
+    # the window from +2 s: no warm-up, so the bids before it reach no plugin (live check)
+    report = await run_replay(tmp_path / "rec", tmp_path / "a", (T0 + HOUR + 2 * NS, end),
+                              warmup_ns=0)  # fmt: skip
+    assert made("a") == [T0 + HOUR + 3 * NS]
+    assert report["from"] == ns_time(T0 + HOUR + 2 * NS).isoformat()
+    assert report["read_from"] == ns_time(T0 + HOUR).isoformat()
+    monkeypatch.setattr("ikars_engine.plugins.discover", lambda: ([Mover()], []))
+    await run_replay(tmp_path / "rec", tmp_path / "b", (T0 + HOUR + 2 * NS, end), warmup_ns=NS)
+    assert made("b") == [T0 + HOUR + 2 * NS]  # a second of warm-up shows the 40-cent bid
+    # the engine restarted between +1 s and +2 s: the new Mover never saw the 40-cent bid
+    recorder = Recorder(tmp_path / "rec")
+    start = {"received_ns": T0 + HOUR + NS + NS // 2, "event": "start", "channel": "", "detail": ""}
+    recorder.write("feed", start)
+    recorder.close()
+    monkeypatch.setattr("ikars_engine.plugins.discover", lambda: ([Mover()], []))
+    await run_replay(tmp_path / "rec", tmp_path / "c", (T0 + HOUR, end), warmup_ns=0)
+    assert made("c") == [T0 + HOUR + 3 * NS]
+
+
+async def test_a_compared_replay_starts_with_the_live_recommendations_still_valid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ikars_engine.journal import Journal, Recommendation
+    from ikars_engine.replay import carried_in
+
+    made_up_window(tmp_path / "rec")
+    live_path = tmp_path / "live.sqlite"
+    live = Journal(live_path)
+
+    def rec(rid: str, ticker: str, made: int, source: str = "mover") -> Item:
+        payload = Recommendation(
+            ticker=ticker, event_ticker="E", side="yes", entry_price_e6=410_000, count_e2=100,
+            expires_ns=made + 1_800 * NS, summary="moved", strategy=source, version="1",
+            horizons_s=[60], inputs=[], pnl_e6=0,
+        )  # fmt: skip
+        return Item(ref=Ref("recommendation", rid), source=source, received_ns=made,
+                    payload=msgspec.to_builtins(payload))  # fmt: skip
+
+    start = T0 + HOUR
+    live.add(rec("valid", "M", start - 60 * NS))
+    live.add(rec("expired", "N", start - 1_801 * NS))
+    live.add(rec("other plugin", "M", start - 60 * NS, source="other"))
+    live.add(rec("replaced", "P", start - 120 * NS))
+    live.add(rec("replacer", "P", start - 60 * NS))  # supersedes "replaced" before the start
+    live.add(rec("later", "Q", start + 60 * NS))  # made after the start: the replay's own work
+    live.close()
+    found = carried_in(live_path, start, frozenset({"mover"}))
+    assert [i.ref.id for i in found] == ["replacer", "valid"]
+    assert found[1].payload["ticker"] == "M" and found[1].received_ns == start - 60 * NS
+    assert carried_in(tmp_path / "none.sqlite", start, frozenset({"mover"})) == []
+    assert carried_in(live_path, start, frozenset()) == []
+    # live, the valid one held Mover back on M for the whole window: so does the replay's journal
+    monkeypatch.setattr("ikars_engine.plugins.discover", lambda: ([Mover()], []))
+    report = await run_replay(tmp_path / "rec", tmp_path / "out", (start, T0 + 2 * HOUR),
+                              warmup_ns=0, live_journal=live_path)  # fmt: skip
+    assert report["carried_in"] == 2 and report["recommendations"] == 0
+
+
 async def test_only_signal_plugins_are_replayed(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="not a signal plugin here: nws"):
         await run_replay(tmp_path, tmp_path / "out", (T0, T0 + HOUR), plugins=["nws"])

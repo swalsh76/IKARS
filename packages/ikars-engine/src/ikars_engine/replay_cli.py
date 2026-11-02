@@ -55,7 +55,8 @@ def run(args: argparse.Namespace, paths: Paths, plugin_settings: dict[str, Any])
     try:
         report = asyncio.run(
             run_replay(paths.recordings, out, (start, end), plugins=names,
-                       plugin_settings=plugin_settings, warmup_ns=args.warmup_min * 60 * 10**9)
+                       plugin_settings=plugin_settings, warmup_ns=args.warmup_min * 60 * 10**9,
+                       live_journal=paths.data / "journal.sqlite" if args.compare else None)
         )  # fmt: skip
     except ValueError as exc:
         print(json.dumps({"error": str(exc)}))

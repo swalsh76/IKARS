@@ -234,6 +234,12 @@ class PluginHost:
         )
         self._slots[name] = _Slot(plugin, ctx, asyncio.Queue(self._queue_size))
 
+    def restart(self, name: str) -> None:
+        """A replayed engine restart: ``name`` goes on as a new instance that remembers nothing,
+        as a new process's would (deterministic runs only; M1.13 live check)."""
+        slot = self._slots[name]
+        slot.plugin = type(slot.plugin)()
+
     def state(self, name: str) -> PluginState:
         return self._slots[name].state
 
