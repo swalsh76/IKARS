@@ -371,3 +371,18 @@ def test_a_check_whose_market_left_the_index_is_looked_up_then_scored(tmp_path: 
     mark = journal.recent()[0].marks[0]
     assert mark.at_settlement and mark.score_e6 is not None
     journal.close()
+
+
+def test_a_check_whose_market_state_was_not_known_is_scored(tmp_path: Path) -> None:
+    """M1.R3 live check: the query's NOT (closed = 1 AND ...) is NULL for a mark whose state was not
+    known, so such checks (515 from v0.1.7, and any on a paused market) were never scored."""
+    from ikars_core.fees import fee_schedule
+
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.add(item("r1", T0, rec()))
+    journal.mark("r1", 1800, T0 + 1800 * S, 440_000, 450_000, None)  # not known: no settlement
+    fees = fee_schedule("quadratic", 70_000)
+    assert journal.score(lambda ticker: fees, T0 + 1800 * S) == 1
+    mark = journal.recent()[0].marks[0]
+    assert mark.scored and mark.score_e6 is not None and not mark.at_settlement
+    journal.close()

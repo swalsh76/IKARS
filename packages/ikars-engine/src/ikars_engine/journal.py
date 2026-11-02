@@ -295,7 +295,9 @@ class Journal:
                 "SELECT m.id, m.horizon_s, m.yes_bid_e6, m.yes_ask_e6, m.closed, r.payload,"
                 " s.yes_paid_e6, m.at_ns, m.rowid FROM mark m JOIN recommendation r ON r.id = m.id"
                 " LEFT JOIN settlement s ON s.ticker = r.ticker"
-                " WHERE m.scored IS NULL AND NOT (m.closed = 1 AND s.ticker IS NULL)"
+                # IS NOT, never NOT (... = 1 ...): a mark whose market's state was not known (NULL)
+                # is scored at its bid, never skipped for ever (M1.R3 live check)
+                " WHERE m.scored IS NULL AND (m.closed IS NOT 1 OR s.ticker IS NOT NULL)"
                 " AND (m.at_ns, m.rowid) > (?, ?) ORDER BY m.at_ns, m.rowid LIMIT ?",
                 (*after, limit),
             ).fetchall()
