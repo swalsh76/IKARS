@@ -3853,3 +3853,10 @@ not the package's; `program.version` says 0.1.17); an open terminal's one-second
 ms of loop time each second (portfolio, alerts, the recommendations page), older than R3a.
 
 **v0.1.18 published** (test pre-release from `899652b`, 2026-11-02; release run green) for the scoring fix's live check.
+
+**The scoring fix's live check passed** on **v0.1.18** (2026-11-02, installed by the owner; read-only, counts
+only): no check with an unknown market state is left unscored (the 515 from v0.1.7 are scored: 495 with a value,
+24 with no price at that moment, with the few made since); only 8 closed checks wait for their markets' results.
+Journal schema 5 (no migration, so no new backup); the scorecard's checks unchanged in kind, more scored; the
+ledger verified and exact; the feed connected with 100 of 100 books ready and no open gaps; all four plugins
+running. **M1.R3a is built and checked**; PR #47 merges after #35, #36 and #37.
