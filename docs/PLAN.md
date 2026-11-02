@@ -838,3 +838,6 @@ Strata server (D24) is the one new resource: a home-network service, as the NAS 
 - Remove the `pnpm audit` exception for GHSA-g3hv-75wg-m249 (minimatch < 11.0.1, lint tools only; owner,
   2026-11-01) in `web/pnpm-workspace.yaml` once ESLint and typescript-eslint accept minimatch 11 and that release
   passes the 7-day rule; Dependabot shows it.
+- A settled market is missing from the index after a restart (a full discovery reads only unopened and open
+  markets), so its Market screen answers 404, also when opened from the ledger or a recommendation (seen
+  2026-11-01). Fix: fetch a market the index lacks on request, or keep recently settled markets across restarts.

@@ -3499,3 +3499,22 @@ made-up frames and replays its recording to the very same items and state. Cover
 - the upgrade compacts the open hour;
 - the new channels record;
 - after an hour, a replay of momentum against the live journal (parity), and the book check at 99% settled or more.
+
+**On v0.1.13** (installed 2026-11-01 about 21:45 MST; read only, counts and states):
+- **The upgrade:** the open hour, written with the old columns, folded into its Parquet, and a new stream opened
+  beside it. No damaged or part files. All four plugins are running.
+- **Recording:**
+  - the `market` channel: 234,028 rows at start (every market in the index, each new to it);
+  - the `feed` channel: a `start`, then 200 `watch` events (100 at start, 100 restated by the first checkpoint);
+  - book checkpoints: 10,090 level rows (the 100 watched books);
+  - ticker rows for every market.
+- **Pending:** an hour of recording, then the momentum parity and the book check.
+
+**Fixed during the live check (owner, 2026-11-01).** On a settled market's screen, the price chart grew without
+bound. The cause: with nothing taller beside it (an empty book), the chart's box took its height from the chart,
+which sizes itself to its box, so each resize grew the next.
+- **The fix:** the box has a definite height (`cff4f24`). An end-to-end test measures the chart twice, three seconds
+  apart, on a market with no book; before the fix it grew to 528 px.
+- **Review:** per commit, nothing found.
+- **Seen beside it and parked (PLAN §9):** after a restart, a settled market is not in the index, so its Market
+  screen answers 404. A full discovery reads only unopened and open markets.
