@@ -30,6 +30,7 @@ Requirements from the owner (2026-10-26):
 | R13 | Anything SPARQ has produced (code, findings, data) may be used to augment IKARS (D17). |
 | R14 | Besides unit tests and CI, a **mini code review on every commit and merge**, so fewer large periodic reviews are needed (D11). |
 | R15 | An **audit log** kept so that, if needed, it can be stored alongside a **Form 1040** tax return (D18). |
+| R16 | **Sub-agents are used whenever they help the plan's development** (owner, 2026-11-01): parallel research, fresh-eyes reviews and isolated spikes (D11). |
 
 ### 1.1 Direction: beat the humans, not the bots (owner, 2026-10-26)
 
@@ -432,6 +433,20 @@ arithmetic. For each recommendation:
   - **Findings:** each finding is fixed in the same branch or parked in §9 with its reason. The BUILD-LOG slice
     entry gets a **Review** heading listing the findings and what was done about each.
   - A full-codebase review is still held at each milestone's close-out, and should then be short.
+- **Sub-agents (R16, owner 2026-11-01):** the development makes full use of sub-agents wherever they are an
+  advantage, and keeps work in the main session where they are not.
+  - **Used for:**
+    - read-only research that splits into independent parts, such as how KAPS and SPARQ handled something, or
+      the terms checks for many sources at once;
+    - a fresh-eyes reviewer at each merge, beside `/code-review`, that never saw the slice's reasoning;
+    - spikes tried in their own worktree, so the slice's branch is untouched;
+    - long, separable work run in the background while the main session carries on.
+  - **Not used for:** a slice's sequential build, live checks on the workstation (keys, the installed engine), or
+    any step the owner approves one at a time.
+  - **Every brief carries the non-negotiables:** no secrets, key paths, real host names or paths; Kalshi GET only;
+    nothing fetched is committed.
+  - **Results are checked by the main session before use.** A review agent's findings go under the slice's
+    **Review** heading like any other.
 
 ### D12. Deployment: portable zip and user-space installer (APPROVED 2026-10-26: Velopack)
 

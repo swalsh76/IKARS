@@ -202,6 +202,9 @@ slice still needs its own approved plan before code.
 - **Show the merge review as an itemized list (owner, 2026-10-27).** When reporting a merge review to the owner,
   list every finding, one per line: what was wrong, and what was done (fixed, with the commit; parked; or no change,
   with why). Never only a count.
+- **Use sub-agents whenever they help (owner, 2026-11-01; PLAN R16, D11):** parallel read-only research,
+  a fresh-eyes reviewer at each merge, worktree spikes, separable background work. Not for a slice's sequential
+  build, live workstation checks or step-by-step approved work. Briefs carry the non-negotiables; check results.
 - **Scope is frozen at D1 to D21 (owner, 2026-10-26).** New ideas go to PLAN §9 by default and come back only
   through a milestone proposal the owner approves. Name scope creep explicitly when it appears.
 - Machines by role (workstation, server host, analytics node); real host names and paths stay out of the repository.
