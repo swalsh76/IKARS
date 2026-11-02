@@ -3252,3 +3252,88 @@ yet. **Owner:** ignore it, dated, in `web/pnpm-workspace.yaml`; its removal is p
   note; without one it is not polled, and health says why.
 - **Docs:** a terms row per feed in `docs/research/sources.md`, plus DEPENDENCIES.
 - **New package:** `defusedxml` 0.7.1 (PSF-2.0, no dependencies; already in the lock for development).
+
+#### 2.3 built (2026-11-01)
+
+**Built** on `m2/3`:
+
+| Commit | What |
+|---|---|
+| `7c0d40d` | the slice |
+| `a19a332` | merge-review fixes |
+
+After M2.2 (PR #34, `436bef2`).
+
+- **The `gdelt` plugin (entry point `gdelt`):**
+  - **GKG files.** The index is read every 2 minutes, and each new file is fetched once.
+    - Files missed are fetched by name, up to a day back, four per read. Older ones are logged as unrecoverable.
+    - A file is unpacked and read in a worker thread: one member only, with caps on the unzipped size and the
+      ratio. The newest file is checked against the index's MD5.
+    - The bookmark moves on, and gaps are logged, only once a read's items have gone out.
+    - A backlog's start is kept across restarts. Once caught up, it is logged once as `backfill`, leaving out any
+      window already logged as lost.
+    - A damaged or missing file at least two slots older than the newest is logged and passed. The network, a
+      busy server and the newest file are retried.
+  - **DOC 2.0 searches** from the settings, every 15 minutes. GDELT's API gets one request every 10 seconds at
+    most, and a poll waits for its turn before its timed call.
+  - **Kept:** title, link, source, GDELT's time, the publisher's time (only when GDELT has it), themes, places,
+    people, organisations and tone (as text). Never quotations or the article's text.
+- **The `rss` plugin (entry point `rss`):**
+  - RSS 2.0, RSS 1.0 and Atom, read with `defusedxml`.
+  - Kept: the headline, link, publisher time and summary, as plain text cut to 1,000 characters. Times are exact,
+    and a time with no zone is never guessed.
+  - Ids are by cleaned link, or by guid for a feed that reuses links (Census). A feed on link ids whose reply
+    repeats a link is flagged in health.
+  - Feeds without a terms note, with a bad or duplicate name, or not on HTTPS are refused, and health says why.
+- **Duplicates:** every news item's id is its cleaned link, in one seen scope shared by all news feeds. Claims keep
+  two feeds from both sending one item, and an id is remembered only by the feed that sent it.
+- **Settings version 7:** `[news]` with 12 US government feeds (Fed ×2, BEA, Census, EIA ×2, NHC ×2, White House ×2,
+  FDA, USGS) and five GDELT searches. BLS and SEC wait for a contact email (`docs/research/sources.md`).
+- **The polling base:**
+  - index feeds read whole every time; a per-host rate; the HTTP status on errors;
+  - `read` and `delivered` hooks for sources;
+  - a source that backfills logs its own gaps;
+  - `iso_ns` and `exact_ns` shared with NWS.
+- **New package:** `defusedxml` 0.7.1 (PSF-2.0). Type stubs were not added: one targeted `type: ignore`.
+
+**Dry run against the real sources** (2026-11-01 about 20:00 MST, a scratch store):
+- **GKG:** one file gave 1,101 to 1,178 articles from 280 to 293 sources, all but a handful with a title, and about
+  half with the publisher's time.
+- **RSS:** the 12 feeds gave 233 items with no errors; 232 had a time and all had a summary.
+- **Overall:** ids all unique, no gaps; payloads average 1.2 KB (about 120 MB a day of payload before compression).
+- **DOC searches:** answered 429 again, with one exception that returned nothing new.
+
+**Verified.** Python: 1,612 tests (27 for news), with made-up feeds, GKG rows and zips. Coverage: `gdelt.py` 92%,
+`rss.py` 97%, `polling.py` 95%. Lint, types and the data guard are clean.
+
+**Review.**
+- **Per commit:** `7c0d40d`, 1 found before committing, fixed. After a day-long outage, the poller logged the whole
+  window as backfilled while GDELT also logged its oldest part as unrecoverable. Now a backfilling source logs its
+  own gaps.
+- **Merge review:** `/code-review medium`, 10 findings, plus a fresh-eyes reviewer sub-agent (PLAN R16), 9 findings.
+  Five were found by both. All fixed in `a19a332` unless marked:
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | A feed remembered every id it listed, including one another feed had claimed but then failed to send: that item was lost | Only ids it sent or no one holds are remembered; tested (both reviews) |
+  | 2 | GKG unzip and parse ran on the event loop, about 50 ms a file and 4 files a read during a catch-up, against the 33 ms screen target | A worker thread (both) |
+  | 3 | Any non-404 failure on one file (a damaged zip, too large) stalled the GKG stream for up to a day | A damaged or missing old file is logged and passed; tested |
+  | 4 | Gaps were logged before delivery: a failed read logged its window again each retry, and the backfill entry was "done" before any file came | Logged at delivery, once; tested (both) |
+  | 5 | Waiting for GDELT's API turn counted against the 60 s call timeout: the fifth search waited 40 s, a seventh always timed out | The turn is taken before the timed call (both) |
+  | 6 | A 404 on a file just behind the newest was written off, though GDELT may still be publishing it | Only from two slots back; tested |
+  | 7 | Titles were decoded twice, so `&lt;script&gt;` became markup and was dropped | Decoded once |
+  | 8 | A store error in `emitted` left ids claimed until a restart | Released in `finally` (both) |
+  | 9 | `Feed.max_bytes` was never used | Removed |
+  | 10 | A redundant condition in the gap rule | One condition |
+  | 11 | A backfill window that held a lost file was logged as both recovered and lost; a restart mid-catch-up logged an overlapping second backfill | The backlog's start is kept in the state store; the backfill leaves out lost windows; tested (sub-agent) |
+  | 12 | GDELT's crawl time was recorded as the publisher's time | The publisher's time only; GDELT's stays in `gdelt_time` (sub-agent) |
+  | 13 | The missed-file count divided as a float | Integer division (sub-agent) |
+  | 14 | Only the newest file has an MD5 in the index | No change: documented; a backfilled file is checked by unzipping (sub-agent) |
+  | 15 | `max_bytes or default` read 0 as the default | `is None` (sub-agent) |
+
+**Live check: pending** (test release on the owner's word):
+- settings version 7 upgrades cleanly;
+- both plugins record;
+- after a day, no unlogged gaps.
+
+The 7-day news clock starts then.
