@@ -3781,7 +3781,7 @@ closed checks sold at a kept quote, so they are scored again at settlement; the 
 **As built, against the plan:**
 - **A10 narrowed:** only the Kalshi environment is bound, not the key fingerprint. Binding the fingerprint would
   stop every import at a routine key rotation; each start already records the fingerprint as an `app` record.
-  *Question for the owner* (below).
+  **Owner (2026-11-02): bind to the environment only.**
 - **A7:** the settlement time, else the market's close time (the plan); never the archive's time.
 - **B3:** the recorder's own writer thread builds and writes the batches; closing hours and reading trade ids run
   there too, awaited off the loop. A failed write is a loss the heartbeat logs as a gap for its channel and time
@@ -3819,7 +3819,7 @@ closed checks sold at a kept quote, so they are scored again at settlement; the 
   | 11 | (sub-agent) The batch conversion holds the GIL, so the loop still stalled per channel (27 ms measured) | Converted in 2,000-row parts |
   | 12 | (sub-agent) Recordings before v0.1.13 have no watch events: B11 dropped all their books | Every snapshot kept until a recording names its watched markets; tested |
   | 13 | (sub-agent) A replay across a recorded restart kept the old quotes and quote wait | A recorded start forgets the quotes; the replay restarts the journal's wait; tested |
-  | 14 | (sub-agent) A10 binds the environment only | Question for the owner |
+  | 14 | (sub-agent) A10 binds the environment only | No change: the owner chose the environment only (2026-11-02) |
   | 15 | (sub-agent) Taking the buffer and queueing it were two lock sections: a trade-id read could pass between | One lock section; queued at once |
   | 16 | (sub-agent) A failed write was raised into whichever caller wrote next | A loss logged by the heartbeat as a gap for its channel and times; tested |
   | 17 | (sub-agent) A writer thread started after a close shared the stopped one's queue: the close could hang | Each thread its own queue; the join has a limit; tested |
