@@ -30,6 +30,8 @@ describe("the Update window", () => {
     expect(steps("done").every((s) => s.mark === "done")).toBe(true);
     expect(steps("failed", "start").map((s) => s.mark)).toEqual(["done", "done", "done", "now", "next"]);
     expect(steps("install")[2]?.label).toBe("Install");
+    // waiting for the owner's Install (M1.R3 D2): nothing has started
+    expect(steps("confirm").every((s) => s.mark === "next")).toBe(true);
   });
 
   it("says the download and the time plainly", () => {

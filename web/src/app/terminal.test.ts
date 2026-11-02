@@ -42,6 +42,14 @@ describe("starting the terminal", () => {
     terminal.stop();
   });
 
+  it("opens no stream when asked not to (the Update window: M1.R3 D6)", async () => {
+    const none = { ...quiet, fetch: vi.fn(() => new Promise<Response>(() => undefined)) as unknown as typeof fetch };
+    const get = vi.fn(async () => ({ items: [] }));
+    const terminal = await startTerminal({ signIn: async () => true, get: get as never, hub: hubTimers, stream: none, navigator, theme: () => undefined, streaming: false });
+    expect(none.fetch).not.toHaveBeenCalled();
+    terminal.stop();
+  });
+
   it("says signed out, or retrying, and still opens the stream", async () => {
     for (const [kind, state] of [
       ["signed-out", "signed-out"],

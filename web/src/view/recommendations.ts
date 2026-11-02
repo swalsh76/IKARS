@@ -2,7 +2,7 @@
 // formatted from the engine's contracts, never computed (the ranking and every amount are the engine's).
 
 import type { MarkView, RecommendationView, ScoreCard } from "../api/contracts";
-import { cents, contracts, dollars, e2, e6, percent } from "../money";
+import { cents, contracts, dollars, e2, e6, percent, price } from "../money";
 import { local } from "./health";
 
 export type Level = "gain" | "loss" | "flat" | "unpriced";
@@ -50,7 +50,7 @@ export function ruleName(r: RecommendationView): string {
 
 function buy(r: RecommendationView, size: boolean): string {
   const count = size ? ` ${contracts(e2(r.count_e2))}` : "";
-  return `Buy ${r.side.toUpperCase()}${count} @ ${dollars(e6(r.entry_price_e6))}`;
+  return `Buy ${r.side.toUpperCase()}${count} @ ${price(e6(r.entry_price_e6))}`;
 }
 
 /** ``Buy YES @ $0.46``. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MoneyError, cents, contracts, dollars, e2, e6, percent, share } from "./money";
+import { MoneyError, cents, contracts, dollars, e2, e6, percent, price, share } from "./money";
 
 describe("dollars", () => {
   it("formats millionths exactly, rounding half away from zero", () => {
@@ -44,6 +44,13 @@ describe("cents and contracts", () => {
     expect(cents(e6(420_000))).toBe("42¢");
     expect(cents(e6(425_000))).toBe("42.5¢");
     expect(cents(e6(-60_000))).toBe("-6¢");
+  });
+
+  it("shows a price in dollars without rounding a sub-cent tick (M1.R3 D7)", () => {
+    expect(price(e6(460_000))).toBe("$0.46");
+    expect(price(e6(465_000))).toBe("$0.465");
+    expect(price(e6(1_000_000))).toBe("$1.00");
+    expect(price(e6(460_100))).toBe("$0.4601");
   });
 
   it("shows counts without trailing zeros", () => {

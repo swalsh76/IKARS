@@ -23,6 +23,7 @@ export interface TerminalDeps {
   stream?: StreamDeps;
   navigator?: Navigator;
   theme?: (theme: Theme) => void;
+  streaming?: boolean; // false: no stream (the Update window holds none of the engine's few: M1.R3 D6)
 }
 
 const timers = {
@@ -92,7 +93,7 @@ export async function startTerminal(deps: Partial<TerminalDeps> = {}): Promise<T
     hub.connection(error.kind === "signed-out" ? "signed-out" : "retrying");
   }
   hub.flush();
-  stream.start();
+  if (deps.streaming ?? true) stream.start();
   return {
     hub,
     meter,

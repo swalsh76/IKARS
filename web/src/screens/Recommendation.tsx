@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { RecommendationView } from "../api/contracts";
-import { answer, copyOrder } from "../app/answers";
+import { answer, copyOrder, newerThanAnswer } from "../app/answers";
 import { useRoute, useSnapshot, useTerminal } from "../app/hooks";
 import { href } from "../nav/route";
 import { ANSWERS, checkRows, figures, headline, inputText, ruleName, type Answer } from "../view/recommendations";
@@ -48,9 +48,9 @@ function Checks({ r }: { r: RecommendationView }) {
 
 export function Recommendation({ id }: { id: string }) {
   const loaded = useSnapshot(`/v1/recommendations/${encodeURIComponent(id)}`, "RecommendationView", 15_000);
-  const [answered, setAnswered] = useState<RecommendationView | null>(null);
+  const [answered, setAnswered] = useState<{ view: RecommendationView; at: number } | null>(null);
   const [note, setNote] = useState("");
-  const shown = answered ?? (loaded.state === "ready" ? loaded.value : null);
+  const shown = answered?.view ?? (loaded.state === "ready" ? loaded.value : null);
   const current = useRef(shown);
   useEffect(() => {
     current.current = shown;
@@ -58,14 +58,15 @@ export function Recommendation({ id }: { id: string }) {
   const [seen, setSeen] = useState(loaded);
   if (loaded !== seen) {
     setSeen(loaded);
-    if (loaded.state === "ready") setAnswered(null); // a newer copy from the engine wins
+    // a copy asked for after the answer was saved wins; one already in flight does not (M1.R3 D9)
+    if (loaded.state === "ready" && (answered === null || newerThanAnswer(loaded.askedAt, answered.at))) setAnswered(null);
   }
 
   const respond = async (given: Answer | null) => {
     const r = current.current;
     if (!r) return;
     const { value, note } = await answer(r, given);
-    if (value) setAnswered(value);
+    if (value) setAnswered({ view: value, at: Date.now() });
     setNote(note);
   };
   const copy = async () => {
