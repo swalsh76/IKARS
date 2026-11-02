@@ -27,16 +27,15 @@ was built and verified: [BUILD-LOG](docs/BUILD-LOG.md) (the current milestone; M
 
 *Last updated 2026-11-02.*
 
-- **The open stack** (each PR's base is the one before; merge in this order, only when the owner says so):
-  #35 M2.3 News (`m2/3` → main) → #36 M1.13 Replay → #37 M1.14 Settled markets → #47 M1.R3a → #48 M1.R3b →
-  #49 the docs streamlining (`docs/streamline`: PLAN, BUILD-LOG and this file condensed; the log split by
-  milestone; owner-approved 2026-11-02). When rebasing onto main, drop `6f38e5f` from `m1/14` and update the
-  hashes the docs cite. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+- **The stack is merged** to `main` (owner's word, 2026-11-02), in order: #35 M2.3 `1786381`, #36 M1.13
+  `60a7a23`, #37 M1.14 `5217357`, #47 M1.R3a `a9b360a`, #48 M1.R3b `88a1719`, #49 the docs streamlining
+  `53e4c84`. Dependabot's #50 to #54 are open. The owner allows `gh pr merge` by a local permission rule; merge
+  only when asked.
 - **Installed:** v0.1.19 (published 2026-11-02 through the four-job release workflow). After the upgrade one
   `ikars open` signs in again (cookies now name their port). The M1.R3b live check passed on it (BUILD-LOG
   1.R3b); the Update window's Install click is seen on the next update.
-- **Due:** the M2.3 news gap check (2026-11-02 evening), then the merges above; momentum v1's week ends about
-  2026-11-04, then the Strategy review decides v2 (with M1.R3 C1 and C5).
+- **Due:** the M2.3 news gap check (2026-11-02 evening); momentum v1's week ends about 2026-11-04, then the
+  Strategy review decides v2 (with M1.R3 C1 and C5).
 - **Then:** M2.4 (settlement rules and the event calendar), plan first.
 - **Still with the owner:** the SignPath application (docs/CODE-SIGNING.md); the two-monitor layout check.
 - **Test releases** are published only on the owner's word ("publish 0.1.x"), from a commit whose CI passed.
