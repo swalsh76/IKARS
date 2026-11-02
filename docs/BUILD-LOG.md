@@ -3669,3 +3669,101 @@ momentum v1's review (~2026-11-04), whose scorecard left these checks out.
   - The scorecard counts them. The 6 markets left waiting are Kalshi's 5 closed and 1 inactive, without a result.
   - The lookups worked off the restart's backlog at their cap (100 a minute): 1,600 settled with 0 failures, all
     done by 23:46, about 18 minutes after the start.
+
+## 1.R3 Base hardening after a fresh-eyes review (plan APPROVED 2026-11-02, all four answers as recommended; branches `m1/r3a`, then `m1/r3b`)
+
+**Why.** The owner asked for "a complete fresh-eyes sub-agent review of the project so far" (R16). Five read-only
+reviewers, one per area, read the whole code base: A money and the ledger, B the Kalshi feed, recording and
+replay, C the engine, journal, momentum and sources, D the API, security and the web terminal, E the platform,
+CI and docs. They found 55 problems, none a secret, an order path or float money; each top claim was checked
+against the code, and C2 and C4 against the live journal (read-only, counts only: 1,545 checks with no value,
+920 closed checks scored at a stale quote). **The owner approved M1.R3 as listed** (2026-11-02), then this plan with all four answers as recommended.
+
+**Two parts, two PRs, both before M2.4.** **M1.R3a** correctness and data (A, B, C), first, so the scorecard is
+right for momentum v1's review (~2026-11-04); **M1.R3b** security, release and docs (D, E). Each item gets a test
+(a script for the workflow items), the per-commit review, and a merge review with a fresh-eyes sub-agent.
+
+#### M1.R3a correctness and data
+
+| # | Problem | Fix |
+|---|---|---|
+| A1 | `ledger import` runs beside a live engine; the engine's kept book adds a fill another process committed, and later fills chain on the wrong position | Refused while the engine runs (like `restore`); the book takes only the entries `append_all` actually inserted |
+| A2 | An ACL error puts the key path into health, alerts and tracebacks | No path in `AclError`; a fixed `AuthError` message |
+| A3 | A damaged checkpoint stops every start; the CLI and engine share one fixed temp file | A damaged checkpoint is a named problem, not an exception; `write_text_atomic` uses a unique temp name |
+| A4 | A difference equal to resting orders counts as exact, though Kalshi was shown not to hold them back | Exact means a zero difference; the resting cost is kept as information |
+| A5 | Fills with one timestamp are recorded newest first (FIFO lots, M5) | A tie-break restores execution order within a time; existing records unchanged |
+| A7 | A derived settlement without a settlement time takes the archive time (can cross a tax year) | The market's settlement time, else its close time, never the archive time |
+| A8 | One failed heartbeat write leaves the state store inside a transaction | Roll back on failure, as `remember()` does |
+| A10 | Nothing stops demo fills entering the real chain | The environment and key fingerprint kept as a ledger bookmark at the next import; an import refused when either differs |
+| B1 | A snapshot lost in a second gap leaves a book broken until a reconnect | A gap clears the request; a request unanswered for 10 s is asked again (the test that enshrined the bug changes) |
+| B2 | A frame that fails to parse is dropped silently | Logged as a gap (rate-limited); on the book channel the books break and snapshots are asked |
+| B3 | Each 5 s recorder flush blocks the loop 30 to 68 ms | Buffers swapped on the loop; batches built and written by one writer thread per recorder |
+| B4 | The background lookup cap does not hold within one call (up to 200 at once) | Counted when a task is created, not when it runs |
+| B5 | The daily discovery dump blocks about 2.4 s; the index version moves on every put, re-sorting 560k markets | The dump in chunks off the loop; the version moves only on a real change; the prune every few minutes |
+| B6 | The feed queue's bound is 550 to 800 MB, minutes of backlog | 25,000 frames (about 15 s) |
+| B7 | Reading known trade ids blocks the loop about 0.5 s after a reconnect | On a worker thread |
+| B11 | A late snapshot recreates the book of an unwatched market | A snapshot makes a book only for a watched market |
+| B12 | `known_keys` rebuilt on every frame | Cached |
+| C2 | Checks taken just after a restart have no quote and stay unscored (1,545) | The quote wait runs from the later of the due time and the engine's start; checks marked more than a tolerance late are counted apart on the scorecard; the backlog in one transaction |
+| C3 | A feed answering "not modified" for 14 days re-sends its old items as new | A 304 refreshes the ids the feed last listed |
+| C4 | A closed check is scored at a stale quote instead of the settlement (920) | A closed check is scored at the settlement only (question 2); journal migration 5 clears the 920 scores so the next pass re-scores them |
+| C6 | The unsettled-markets query costs about 95 ms per pass at 30 days | A set kept in memory, updated on add and settle |
+| C7 | A false gap after a feed stopped on purpose; a GDELT DOC outage over an hour logged as recovered | The stop clears the feed's last good time; DOC windows past its timespan are `unrecoverable` |
+| C8 | The alert state file grows for ever | Entries older than the throttle are pruned |
+
+#### M1.R3b security, release and docs
+
+| # | Problem | Fix |
+|---|---|---|
+| D1 | A process holding the fixed port during a restart receives the session cookie, which still works on the fallback port | The cookie carries the port and is checked against `Host`; on a fallback the session key rotates (every window signs out) and an urgent alert says why |
+| D2 | Opening `/update?to=…` checks and installs with no click | The Update window waits for an **Install** button (the window's existing layout, one button; no new screen) |
+| D3 | A second `ikars_session` cookie locks the owner out | Any valid one is accepted |
+| D4 | Request bodies have no size limit (sign-in included) | `Content-Length` required and capped (4 KB sign-in, 64 KB otherwise) |
+| D5 | The Markets refresh asks for more than 200 subscriptions | The limit becomes 400 (twice a page) |
+| D6 | An 8-window layout uses every stream | 16 streams; the Update window opens none |
+| D7 | The headline rounds a sub-cent price | `cents()` as Copy order does |
+| D8 | Holding T, I or D toggles the answer | Key repeats ignored |
+| D9 | An older refresh hides a just-saved answer | A snapshot asked before the answer was saved keeps it |
+| E1 | The release job's write token is visible to every build step | Split: a build job with read-only rights and no stored credential, then a publish job that only uploads |
+| E2 | hatchling unpinned in the release build | Pinned, with a hashed build constraint |
+| E3 | Any `v*` tag publishes with no tests or checksums | Published only if the tagged commit's CI checks passed (question 3); a `SHA256SUMS` file and a build-provenance attestation |
+| E4 | A foreground `run` takes no engine lock | It takes `EngineLock` and refuses when the engine runs |
+| E5 | A rollback restores old data before an apply that may fail | A failed apply puts the newer data back (restore's undo list) |
+| E6 | A failed update leaves the engine down silently | An `updating` marker with a 15-minute deadline; then the watchdog restarts and alerts |
+| E7 | The watchdog task's command lacks `-I` | Added; the task is re-registered on the next start that finds the old command |
+| E8 | A legacy `portable.marker` puts data where an update wipes it | The marker is ignored inside the program folder; D12 describes `.portable` / `IKARS-data` |
+| E9 | The velopack SDK unpinned against the pinned `vpk` | Pinned `==1.2.161`; Dependabot's `nuget` watches `vpk`, grouped with it |
+| E10 | The data guard misses settings files, archives, logs, the sandbox file, `.claude/settings.local.json` | Names, folders and a content check for UNC and user-profile paths; `.claude/settings.local.json` in `.gitignore` |
+| E11 | A refused rollback leaves the stop markers behind | Cleared on refusal |
+| E12 | The code-signing privacy policy leaves out NWS, GDELT and the RSS feeds | Listed |
+| E13 | PLAN §5 and the README stale | Updated |
+| E14 | DEPENDENCIES.md stale (RSA for Ed25519, rows in use under "later", the Claude API in M2) | Corrected |
+| E15 | The 95% gate leaves out money modules | `pnl`, `ledger`, `ledger_import`, `portfolio`, `costs` added |
+
+**Not in M1.R3.** C1 (an empty side's false mid) and C5 (a window across an outage) change momentum's rule: they go
+to the Strategy review as **momentum v2** (~2026-11-04); v1 runs unchanged. Before that review a read-only replay of
+v1's week counts the recommendations that rest on a false mid, so its record is read with that in mind. C9 (the
+cost meter) stays in M2.6, before any paid plugin. Parked in PLAN §9: A6 (fee unit, question 4), A9 (restore
+fallback to older copies, M5), B8, B9, B10 (each needs a rare timing or an unconfirmed Kalshi behaviour).
+
+**Changes on the workstation.** No new packages (hatchling and velopack only pinned). Journal migration 5 re-scores
+the closed checks (question 2; backed up first). The ledger gains one bookmark (A10). The watchdog task is
+re-registered (E7). Settings unchanged. The release workflow gains `id-token` and `attestations` write rights in
+the publish job only (question 3).
+
+**Live checks** on a test release of each part:
+- R3a: upgrade clean; the scorecard counts late checks apart; no unscored check after a restart of over 10
+  minutes; the recorder's flush off the loop (the loop-lag metric); a forced parse failure logged as a gap (unit
+  only); ledger reconciles exactly; `ledger import` refused with the engine running.
+- R3b: the Update window waits for Install; a held fixed port signs the windows out with an alert (a scratch
+  listener); the watchdog task command has `-I`; the release itself built by the split workflow, with checksums.
+
+**Questions, answered by the owner (2026-11-02, all as recommended).**
+1. **Branch.** R3a touches code still in the open stack (#35 to #37: the journal, lookup, polling and GDELT).
+   Recommended: `m1/r3a` stacked on `m1/14` now, retargeted to `main` when the stack merges.
+2. **C4: closed checks.** Today a closed market's check is sold at the last bid if one was kept (the M1.12b rule).
+   Recommended: score a closed check at the settlement only, and re-score the 920 (journal migration 5).
+3. **E3: release gate.** Recommended: publish only if the tagged commit's CI checks are green (this keeps test
+   releases from PR branches), with a `SHA256SUMS` file and a build-provenance attestation.
+4. **A6: fee unit.** Kalshi charges your account at $0.0001; scores round each fee up to a cent (conservative).
+   Recommended: keep cents through v1's review, then decide with v2 (parked).
