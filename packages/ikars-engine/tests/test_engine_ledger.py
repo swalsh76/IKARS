@@ -5,6 +5,7 @@ import json
 import logging
 import sqlite3
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -528,8 +529,13 @@ def test_the_runner_describes_markets_and_digests_settings() -> None:
 class FakeMarkets:
     """Market results: a 404 on the live route sends the importer to the archive."""
 
-    def __init__(self, result: str) -> None:
-        self.result = result
+    def __init__(
+        self,
+        result: str,
+        settled: datetime | None = datetime(2026, 1, 1, 12, tzinfo=UTC),
+        expires: datetime | None = None,
+    ) -> None:
+        self.result, self.settled, self.expires = result, settled, expires
 
     async def market(self, ticker: str) -> Any:
         from ikars_core.rest import KalshiAPIError
@@ -537,12 +543,12 @@ class FakeMarkets:
         raise KalshiAPIError(404, "not found")
 
     async def historical_market(self, ticker: str) -> Any:
-        from datetime import UTC, datetime
         from types import SimpleNamespace
 
         return SimpleNamespace(ticker=ticker, status="finalized", result=self.result,
                                title="Made up", event_ticker="KXT-26JAN01",
-                               settlement_ts=datetime(2026, 1, 1, 12, tzinfo=UTC))  # fmt: skip
+                               settlement_ts=self.settled, expiration_time=self.expires,
+                               close_time=None)  # fmt: skip
 
 
 def archived(realized: str) -> dict[str, Any]:
@@ -588,8 +594,11 @@ async def test_an_unconfirmed_archived_settlement_stays_a_difference(
     ledger.close()
 
 
-async def test_money_held_by_resting_buys_is_not_a_difference(tmp_path: Path) -> None:
-    """M1.R 8: Kalshi's balance is what is available; a resting buy holds its cost back."""
+async def test_money_held_by_resting_buys_is_recorded_but_still_a_difference(
+    tmp_path: Path,
+) -> None:
+    """M1.R 8 read the resting buys' cost when the balance falls short; M1.R3 A4: Kalshi was shown
+    not to hold it back, so a shortfall equal to it is a difference like any other."""
     ledger, account = ledger_at(tmp_path), account_with_history()
     account.balance_cents -= 300  # a resting buy of 10 NO at 30c holds $3.00
     account.resting = [{"order_id": "o", "ticker": "KXT-26JAN01-B", "status": "resting",
@@ -600,10 +609,11 @@ async def test_money_held_by_resting_buys_is_not_a_difference(tmp_path: Path) ->
                         "no_price_dollars": "0.1000", "remaining_count_fp": "6.00"}]  # fmt: skip
     report = await AccountImporter(ledger, account, VirtualClock(T0)).run_once()  # type: ignore[arg-type]
     result = report.reconciliation
-    assert result is not None and result.exact and result.reserved_e6 == 3_000_000
+    assert result is not None and not result.exact and result.reserved_e6 == 3_000_000
+    assert result.difference_e6 == -3_000_000
     assert ledger.last("reconciliation")["fields"]["reserved_e6"] == 3_000_000  # type: ignore[index]
-    account.balance_cents -= 1  # a cent more is still a difference
-    assert not (await AccountImporter(ledger, account, VirtualClock(T0)).reconcile()).exact  # type: ignore[arg-type]
+    account.balance_cents += 300  # the balance as Kalshi reports it with a resting buy open
+    assert (await AccountImporter(ledger, account, VirtualClock(T0)).reconcile()).exact  # type: ignore[arg-type]
     ledger.close()
 
 
@@ -773,3 +783,150 @@ def test_a_ledger_cut_back_behind_its_checkpoint_is_caught(tmp_path: Path) -> No
                             clock, taxzone.TaxZone(DENVER, "setting"))  # fmt: skip
     assert not service.check().ok
     ledger.close()
+
+
+# --- M1.R3 ---------------------------------------------------------------------------------------
+
+
+def test_an_import_is_refused_while_the_engine_runs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A1: the command line and the engine importing one ledger at once."""
+    from ikars_engine.__main__ import main
+
+    monkeypatch.setattr("ikars_engine.ledger_cli.engine_running", lambda folder: True)
+    assert main(["python -m ikars_engine", "ledger", "--root", str(tmp_path), "import"]) == 1
+    assert json.loads(capsys.readouterr().out)["refused"].startswith("the engine is running")
+
+
+async def test_a_fill_another_writer_committed_mid_import_is_counted_once(tmp_path: Path) -> None:
+    """A1: the kept book held a fill another process committed first; the next pass applied that
+    process's record again (a wrong position, and later fills chained on it)."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    importer = AccountImporter(ledger, account, VirtualClock(T0))  # type: ignore[arg-type]
+    await importer.run_once()
+    account.live.append(raw_fill("f3", "yes", "3.00", "0.5000", "2026-01-01T09:00:00Z"))
+    account.balance_cents -= 152  # 3 YES at 50c and the 2c fee
+    account.held = [position("KXT-26JAN01-A", "9.00")]
+    other = Ledger(tmp_path / "ledger.sqlite", DENVER)  # the command line, say
+    own = ledger.append_all
+
+    def racing(entries: Any, stream: str = "real") -> list[int]:
+        other.append_all(entries)  # commits first
+        return own(entries, stream)
+
+    ledger.append_all = racing  # type: ignore[method-assign]
+    await importer.run_once()
+    ledger.append_all = own  # type: ignore[method-assign]
+    report = await importer.run_once()
+    assert report.reconciliation is not None and report.reconciliation.exact
+    kept, fresh = importer._current_book(), replay(ledger)
+    assert kept.positions == fresh.positions == {"KXT-26JAN01-A": 900}
+    assert kept.cash_e6 == fresh.cash_e6
+    other.close()
+    ledger.close()
+
+
+def test_a_damaged_checkpoint_is_a_problem_not_a_failed_start(tmp_path: Path) -> None:
+    """A3: a torn or damaged checkpoint raised, so the engine never started."""
+    ledger = ledger_at(tmp_path)
+    ledger.append(Entry("deposit", T0, "deposit", "d0", cash_e6=1))
+    folder = tmp_path / "cp"
+    ledger.checkpoint(folder, T0)
+    (folder / "2026" / "2026-01-02.json").write_text('{"stream": "real", "seq"', encoding="utf-8")
+    assert ledger.against_checkpoint(folder) == "the checkpoint 2026-01-02.json cannot be read"
+    clock = VirtualClock(T0)
+    service = LedgerService(ledger, AccountImporter(ledger, FakeAccount(), clock), folder,  # type: ignore[arg-type]
+                            clock, taxzone.TaxZone(DENVER, "setting"))  # fmt: skip
+    assert not service.check().ok
+    ledger.close()
+
+
+def test_an_atomic_write_uses_its_own_temporary_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A3: the engine and the command line shared one fixed temporary name."""
+    import os
+
+    from ikars_engine import files
+
+    target = tmp_path / "day.json"
+    seen: list[str] = []
+    real = os.replace
+    refusals = iter([PermissionError(13, "in use")])  # a reader holds the file once
+
+    def replace_(source: Any, destination: Any) -> None:
+        seen.append(Path(source).name)
+        for refusal in refusals:
+            raise refusal
+        real(source, destination)
+
+    monkeypatch.setattr(os, "replace", replace_)
+    files.write_text_atomic(target, "one")
+    files.write_text_atomic(target, "two")
+    assert target.read_text(encoding="utf-8") == "two"
+    assert len(set(seen)) == 2 and all(n.startswith("day.json.") for n in seen)
+    assert [p.name for p in tmp_path.iterdir()] == ["day.json"]  # no temporary file left
+
+
+async def test_fills_of_one_time_are_recorded_in_the_order_made(tmp_path: Path) -> None:
+    """A5: one order sweeping two prices, listed newest first, was recorded in reverse."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    at = "2026-01-01T09:00:00Z"
+    account.live[:0] = [raw_fill("second", "yes", "2.00", "0.4200", at),
+                        raw_fill("first", "yes", "2.00", "0.4100", at)]  # fmt: skip
+    await AccountImporter(ledger, account, VirtualClock(T0)).run_once()  # type: ignore[arg-type]
+    swept = [b["source_id"] for b in ledger.records(kind="fill")]
+    assert swept.index("first") < swept.index("second")
+    ledger.close()
+
+
+@pytest.mark.parametrize(
+    ("expires", "derived"),
+    [(datetime(2026, 1, 1, 6, tzinfo=UTC), True), (None, False)],  # no time: left a difference
+)
+async def test_a_derived_settlement_never_takes_the_archive_time(
+    tmp_path: Path, expires: datetime | None, derived: bool
+) -> None:
+    """A7: without a settlement time the archive's time was used, which can be the next year."""
+    ledger, account = ledger_at(tmp_path), account_with_history()
+    account.held, account.archived = [], [archived("4.20")]
+    account.archived[0]["last_updated_ts"] = "2026-01-03T00:00:00Z"
+    account.balance_cents = 9_816 + 600
+    markets = FakeMarkets("yes", None, expires)
+    report = await AccountImporter(ledger, account, VirtualClock(T0), markets=markets).run_once()  # type: ignore[arg-type]
+    body = ledger.last("settlement")
+    if not derived:
+        assert body is None and "settlement" not in report.added
+    else:
+        assert expires is not None and body is not None
+        assert body["at_ns"] == int(expires.timestamp()) * 10**9
+    ledger.close()
+
+
+def test_a_ledger_of_another_kalshi_environment_takes_no_import(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A10: demo fills could enter the real tax chain."""
+    from ikars_engine.__main__ import main
+    from ikars_engine.ledger_service import ENVIRONMENT
+
+    ledger = ledger_at(tmp_path)
+    clock = VirtualClock(T0)
+    importer = AccountImporter(ledger, FakeAccount(), clock)  # type: ignore[arg-type]
+    service = LedgerService(ledger, importer, tmp_path / "cp", clock,
+                            taxzone.TaxZone(DENVER, "setting"), environment="demo")  # fmt: skip
+    assert service.check().ok  # nothing bound yet: the first start binds it
+    ledger.set_bookmark(ENVIRONMENT, "production")
+    verified = service.check()
+    assert not verified.ok and "production" in str(verified.problem)
+    ledger.close()
+    monkeypatch.setattr("ikars_engine.ledger_cli.engine_running", lambda folder: False)
+    root = ["python -m ikars_engine", "ledger", "--root", str(tmp_path / "cli")]
+    assert main([*root, "verify"]) == 0  # makes the ledger
+    capsys.readouterr()
+    cli = Ledger(tmp_path / "cli" / "ledger" / "ledger.sqlite", DENVER)
+    cli.set_bookmark(ENVIRONMENT, "demo")  # the settings say production
+    cli.close()
+    assert main([*root, "import"]) == 1
+    assert json.loads(capsys.readouterr().out)["refused"] == "another Kalshi environment"

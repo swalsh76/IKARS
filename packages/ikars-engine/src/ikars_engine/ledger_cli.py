@@ -39,7 +39,12 @@ from ikars_engine import taxzone
 from ikars_engine.clocks import WallClock
 from ikars_engine.ledger import KINDS, Ledger
 from ikars_engine.ledger_import import AccountImporter, ns_of
-from ikars_engine.ledger_service import ANNOTATION_KINDS, annotate
+from ikars_engine.ledger_service import (
+    ANNOTATION_KINDS,
+    annotate,
+    bind_environment,
+    environment_problem,
+)
 from ikars_engine.paths import Paths
 from ikars_engine.portfolio import Portfolio, holdings, portfolio
 from ikars_engine.runmode import engine_running
@@ -125,6 +130,14 @@ def run(args: argparse.Namespace, paths: Paths, settings: Settings) -> int:
             _print({"refused": "the ledger's chain is broken", "problem": problem})
             return 1
         if args.action == "import":
+            if engine_running(paths.data):  # two importers on one ledger (M1.R3 A1)
+                _print({"refused": "the engine is running: it imports every minute"})
+                return 1
+            mismatch = environment_problem(ledger, settings.kalshi.environment)
+            if mismatch is not None:
+                _print({"refused": "another Kalshi environment", "problem": mismatch})
+                return 1
+            bind_environment(ledger, settings.kalshi.environment)
             code = asyncio.run(_import(ledger, settings))
             ledger.checkpoint(checkpoints, time.time_ns())
             return code

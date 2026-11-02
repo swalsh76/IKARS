@@ -12,8 +12,9 @@ missed, and what became of it), bookmarks (discovery's), heartbeats (the last fr
 channel, so a crash becomes a gap and not silence) and the exchange's status history.
 """
 
+import contextlib
 import sqlite3
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,6 +23,20 @@ from ikars_engine.files import backup_name
 
 class StoreError(RuntimeError):
     pass
+
+
+@contextlib.contextmanager
+def transaction(connection: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """All or nothing on an autocommit connection (the stores'): any failure, the commit's
+    included, rolls back, so the connection is never left inside a transaction (M1.R3 A8)."""
+    connection.execute("BEGIN")
+    try:
+        yield connection
+        connection.execute("COMMIT")
+    except BaseException:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
 
 
 def backup_store(connection: sqlite3.Connection, path: Path) -> Path:
@@ -262,17 +277,12 @@ class StateStore:
     def remember(self, feed: str, ids: list[str], at_ns: int) -> None:
         """``ids`` seen in ``feed`` now: their time is the last sighting, so an item a feed still
         lists is never forgotten (merge review 5); one transaction (merge review 9)."""
-        self._db.execute("BEGIN")
-        try:
-            self._db.executemany(
+        with transaction(self._db) as db:
+            db.executemany(
                 "INSERT INTO poll_seen (feed, id, at_ns) VALUES (?, ?, ?)"
                 " ON CONFLICT (feed, id) DO UPDATE SET at_ns = excluded.at_ns",
                 [(feed, one, at_ns) for one in ids],
             )
-            self._db.execute("COMMIT")
-        except BaseException:
-            self._db.execute("ROLLBACK")
-            raise
 
     def forget_seen(self, before_ns: int) -> int:
         """Drop remembered ids older than ``before_ns`` (feeds list only recent items)."""
@@ -295,14 +305,13 @@ class StateStore:
         self._db.executemany("DELETE FROM bookmark WHERE name = ?", [(n,) for n in names])
 
     def beat(self, beats: dict[str, int]) -> None:
-        self._db.execute("BEGIN")
-        self._db.executemany(
-            "INSERT INTO heartbeat (channel, at_ns) VALUES (?, ?)"
-            " ON CONFLICT (channel) DO UPDATE SET at_ns = excluded.at_ns",
-            list(beats.items()),
-        )
-        self._db.execute("DELETE FROM clean_shutdown")
-        self._db.execute("COMMIT")
+        with transaction(self._db) as db:
+            db.executemany(
+                "INSERT INTO heartbeat (channel, at_ns) VALUES (?, ?)"
+                " ON CONFLICT (channel) DO UPDATE SET at_ns = excluded.at_ns",
+                list(beats.items()),
+            )
+            db.execute("DELETE FROM clean_shutdown")
 
     def heartbeats(self) -> dict[str, int]:
         return dict(self._db.execute("SELECT channel, at_ns FROM heartbeat").fetchall())

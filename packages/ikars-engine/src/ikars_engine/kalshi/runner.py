@@ -294,6 +294,7 @@ async def build(
         clock,
         zone,
         key_fingerprint=account_signer.fingerprint,
+        environment=config.environment.value,
         settings_sha256=settings_digest(settings),
     )
     journal = Journal(paths.data / "journal.sqlite")

@@ -23,10 +23,8 @@ advised, not money that moved. It is backed up with the state.
 """
 
 import asyncio
-import contextlib
 import logging
-import sqlite3
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Literal
@@ -38,7 +36,7 @@ from msgspec import Meta
 from ikars_engine.model import Item, Ref
 from ikars_engine.pnl import mark_score_e6
 from ikars_engine.recommendations import CARD_DAYS, Board, Notices, ScoreLine, figures, scorecard
-from ikars_engine.store import open_store
+from ikars_engine.store import open_store, transaction
 from ikars_engine.threads import in_daemon_thread
 
 log = logging.getLogger("ikars_engine.journal")
@@ -193,17 +191,6 @@ class Journal:
     def close(self) -> None:
         self._db.close()
 
-    @contextlib.contextmanager
-    def _transaction(self) -> Iterator[sqlite3.Connection]:
-        """All or nothing (the connection is in autocommit mode: the store's)."""
-        self._db.execute("BEGIN")
-        try:
-            yield self._db
-        except BaseException:
-            self._db.execute("ROLLBACK")
-            raise
-        self._db.execute("COMMIT")
-
     def add(self, item: Item) -> Recommendation | None:
         """Record a recommendation item; an earlier active one of the same strategy on the same
         market is superseded by it. Returns it; None: that id is recorded already (nothing
@@ -218,7 +205,7 @@ class Journal:
         known = "SELECT 1 FROM recommendation WHERE id = ?"
         if self._db.execute(known, (item.ref.id,)).fetchone():  # merge review 1
             return None
-        with self._transaction():
+        with transaction(self._db):
             self._db.execute(
                 "UPDATE recommendation SET state = ?, superseded_by = ?"
                 " WHERE state = ? AND strategy = ? AND ticker = ? AND id != ? AND expires_ns > ?",
@@ -304,7 +291,7 @@ class Journal:
                 break
         if done:
             self.changes += 1  # a shown check's score (merge review 6)
-            with self._transaction():
+            with transaction(self._db):
                 self._db.executemany(
                     "UPDATE mark SET scored = 1, score_e6 = ?, at_settlement = ?"
                     " WHERE id = ? AND horizon_s = ?",
@@ -326,7 +313,7 @@ class Journal:
         self, rid: str, horizon_s: int, at_ns: int, bid: int | None, ask: int | None,
         closed: bool | None = None,
     ) -> None:  # fmt: skip
-        with self._transaction():
+        with transaction(self._db):
             self._db.execute(
                 "INSERT OR IGNORE INTO mark (id, horizon_s, at_ns, yes_bid_e6, yes_ask_e6, closed)"
                 " VALUES (?, ?, ?, ?, ?, ?)",

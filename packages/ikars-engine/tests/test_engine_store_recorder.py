@@ -396,3 +396,17 @@ def test_the_gap_log_is_read_by_its_end_through_an_index(tmp_path: Path) -> None
     names = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
     assert "gap_end" in names
     db.close()
+
+
+def test_a_failed_heartbeat_write_leaves_no_transaction_open(tmp_path: Path) -> None:
+    """M1.R3 A8: a failed heartbeat left the connection inside a transaction, so every later write
+    piled up uncommitted."""
+    state = StateStore(tmp_path / "state.sqlite")
+    with pytest.raises(sqlite3.Error):
+        state.beat({"ticker": object()})  # type: ignore[dict-item]
+    state.beat({"ticker": 5})
+    state.set_bookmark("made.up", 1)
+    state.close()
+    again = StateStore(tmp_path / "state.sqlite")
+    assert again.heartbeats() == {"ticker": 5} and again.bookmark("made.up") == 1
+    again.close()

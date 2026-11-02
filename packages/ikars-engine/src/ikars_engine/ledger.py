@@ -341,10 +341,14 @@ class Ledger:
         otherwise what is wrong. This catches what :meth:`verify` cannot: newest records cut off,
         or an older copy of the file put back."""
         for path in sorted(folder.glob("*/*.json"), reverse=True):
-            point = json.loads(path.read_text(encoding="utf-8"))
-            if point.get("stream") != stream:
-                continue
-            seq, day = int(point["seq"]), point["date_utc"]
+            try:
+                point = json.loads(path.read_text(encoding="utf-8"))
+                if point.get("stream") != stream:
+                    continue
+                seq, day = int(point["seq"]), str(point["date_utc"])
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                # a damaged checkpoint is a problem to show, never a failed start (M1.R3 A3)
+                return f"the checkpoint {path.name} cannot be read"
             if seq == 0:
                 return None
             stored = self.hash_at(seq, stream)
