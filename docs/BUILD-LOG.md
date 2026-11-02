@@ -3860,3 +3860,73 @@ only): no check with an unknown market state is left unscored (the 515 from v0.1
 Journal schema 5 (no migration, so no new backup); the scorecard's checks unchanged in kind, more scored; the
 ledger verified and exact; the feed connected with 100 of 100 books ready and no open gaps; all four plugins
 running. **M1.R3a is built and checked**; PR #47 merges after #35, #36 and #37.
+
+#### 1.R3b built (2026-11-02)
+
+**Built** on `m1/r3b`, stacked on `m1/r3a`: `c41000d` (D1 to D9), `83c16ad` (release: E1 to E3, E9, F1),
+`7eef70c` (platform: E4 to E8, E10, E11), `670b10e` (docs: E12 to E15), merge-review fixes `0454e16`. Two items
+added with the owner's go-ahead ("continue with the next M1.R3b", after the v0.1.17 live check named them):
+**F1** `/v1/hello` reports the installed program's version (Velopack's), never the packages' 0.0.0; **F2** the
+open terminal's one-second pass, investigated: each part measures well under a millisecond (the portfolio is cached,
+the recommendations page about 1 ms, the alert read 0.1 ms), reply p99 stays near 30 ms (inside D20 J), and the
+rest needs a sampling profiler: parked in PLAN §9.
+
+No new runtime packages. Pinned: `hatchling` 1.32.4 (both packages' build backend, with hashed constraints in
+`tools/release/build-constraints.txt`) and `velopack==1.2.161` (as `vpk`). New pinned actions (each over 7 days
+old): `actions/upload-artifact` v7.0.2, `actions/download-artifact` v8.0.2, `actions/attest-build-provenance`
+v4.2.2. `dotnet-tools.json` moved to `.config/`, where Dependabot's `nuget` reads it.
+
+**As built:**
+- **D1:** a cookie names its port (`issued.expires.port.signature`); cookies from before M1.R3 are refused, so one
+  `ikars open` after the upgrade. A fallback rotates the key and raises an urgent alert through the engine's own
+  desk. A program that takes the port and lets it go before the engine starts is not caught: parked for the M7
+  security review (PLAN §9).
+- **D2:** the Update window only reads (`GET /v1/update`) until **Install** is clicked; Cancel closes it.
+- **D4:** any `Transfer-Encoding`, or a `Content-Length` over 64 KB (4 KB to sign in), is refused before a read.
+- **E1, E3:** four jobs: gate (the tagged commit's `python`, `hygiene`, `web` and `CodeQL` passed: the
+  aggregate check on a pull request's commits, every `analyze (…)` job on main's), build (read-only token, no
+  stored credential, `SHA256SUMS` of this release's files only), attest (the provenance, in a job of its own),
+  publish (checks the sums; a draft until `SHA256SUMS` is beside the downloads).
+- **E6:** "Restart to update", Velopack's update hook and a rollback stop the engine "until" 15 minutes on; past
+  that the watchdog restarts it and alerts. `ikars stop` stays the owner's stop.
+- **E7:** the watchdog task runs `pythonw -I`; each start writes it again once (a stamp in the data folder) when
+  the Run value is this program's.
+- **E10:** the data guard also refuses `settings.toml`, `.claude/settings.local.json`, archives, logs, `.wsb`,
+  and `build`, `data`, `logs`, `backups`, `support` folders, and reads every staged text line for a UNC host or a
+  profile name that is not one of the placeholders the docs and tests use (`<nas>`, `127.0.0.1`, `someone`, ...).
+
+**Tests:** 1,713 Python tests pass (93.5%; the money gate's seven modules 98%), 235 web unit tests, 20 Playwright
+screens; ruff, mypy, the data guard and gitleaks clean. The workflow was parsed and its permissions checked;
+`uv build` with the hashed constraints was run here (and refuses a changed hash: the sub-agent's probe).
+
+**Review.**
+- **Per commit** (`/code-review low`): `c41000d` none; `83c16ad` 1 fixed (the gate failed a tag whose commit
+  had a failed earlier release run: it now reads only the required checks); `7eef70c` none.
+- **Merge review** (`/code-review medium` and a fresh-eyes sub-agent, R16), 19 findings:
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | The port alert made a second alert desk on the engine's state file, saved from another thread | Sent through the Notices' desk and thread |
+  | 2 | Any port fallback (old connections too) raised a "hostile program" alert | Worded as a fallback; the rotation kept (the windows must sign in again either way) |
+  | 3 | `SHA256SUMS` and the attestation covered the earlier release's packages kept for the delta | Only this release's files; the attestation from the sums file |
+  | 4 | main's commits have no `CodeQL` check: every release tagged on main would wait and fail (proved on four merges) | `CodeQL` as main's `analyze (…)` jobs; tested |
+  | 5 | A required check "skipped" counted as passed | Only "success" passes; tested |
+  | 6 | The guard crashed on a staged text file that is not UTF-8 | Read with replacement |
+  | 7 | A rollback's undo could raise and hide the install's failure, leaving the stop marks | Guarded; the marks always go; tested |
+  | 8 | The sign-in signed with `ctx.port` (possibly None), the guard checked `ctx.port or 0` | One value |
+  | 9 | Every start ran `schtasks /Create` (up to 60 s) | Once per command, with a stamp; tested |
+  | 10 | The guard missed Markdown and forward-slash forms | Both; tested |
+  | 11 | `price()` cut at 4 places while saying never rounded | 6 places, zeros trimmed; tested |
+  | 12 | (sub-agent) A squatter that lets the port go before the engine binds keeps a valid cookie; a service worker could outlive a new key | Parked for the M7 security review, with the narrowing (PLAN §9) |
+  | 13 | (sub-agent) A rollback whose installer fails after IKARS exits leaves the newer program on the older data | Parked with M5's restore work (PLAN §9) |
+  | 14 | (sub-agent) A foreground `run` holding the lock wrote no snapshot and ignored `ikars stop` | It answers the stop and writes the snapshot |
+  | 15 | (sub-agent) The guard's pre-filters let only backslash lines through; a git error passed as "no match"; false positives on pipes and Public | Fixed all three; tested |
+  | 16 | (sub-agent) Answer A, move to B before the reply: A's answer showed under B | Shown only on its own recommendation |
+  | 17 | (sub-agent) A rotated key that could not be saved left the old key file, trusted at the next start | Deleted; tested |
+  | 18 | (sub-agent) A refused swap left the update's stop for 15 minutes; a failed undo was swallowed | Cleared on every refusal; the undo reports what it could not put back; tested |
+  | 19 | (sub-agent) The OIDC token was in every publish step; the release went live before its sums; one `gh api` error failed the gate; Dependabot may not find a root `dotnet-tools.json` | An attest job; draft until the sums are attached; the gate asks again; the manifest in `.config/` |
+
+**Live checks** (on a test release): the release itself runs the new workflow (gate, attest, draft then
+published, `SHA256SUMS` beside the downloads); the engine reports its version in `/v1/hello`; one `ikars open`
+signs in (cookies now name the port); the Update window waits for Install; the watchdog task's command has `-I`
+and the stamp is written; a 70 KB body is refused (scratch, GET only otherwise).
