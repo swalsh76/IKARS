@@ -3495,7 +3495,7 @@ made-up frames and replays its recording to the very same items and state. Cover
   | 17 | Leaving out a re-run plugin's items relied on it naming itself as the source (sub-agent) | `emit` stamps the plugin's name |
   | 18 | A settings error printed a traceback; temporary folders stay (sub-agent) | A plain error; the folders stay on purpose (they hold the journal to inspect) |
 
-**Live check: pending** (a test release on the owner's word):
+**Live check: pending** (test release **v0.1.13**, published on the owner's word 2026-11-01 from `25e2bee`, with M2.3):
 - the upgrade compacts the open hour;
 - the new channels record;
 - after an hour, a replay of momentum against the live journal (parity), and the book check at 99% settled or more.
