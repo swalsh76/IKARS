@@ -3527,9 +3527,25 @@ made-up frames and replays its recording to the very same items and state. Cover
 - **Momentum, with both sides starting equal** (a scratch run: momentum sees nothing before the window's start, and
   the scratch journal starts with the 74 live recommendations still valid then): **239 live, 239 replayed, 239
   matched**, the same digest.
-- **Found:** the replay does not reproduce a restart. Proposed to the owner: a recorded `start` restarts the signal
-  plugins, plugins see items only from the warm-up's start, and `--compare` starts the scratch journal with the live
-  recommendations valid at the window's start.
+- **Found:** the replay does not reproduce a restart.
+
+**Fixed in M1.13** (owner, 2026-11-02: fix now; `06557b2` on `m1/13`, `m1/14` rebased onto it):
+- A recorded `start` restarts the signal plugins: each goes on as a new instance (`PluginHost.restart`), as the new
+  process's did.
+- Plugins get items only from the warm-up's start; the state is still read from that hour's start (its checkpoint).
+  The report gives both (`from`, `read_from`).
+- `--compare` starts the scratch journal with the live recommendations of the re-run plugins still valid when the
+  plugins begin, unless superseded by then (`carried_in`, through `Journal.add`).
+- **Tests:** 2 new (a restart and the warm-up start with a made-up signal; what is carried in, and that it holds a
+  repeat back). Python: 1,634 tests on `m1/13`, `replay.py` 97%. Lint, types and the data guard are clean.
+- **The real hour again, with the command as shipped:**
+  - no warm-up: 74 carried in, **239 live, 239 replayed, 239 matched**;
+  - the default 40-minute warm-up: 223 of 239. Every one of the 30 mismatches is on a market live recommended
+    between 21:23 and 21:47, in the v0.1.12 run: it recorded no market details, so the replay could make nothing
+    there. A warm-up inside recordings with market details (v0.1.13 on) has no such stretch.
+- **Review:** per commit (`/code-review low`), nothing found.
+- After the rebase, M1.14's commits are `64d1094`, `014d0ea` and `c74bf41` (were `ba99efe`, `81b08ab`, `a6b2c44`;
+  the release tags keep the old ones).
 
 **Fixed during the live check (owner, 2026-11-01).** On a settled market's screen, the price chart grew without
 bound. The cause: with nothing taller beside it (an empty book), the chart's box took its height from the chart,
@@ -3567,8 +3583,8 @@ Brought forward from PLAN §9 (owner, 2026-11-01). Branch `m1/14`, stacked on `m
 
 | Commit | What |
 |---|---|
-| `ba99efe` | the slice |
-| `81b08ab` | merge-review fixes |
+| `64d1094` | the slice |
+| `014d0ea` | merge-review fixes |
 
 **No new packages.**
 
@@ -3598,9 +3614,9 @@ Brought forward from PLAN §9 (owner, 2026-11-01). Branch `m1/14`, stacked on `m
 `kalshi/lookup.py` 86%. Lint, types and the data guard are clean.
 
 **Review.**
-- **Per commit:** `ba99efe`, 1 found before committing, fixed. The recommendation drill-down awaited a lookup
+- **Per commit:** `64d1094`, 1 found before committing, fixed. The recommendation drill-down awaited a lookup
   unguarded, so a busy Kalshi made it a 500.
-- **Merge review:** `/code-review medium`, 10 findings, fixed in `81b08ab` unless marked. A second, sub-agent reviewer
+- **Merge review:** `/code-review medium`, 10 findings, fixed in `014d0ea` unless marked. A second, sub-agent reviewer
   was not used: the slice is small and self-contained (R16: where it helps).
 
   | # | Finding | Done |
@@ -3632,7 +3648,7 @@ ITF tennis, some golf and MLB, per Kalshi's public listing). The journal scored 
 M1.12b settlement scoring (`f810687`) rather than from M1.14. **Owner (2026-11-01): fix it in M1.14**, before
 momentum v1's review (~2026-11-04), whose scorecard left these checks out.
 
-- **Built** (`a6b2c44`): `MarketInfo` keeps Kalshi's settlement value, and `settlement()` gives the result with what
+- **Built** (`c74bf41`): `MarketInfo` keeps Kalshi's settlement value, and `settlement()` gives the result with what
   a YES contract paid ($1, nothing, or the scalar value; a scalar without a value is never guessed). The `market`
   channel records it (older recordings read it as null). The journal keeps `yes_paid_e6` with each settlement
   (migration 4, backed up first; earlier rows backfilled as $1 or nothing) and scores a closed check at that payout,
