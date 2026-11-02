@@ -29,9 +29,10 @@ from urllib.parse import urlencode
 
 import msgspec
 
+from ikars_engine.clocks import exact_ns
 from ikars_engine.news import HEADLINE_CHARS, KIND, SEEN, clean_link, plain_text
 from ikars_engine.plugins import PluginContext, PluginKind, PluginSpec
-from ikars_engine.polling import Feed, Found, Poller, PollError, PollingSource, exact_ns
+from ikars_engine.polling import Feed, Found, Poller, PollError, PollingSource
 from ikars_engine.settings import NewsSettings
 
 FILES = "https://data.gdeltproject.org/gdeltv2/"

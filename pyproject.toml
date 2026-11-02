@@ -58,7 +58,8 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["packages", "tools"]
-pythonpath = ["tools/ci"]
+# shared test helpers (M1.13); a folder without a conftest.py, so nothing clashes
+pythonpath = ["tools/ci", "packages/ikars-engine/tests/helpers"]
 addopts = "--import-mode=importlib"
 markers = [
     "integration: hits the real Kalshi API (opt-in via IKARS_LIVE=1)",

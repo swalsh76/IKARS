@@ -114,8 +114,11 @@ class PluginContext:
         the wall clock; replayed, the replay's, so a back-test sees it when IKARS would have."""
         if item.ref.kind not in self.spec.produces:
             raise PluginError(f"{self.spec.name} may not emit {item.ref.kind!r}")
-        stamped = msgspec.structs.replace(
-            item, hops=_handling_hops.get() + 1, received_ns=self.clock.now_ns()
+        stamped = msgspec.structs.replace(  # the source is the plugin, whatever it wrote (M1.13)
+            item,
+            hops=_handling_hops.get() + 1,
+            received_ns=self.clock.now_ns(),
+            source=self.spec.name,
         )
         await self._emit(stamped)
 
@@ -230,6 +233,12 @@ class PluginHost:
             self._services,
         )
         self._slots[name] = _Slot(plugin, ctx, asyncio.Queue(self._queue_size))
+
+    def restart(self, name: str) -> None:
+        """A replayed engine restart: ``name`` goes on as a new instance that remembers nothing,
+        as a new process's would (deterministic runs only; M1.13 live check)."""
+        slot = self._slots[name]
+        slot.plugin = type(slot.plugin)()
 
     def state(self, name: str) -> PluginState:
         return self._slots[name].state

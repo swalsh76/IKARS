@@ -42,7 +42,7 @@ import httpx
 import msgspec
 from ikars_core.ratelimit import TokenBucket
 
-from ikars_engine.clocks import EventClock
+from ikars_engine.clocks import EventClock, exact_ns
 from ikars_engine.model import Item, Ref
 from ikars_engine.plugins import PluginBase, PluginContext, PluginError
 from ikars_engine.store import StateStore
@@ -474,9 +474,6 @@ class PollingSource(PluginBase):
         self.delivered(feed)
 
 
-_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
-
-
 def iso_ns(text: str | None) -> int | None:
     """An ISO 8601 time in exact nanoseconds; None when it has no offset (never guessed as local
     time: M2.2 merge review 9) or does not parse."""
@@ -489,12 +486,6 @@ def iso_ns(text: str | None) -> int | None:
     if when.tzinfo is None:
         return None
     return exact_ns(when)
-
-
-def exact_ns(when: datetime) -> int:
-    """An aware time in exact nanoseconds, never through a float."""
-    since = when - _EPOCH
-    return (since.days * 86_400 + since.seconds) * NS + since.microseconds * 1_000
 
 
 async def _sleep_until(clock: EventClock, due_ns: int) -> None:

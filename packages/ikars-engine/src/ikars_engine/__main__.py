@@ -1,9 +1,10 @@
 """The engine's command line.
 
 ``python -m ikars_engine smoke``: run the engine core once, offline, and print its health. It writes
-a synthetic recording in a temporary folder, replays it deterministically through a tiny built-in
-counting plugin, and prints the health summary as JSON. Nothing is written outside the temporary
-folder, nothing touches the network, and the result is the same on every run.
+a synthetic recording (the recorder's own layout) in a temporary folder, replays it
+deterministically through a tiny built-in counting plugin, and prints the health summary as JSON.
+Nothing is written outside the temporary folder, nothing touches the network, and the result is
+the same on every run.
 
 ``python -m ikars_engine run [--minutes N] [--root PATH]``: the live engine on Kalshi, in the
 foreground (M1.4b), with IKARS's read-only key from its two environment variables.
@@ -14,6 +15,9 @@ foreground (M1.4b), with IKARS's read-only key from its two environment variable
 ``serve``, ``stop``, ``status``, ``watchdog``, ``install-autostart``, ``remove-autostart``, ``alerts
 test``, ``open``: the engine in the background, its watchdog, workstation notifications and the web
 terminal's window (M1.6, M1.8a-web; see :mod:`ikars_engine.runmode_cli`).
+
+``python -m ikars_engine replay --from T --to T``: a recorded window through the signal plugins
+(M1.13; see :mod:`ikars_engine.replay_cli`).
 
 ``python -m ikars_engine demo-api [--markets N] [--hz H] [--port P] [--seconds S]``: the API
 server on made-up data, for the terminal's tests (:mod:`ikars_engine.demo_api`).
@@ -34,7 +38,8 @@ from ikars_engine.clocks import VirtualClock
 from ikars_engine.engine import Engine
 from ikars_engine.model import Item, Ref
 from ikars_engine.plugins import PluginBase, PluginContext, PluginKind, PluginSpec
-from ikars_engine.sources import ReplaySource, write_recording
+from ikars_engine.recorder import write_items
+from ikars_engine.replay import RecordingReplay
 
 START_NS = 1_767_225_600_000_000_000  # 2026-01-01 00:00:00 UTC
 
@@ -78,10 +83,11 @@ def synthetic(count: int = 100) -> list[Item]:
 
 
 async def smoke(folder: Path) -> dict[str, object]:
-    recording = folder / "synthetic.parquet"
-    write_recording(recording, synthetic())
-    clock = VirtualClock()
-    engine = Engine(clock, ReplaySource([recording], clock), deterministic=True)
+    items = synthetic()
+    write_items(folder, items)
+    clock = VirtualClock(START_NS)
+    end = items[-1].received_ns + 1
+    engine = Engine(clock, RecordingReplay(folder, START_NS, end, clock), deterministic=True)
     engine.host.add(Counter())
     received = await engine.run()
     return {"received": received, **engine.health()}
@@ -111,9 +117,10 @@ def main(argv: list[str]) -> int:
     live.add_argument(
         "--root", type=Path, default=None, help="the data folder (default: the usual)"
     )
-    from ikars_engine import ledger_cli, runmode_cli
+    from ikars_engine import ledger_cli, replay_cli, runmode_cli
 
     ledger_cli.add_parser(commands)
+    replay_cli.add_parser(commands)
     runmode_cli.add_parsers(commands)
     exporter = commands.add_parser("contracts", help="the API's JSON Schema and golden examples")
     exporter.add_argument("action", choices=["export"])
@@ -162,6 +169,17 @@ def main(argv: list[str]) -> int:
         if args.command == "serve":
             before_start(paths)
         return runmode_cli.run(args, paths, load(paths.settings))
+    if args.command == "replay":
+        from ikars_engine.kalshi.runner import default_paths
+        from ikars_engine.settings import SettingsError, read
+
+        paths = default_paths(Path(args.root) if args.root else None)
+        try:  # read, never migrated: a replay changes nothing of the live engine's
+            plugin_settings = read(paths.settings).plugin_settings
+        except SettingsError as exc:
+            print(json.dumps({"error": str(exc)}))
+            return 2
+        return replay_cli.run(args, paths, plugin_settings)
     if args.command in ("ledger", "backup"):
         from ikars_engine.kalshi.runner import default_paths
         from ikars_engine.settings import load

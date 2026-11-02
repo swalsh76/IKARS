@@ -21,9 +21,10 @@ from xml.etree.ElementTree import Element, ParseError
 import defusedxml.ElementTree as SafeXml  # type: ignore[import-untyped]  # no stubs; typed below
 from defusedxml import DefusedXmlException
 
+from ikars_engine.clocks import exact_ns
 from ikars_engine.news import HEADLINE_CHARS, KIND, SEEN, clean_link, plain_text
 from ikars_engine.plugins import PluginContext, PluginKind, PluginSpec
-from ikars_engine.polling import Feed, Found, Poller, PollingSource, exact_ns, iso_ns
+from ikars_engine.polling import Feed, Found, Poller, PollingSource, iso_ns
 from ikars_engine.settings import NewsFeed, NewsSettings
 
 ACCEPT = "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9"

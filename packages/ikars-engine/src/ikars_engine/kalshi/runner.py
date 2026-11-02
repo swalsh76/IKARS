@@ -63,7 +63,7 @@ from ikars_engine.plugins import HostOptions, PluginError, discover
 from ikars_engine.polling import Poller, poller_service, user_agent
 from ikars_engine.portfolio import Held, Portfolio, holdings, portfolio
 from ikars_engine.recommendations import ENGINE_DESK, Notices
-from ikars_engine.recorder import Recorder
+from ikars_engine.recorder import Recorder, item_row
 from ikars_engine.runmode import at
 from ikars_engine.runmode_cli import desk_for
 from ikars_engine.session import Sessions
@@ -249,6 +249,7 @@ async def build(
     )
     index = MarketIndex()
     recorder = Recorder(paths.recordings)
+    index.record = lambda row: recorder.write("market", row)  # the market channel (M1.13)
     source = KalshiSource(
         feed=feed,
         data=data,
@@ -574,11 +575,7 @@ def recording(recorder: Recorder) -> Callable[[Item], None]:
     a row in the recorder's batch, never a wait."""
 
     def record(item: Item) -> None:
-        recorder.write("item", {
-            "received_ns": item.received_ns, "published_ns": item.published_ns,
-            "kind": item.ref.kind, "id": item.ref.id, "source": item.source, "hops": item.hops,
-            "payload": msgspec.json.encode(item.payload).decode(),
-        })  # fmt: skip
+        recorder.write("item", item_row(item))
 
     return record
 
