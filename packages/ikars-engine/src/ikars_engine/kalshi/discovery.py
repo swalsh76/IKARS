@@ -13,6 +13,7 @@ from the same point. *Kept from KAPS:* the two cycles, the bookmark rule, reject
 the engine needs it for the watched set, the drill-down tree and tradability, not for history.
 """
 
+import asyncio
 import logging
 import re
 import time
@@ -141,12 +142,21 @@ class MarketIndex:
             return
         self.version += 1
         before = self.markets.get(market.ticker)
+        info = self.markets[market.ticker] = self.info_of(market, before)
+        if self.record is not None and (before is None or not _same(before, info)):
+            self.record(market_row(info, self.fee_terms.get(info.series_ticker), self.now_ns()))
+            if self.cycle is not None:
+                self.cycle.add(info.ticker)
+
+    def info_of(self, market: Market, before: MarketInfo | None = None) -> MarketInfo:
+        """A market's details as the index keeps them (also for one looked up and not kept:
+        M1.14)."""
         code = climate_code(market.rules_primary)
         if market.rules_primary is None and before is not None:  # an update without its rules
             code = before.climate_code  # (rules that name no station clear it: merge review 6)
         event = market.event_ticker or ""
         series = series_ticker_of(event) or ""
-        info = self.markets[market.ticker] = MarketInfo(
+        return MarketInfo(
             ticker=market.ticker,
             event_ticker=event,
             series_ticker=series,
@@ -158,10 +168,6 @@ class MarketIndex:
             volume_24h_e2=market.volume_24h_e2 or 0,
             climate_code=code,
         )
-        if self.record is not None and (before is None or not _same(before, info)):
-            self.record(market_row(info, self.fee_terms.get(series), self.now_ns()))
-            if self.cycle is not None:
-                self.cycle.add(info.ticker)
 
     def _removed(self, info: MarketInfo) -> None:
         """A market the index dropped, so a replay drops it when live did (sub-agent 4)."""
@@ -253,7 +259,8 @@ class Discovery:
         self.cycles = 0
 
     async def full(self) -> int:
-        """Series and every unopened and open market; returns how many markets were read."""
+        """Series, every unopened and open market, and those closed in the last
+        ``CLOSED_KEPT_NS``; returns how many markets were read."""
         began = self._clock.now_ns() // 1_000_000_000
         for series in await self._data.series_list():
             if series.category:
@@ -264,9 +271,17 @@ class Discovery:
         count = 0
         self.index.cycle = set()  # the dump below records every market not recorded meanwhile
         try:
-            for status in ("unopened", "open"):
+            # the markets that trade or will, then those closed (not yet settled) in the time the
+            # index keeps them (M1.14); the settled ones come after the start (``recent_settled``)
+            recent = began - CLOSED_KEPT_NS // 1_000_000_000
+            passes: tuple[tuple[str, int | None], ...] = (
+                ("unopened", None),
+                ("open", None),
+                ("closed", recent),
+            )
+            for status, closed_since in passes:
                 async for page in self._data.markets(
-                    status=status, mve_filter="exclude", tolerant=True
+                    status=status, mve_filter="exclude", tolerant=True, min_close_ts=closed_since
                 ):
                     for market in page.items:
                         self.index.put(market)
@@ -279,6 +294,24 @@ class Discovery:
         self._state.set_bookmark(BOOKMARK, began - OVERLAP_SECONDS)
         self.cycles += 1
         log.info("discovery: full cycle", extra={"markets": count, "rejects": self.index.rejects})
+        return count
+
+    async def recent_settled(self) -> int:
+        """Markets settled in the last ``CLOSED_KEPT_NS``, so after a restart the index is what a
+        running engine's is (M1.14). About 300,000 markets and two minutes of requests, so read
+        after the start, in the background, never before the feed goes live (owner, 2026-11-01);
+        returns how many were read."""
+        since = self._clock.now_ns() // 1_000_000_000 - CLOSED_KEPT_NS // 1_000_000_000
+        count = 0
+        async for page in self._data.markets(
+            status="settled", mve_filter="exclude", tolerant=True, min_settled_ts=since
+        ):
+            for market in page.items:
+                self.index.put(market)
+            count += len(page.items)
+            self.index.rejects += len(page.invalid)
+            await asyncio.sleep(0)  # a page at a time: the feed's frames go between
+        log.info("discovery: recently settled markets", extra={"markets": count})
         return count
 
     async def incremental(self) -> int:
