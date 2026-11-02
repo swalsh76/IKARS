@@ -3350,3 +3350,54 @@ The 7-day news clock starts then.
 
 **Pending:** a day of recording with no unlogged gaps. M2's 7-day news clock starts with this release
 (2026-11-01).
+
+## 1.13 Replay of real recordings (plan APPROVED 2026-11-01)
+
+After M2.3, as the M2 proposal placed it. Branch `m1/13`, stacked on `m2/3` so a test release keeps M2.3's recording;
+it moves onto `main` once PR #35 merges.
+
+**Found while planning:**
+- **The replay cannot read a real recording.** `ReplaySource` reads one generic schema (`RECORDING_SCHEMA`). The
+  recorder writes six typed channel files plus an `item` file whose layout differs from that schema (the payload
+  as text, and a `hops` column).
+- **It loads every file into memory,** which is about 2.1 GB a day (review 1.R2 items 6 and 7).
+- **The recordings lack some of what the live code used:**
+  - live items carry the whole Kalshi message, but the recorder keeps a subset of its fields;
+  - ticker rows are kept for the 100 watched markets only: about 11 a second out of about 690 a second for all
+    markets (measured 2026-11-01);
+  - discovery's market details (status, close time, series fees), which momentum checks, are not recorded.
+- **Ticker volume:** about 96% of ticker frames change the quote or its sizes, and 21% change the bid or ask. So
+  "quote changes only" would not replay momentum's size check faithfully.
+- **SPARQ and KAPS** (a read-only survey by a sub-agent, PLAN R16): neither has a streaming replay, a book rebuild
+  from deltas or a simulated clock. Their lessons are taken here:
+  - order ties must be broken stably (SPARQ's runs once differed);
+  - a gap must never read as "no data";
+  - Kalshi marks an empty side with a 0-cent bid or a 100-cent ask;
+  - a rebuilt book should be checked against the ticker feed (SPARQ planned 99% and never built it).
+
+**Owner, 2026-11-01:** approved as proposed.
+- **Ticker:** record every market's frames (about +1.7 GB a day, to about 3.8 GB a day; the 200 GB budget then holds
+  about 50 days).
+- **Market details:** record a `market` channel.
+- **Live items:** one row, one item.
+- **The rest as shown.**
+
+**The plan:**
+- **One row, one item.** The live Kalshi source builds each item from the row it records, with one function per
+  channel that the replay uses too, so live and replay items are identical by construction (tested).
+- **One path for Kalshi state.** Quotes, last prices and books update through shared code. A book is rebuilt from
+  snapshots and deltas; a sequence gap or a logged gap breaks it until the next snapshot, and it never reads as
+  empty.
+- **A streaming reader.** A k-way merge over every channel's hour files (Parquet, open IPC hours, part files) in
+  batches, ordered by received time and then a stable key. Memory is bounded by about one batch per channel. A
+  window reads only its own hours. The `item` channel replays as recorded.
+- **`ikars replay --from --to [--plugins]`.** Recordings are read only, even while the engine runs, into a scratch
+  folder, never the live journal or state. It prints counts, the recommendations, a determinism digest, and the
+  gaps in the window.
+- **Recording:** every market's ticker frames, and a `market` channel (a row when a market's details first appear or
+  change).
+- **Checks:**
+  - two runs give one digest;
+  - live vs replay parity: momentum v1 on a recorded hour against the live journal;
+  - the rebuilt book's best bid and ask agree with the recorded ticker at least 99% of the time.
+- **No new packages.** A test release is needed for the recording changes.
