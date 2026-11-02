@@ -179,7 +179,7 @@ slice still needs its own approved plan before code.
   minimatch GHSA-g3hv-75wg-m249, owner 2026-11-01, removal parked in PLAN §9). M2 weather 7-day clock started
   2026-10-29. **M2.3 News: plan APPROVED** (owner 2026-11-01; BUILD-LOG 2.3: GDELT both = GKG files + DOC topic queries; government RSS only; defusedxml + own parser; rest as shown); **built** on `m2/3` (`7c0d40d`, review fixes `a19a332`; BUILD-LOG 2.3: settings v7, gdelt +
   rss plugins, 12 gov feeds; merge review 15 fixed incl. a fresh-eyes sub-agent per **R16**; dry run clean, DOC API
-  still 429). PR #35 open, CI green; **v0.1.12 published** (test pre-release from `b2548b5`, 2026-11-01). Next: the owner updates; check settings v7, both plugins recording; a day later the gap check; then the owner's merge. M1.13 after M2.3; momentum v1's week ends ~2026-11-04. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+  still 429). PR #35 open, CI green; **v0.1.12 published** (test pre-release from `b2548b5`, 2026-11-01). Installed ~20:39 2026-11-01: settings v7 (v6 backed up), 4 plugins running, 12/12 feeds OK, GKG recording, DOC 429. News 7-day clock started 2026-11-01. Next: ~2026-11-02 evening the gap check; then the owner's merge. M1.13 after M2.3; momentum v1's week ends ~2026-11-04. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 

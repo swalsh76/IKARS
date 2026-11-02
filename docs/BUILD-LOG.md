@@ -3337,3 +3337,16 @@ After M2.2 (PR #34, `436bef2`).
 - after a day, no unlogged gaps.
 
 The 7-day news clock starts then.
+
+**Live check on v0.1.12** (installed 2026-11-01 about 20:39 MST; read only, counts and states):
+- **The upgrade:** settings version 7, the version 6 file kept beside it first, plus the installer's pre-upgrade copy.
+- **Plugins:** `gdelt`, `momentum`, `nws` and `rss` are running.
+- **RSS:** all 12 feeds polled with no errors and none refused; 235 items. No feed is flagged for repeated links.
+- **GKG:** two index reads, one file recorded (521 articles), with the bookmark on the newest file and nothing
+  behind.
+- **DOC searches:** all five answered 429, as expected; GDELT is still refusing them.
+- **Where to see it:** the terminal's Health screen shows only each plugin's state. The per-feed cards are M2.7's
+  (D29, mock-up first).
+
+**Pending:** a day of recording with no unlogged gaps. M2's 7-day news clock starts with this release
+(2026-11-01).
