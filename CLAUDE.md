@@ -20,7 +20,8 @@ P&L net of fees on entry and exit.
 
 M0 (D1 to D21) and M1 are done; **M2 (Sources) is in progress**; the scope is frozen (new ideas go to PLAN §9).
 Each slice needs its own approved plan before code. Where every slice stands: [PLAN §5](docs/PLAN.md); how each
-was built and verified: [BUILD-LOG](docs/BUILD-LOG.md).
+was built and verified: [BUILD-LOG](docs/BUILD-LOG.md) (the current milestone; M0 and M1 in
+[docs/build-log/M1.md](docs/build-log/M1.md)).
 
 ### Resume point (keep this current at every step that changes it)
 
@@ -28,7 +29,8 @@ was built and verified: [BUILD-LOG](docs/BUILD-LOG.md).
 
 - **The open stack** (each PR's base is the one before; merge in this order, only when the owner says so):
   #35 M2.3 News (`m2/3` → main) → #36 M1.13 Replay → #37 M1.14 Settled markets → #47 M1.R3a → #48 M1.R3b →
-  the docs streamlining PR (`docs/streamline`). When rebasing onto main, drop `6f38e5f` from `m1/14` and update the
+  the docs streamlining PR (`docs/streamline`: PLAN, BUILD-LOG and this file condensed; the log split by
+  milestone; owner-approved 2026-11-02). When rebasing onto main, drop `6f38e5f` from `m1/14` and update the
   hashes the docs cite. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 - **Installed:** v0.1.19 (published 2026-11-02 through the four-job release workflow). After the upgrade one
   `ikars open` signs in again (cookies now name their port). **Next:** the M1.R3b live checks on it (BUILD-LOG
