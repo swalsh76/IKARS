@@ -36,6 +36,7 @@ replaced) in its slice plan, with its licence checked then.
 | `starlette` | the loopback API (M1.7, D3) | BSD-3-Clause |
 | `uvicorn` | the API's server, inside the engine's event loop (M1.7); with `h11` (MIT), `click` (BSD-3-Clause) | BSD-3-Clause |
 | `velopack` | the installed program's install, update and uninstall steps (`ikars_engine.launcher`, M1.9a); updates in M1.9b | MIT |
+| `defusedxml` | reading RSS and Atom feeds safely: no entity expansion, no external entities (M2.3) | PSF-2.0 |
 
 Development only: `ruff`, `mypy`, `pytest` (with `pytest-asyncio`, `pytest-cov`, `hypothesis`), `pip-audit`; the
 exact set and versions are in `uv.lock`.
@@ -66,6 +67,9 @@ in use since M1.8a-web-2a (above).
 | Kalshi REST and WebSocket (production) | markets, trades, books, exchange status | IKARS's own **read-only** key in `IKARS_KALSHI_KEY_ID` and `IKARS_KALSHI_PRIVATE_KEY_PATH` (D8, D21-3) |
 | GitHub (Actions, Releases, Dependabot) | CI and, later, downloads | nothing on the user's machine |
 | GitHub CodeQL (`github/codeql-action`, MIT) | static security analysis in CI (2026-10-27) | nothing on the user's machine |
+| NWS `api.weather.gov` (public domain) | weather observations, forecasts and climate reports (M2.2) | no key; the User-Agent names IKARS |
+| GDELT (GKG files and the DOC 2.0 API; free, citation required) | news (M2.3) | no key; about 240 MB a day downloaded |
+| US government RSS and Atom feeds (public domain) | news (M2.3): the list in the settings, terms in `docs/research/sources.md` | no key |
 
 ## Needed later (planned)
 
@@ -78,8 +82,6 @@ in use since M1.8a-web-2a (above).
 | DuckDB | M1.5 onward (queries, D4) | base | MIT | Python wheel. |
 | PDF/A writer for the tax package | M5 (D18) | base | to choose | Library chosen in M5's plan. |
 | Claude API (`anthropic` SDK) | M2 (D9) | base | MIT | An API key in an environment variable or DPAPI; a monthly cost ceiling (D21-5). |
-| NWS / NOAA `api.weather.gov` | M2 (D5 B) | base | public service | No key; a `User-Agent` with contact details is required. |
-| RSS / Atom parser (for example `feedparser`) and GDELT | M2 (D5 C) | base | BSD-2 (feedparser); GDELT terms per source | Chosen in M2's plan; per-source terms reviewed (D19 compliance). |
 | **NVIDIA driver with CUDA 12.8 or later** | M2 onward (D15) | optional | proprietary | Blackwell (`sm_120`) needs CUDA 12.8+. The user installs the driver; IKARS never does. |
 | ONNX Runtime (CUDA) and sentence-transformers models | M2 (D15 embeddings) | optional extra | MIT; model licences per model | Downloaded on demand from the terminal's settings, never bundled (D12). |
 | Local LLM runtime (llama.cpp server, Ollama or ONNX Runtime GenAI) and a 7 to 14B quantised model | M2 (D9) | optional extra | MIT (runtimes); model licences per model | Chosen by measured speed and quality in the slice; downloaded on demand. |

@@ -672,6 +672,7 @@ name = "ikars-engine"
 version = "0.0.0"
 source = { editable = "packages/ikars-engine" }
 dependencies = [
+    { name = "defusedxml" },
     { name = "ikars-core" },
     { name = "msgspec" },
     { name = "pyarrow" },
@@ -684,6 +685,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "ikars-core", editable = "packages/ikars-core" },
     { name = "msgspec", specifier = ">=0.22" },
     { name = "pyarrow", specifier = ">=26" },

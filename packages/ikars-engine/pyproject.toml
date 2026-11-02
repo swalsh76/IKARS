@@ -10,6 +10,7 @@ license = "MIT"
 license-files = ["../../LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
+    "defusedxml>=0.7.1",
     "ikars-core",
     "msgspec>=0.22",
     "pyarrow>=26",
@@ -27,6 +28,8 @@ ikars = "ikars_engine.__main__:entry"
 [project.entry-points."ikars.plugins"]
 momentum = "ikars_engine.signals.momentum:Momentum"
 nws = "ikars_engine.nws:NwsWeather"
+gdelt = "ikars_engine.gdelt:GdeltNews"
+rss = "ikars_engine.rss:RssFeeds"
 
 [tool.uv.sources]
 ikars-core = { workspace = true }

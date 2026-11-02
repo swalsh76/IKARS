@@ -22,7 +22,7 @@ from ikars_engine.polling import (
     backoff_s,
     user_agent,
 )
-from ikars_engine.settings import VERSION, Settings, migrate
+from ikars_engine.settings import MIGRATIONS, VERSION, Settings, migrate
 from ikars_engine.sources import ReplaySource, write_recording
 from ikars_engine.store import StateStore
 
@@ -296,11 +296,11 @@ def test_what_a_source_emits_replays_at_its_received_time(tmp_path: Path) -> Non
 
 def test_settings_version_6_adds_sources_and_the_owners_ceiling() -> None:
     old: dict[str, Any] = {"version": 5, "budget": {"monthly_e6": 40_000_000}}
-    new = migrate(old)
-    assert new["version"] == VERSION == 6 and new["budget"]["monthly_e6"] == 20_000_000
+    new = MIGRATIONS[5](old)  # the step itself; later versions follow it (M2.3: version 7)
+    assert new["version"] == 6 and new["budget"]["monthly_e6"] == 20_000_000
     chosen = migrate({"version": 5, "budget": {"monthly_e6": 30_000_000}})
     assert chosen["budget"]["monthly_e6"] == 30_000_000  # a ceiling the owner set stays
-    assert migrate({"version": 5})["version"] == 6
+    assert migrate({"version": 5})["version"] == VERSION
     assert Settings().sources.contact_email == "" and Settings().budget.monthly_e6 == 20_000_000
 
 

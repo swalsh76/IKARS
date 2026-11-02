@@ -19,7 +19,7 @@ from ikars_core.fixedpoint import PrecisionError, to_e6
 
 from ikars_engine.files import backup_name, write_text_atomic
 
-VERSION = 6
+VERSION = 7
 
 # the terminal's built-in skins (PLAN G16 as amended): one list, here, for the settings, the API's
 # contracts and (generated from them) the terminal
@@ -101,6 +101,67 @@ class SourceSettings(msgspec.Struct, frozen=True, kw_only=True):
     contact_email: str = ""
 
 
+GOVERNMENT = "public domain, US government (docs/research/sources.md, 2026-11-01)"
+
+
+class NewsFeed(msgspec.Struct, frozen=True, kw_only=True, forbid_unknown_fields=True):
+    # one RSS or Atom feed (M2.3, D23). A feed is polled only with its terms check recorded here
+    # and in docs/research/sources.md (G17; owner, 2026-11-01): empty terms, not polled
+    name: str  # short and unique: letters, digits, - and _
+    url: str
+    terms: str = ""
+    every_s: int = 300
+    ids: Literal["link", "guid"] = "link"  # guid: a feed that reuses one link for many items
+
+
+class GdeltQuery(msgspec.Struct, frozen=True, kw_only=True, forbid_unknown_fields=True):
+    # a GDELT DOC 2.0 search, run every 15 minutes (M2.3: beside the GKG files)
+    name: str
+    query: str
+
+
+def _feed(name: str, url: str, **more: Any) -> NewsFeed:
+    return NewsFeed(name=name, url=url, terms=GOVERNMENT, **more)
+
+
+# the starting list: US government feeds only (owner, 2026-11-01); publisher feeds only by the
+# owner's decision, feed by feed. BLS and SEC wait for a contact email (docs/research/sources.md)
+GOVERNMENT_FEEDS = (
+    _feed("fed-press", "https://www.federalreserve.gov/feeds/press_all.xml"),
+    _feed("fed-speeches", "https://www.federalreserve.gov/feeds/speeches_and_testimony.xml"),
+    _feed("bea", "https://apps.bea.gov/rss/rss.xml"),
+    _feed("census-indicators", "https://www.census.gov/economic-indicators/indicator.xml",
+          ids="guid"),
+    _feed("eia-press", "https://www.eia.gov/rss/press_rss.xml"),
+    _feed("eia-today", "https://www.eia.gov/rss/todayinenergy.xml"),
+    _feed("nhc-atlantic", "https://www.nhc.noaa.gov/index-at.xml"),
+    _feed("nhc-east-pacific", "https://www.nhc.noaa.gov/index-ep.xml"),
+    _feed("whitehouse-news", "https://www.whitehouse.gov/news/feed/"),
+    _feed("whitehouse-actions", "https://www.whitehouse.gov/presidential-actions/feed/"),
+    _feed("fda-press", "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/"
+          "press-releases/rss.xml"),
+    _feed("usgs-quakes", "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.atom"),
+)  # fmt: skip
+GDELT_QUERIES = (
+    GdeltQuery(name="economy", query='(inflation OR "interest rates" OR "federal reserve" OR '
+               'recession OR unemployment OR tariffs) sourcelang:english'),
+    GdeltQuery(name="government", query='("white house" OR congress OR senate OR '
+               '"supreme court" OR "executive order") sourcelang:english'),
+    GdeltQuery(name="elections", query="(election OR ballot OR candidate OR primary) "
+               "sourcelang:english"),
+    GdeltQuery(name="weather", query='(hurricane OR "tropical storm" OR blizzard OR '
+               '"heat wave" OR tornado) sourcelang:english'),
+    GdeltQuery(name="markets", query='(bitcoin OR ethereum OR "stock market" OR nasdaq OR '
+               '"s&p 500") sourcelang:english'),
+)  # fmt: skip
+
+
+class NewsSettings(msgspec.Struct, frozen=True, kw_only=True):
+    # M2.3 (D23 as amended): GDELT's GKG files and DOC searches, and the curated feeds
+    gdelt_queries: list[GdeltQuery] = msgspec.field(default_factory=lambda: list(GDELT_QUERIES))
+    feeds: list[NewsFeed] = msgspec.field(default_factory=lambda: list(GOVERNMENT_FEEDS))
+
+
 class PluginDefaults(msgspec.Struct, frozen=True, kw_only=True):
     queue_size: int = 10_000
     call_timeout_seconds: float = 30.0
@@ -120,6 +181,7 @@ class Settings(msgspec.Struct, frozen=True, kw_only=True):
     alerts: AlertSettings = AlertSettings()
     terminal: TerminalSettings = TerminalSettings()
     sources: SourceSettings = SourceSettings()
+    news: NewsSettings = NewsSettings()
     plugin_settings: dict[str, dict[str, Any]] = {}
 
 
@@ -206,9 +268,15 @@ def _v5_to_v6(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _v6_to_v7(data: dict[str, Any]) -> dict[str, Any]:
+    # version 7 adds [news] (M2.3) with the starting feeds and searches; rewriting the file shows
+    # them to the owner, who edits the list there
+    return {**data, "version": 7}
+
+
 OLD_DEFAULT_ZONE = "America/New_York"
 MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
-    1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6,
+    1: _v1_to_v2, 2: _v2_to_v3, 3: _v3_to_v4, 4: _v4_to_v5, 5: _v5_to_v6, 6: _v6_to_v7,
 }  # fmt: skip
 
 
