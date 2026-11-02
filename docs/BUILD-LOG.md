@@ -3595,7 +3595,7 @@ Brought forward from PLAN §9 (owner, 2026-11-01). Branch `m1/14`, stacked on `m
   | 9 | Combos bumped the index's skipped count; a cached open market's "trading" can lag | Combos stay out of the index. The lag: no change. The journal's pass refreshes it every 10 minutes, and marks fall at 30 and 60 minutes |
   | 10 | A Kalshi failure read as "no such market" | 503 "try again"; tested |
 
-**Live check: pending** (a test release on the owner's word):
+**Live check: pending** on **v0.1.15** (test pre-release from `4f28b12`, published 2026-11-01 23:01 MST):
 - After the restart, `KXNBATOTAL-26NOV01TORLAL-254` opens again with its chart.
 - The settled pass completes in the background.
 - The journal's lookups settle what was missed.
