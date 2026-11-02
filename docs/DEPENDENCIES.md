@@ -51,7 +51,7 @@ least 7 days old when chosen (PLAN D11). The .NET WPF terminal and its packages 
 | `ag-grid-community`, `ag-grid-react` | 36.2.0 | the Markets grid (M1.8a-web-2a); its CSS-file theme, so no inline style | MIT |
 | `lightweight-charts` | 5.2.1 | the Market screen's price chart (M1.8a-web-2a); its logo is off (it needs an inline style) and the credit with a link to TradingView, which its licence asks for, is drawn below the chart | Apache-2.0 |
 
-Build and test only (not shipped): `vite` 8.3.4 and `@vitejs/plugin-react` 6.1.2 (MIT); `typescript` 6.0.3
+Build and test only (not shipped): `vite` 8.3.5 and `@vitejs/plugin-react` 6.1.2 (MIT); `typescript` 6.0.3
 (Apache-2.0; typescript-eslint does not support 7 yet); `vitest` and `@vitest/coverage-v8` 5.0.5, `jsdom` 30.1.3 (MIT);
 `@playwright/test` 1.64.1 (Apache-2.0; runs the installed Edge, no browser download); `eslint` 10.13.0, `@eslint/js`
 10.0.1, `typescript-eslint` 8.72.0, `eslint-plugin-react-hooks` 7.1.1, `globals` 17.13.0 (MIT);
