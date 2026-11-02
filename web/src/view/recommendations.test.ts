@@ -114,12 +114,12 @@ describe("the scorecard", () => {
       since_utc: "2025-12-02T00:00:00Z",
       at_utc: "2026-01-01T00:00:00Z",
       lines: [
-        { strategy: "momentum", version: "0d648804a13a", horizon_s: 1800, checks: 237, scored: 106, above_zero: 47, mean_e6: -42_000, median_e6: -28_000 },
-        { strategy: "momentum", version: "0d648804a13a", horizon_s: 3600, checks: 32, scored: 0, above_zero: 0, mean_e6: null, median_e6: null },
+        { strategy: "momentum", version: "0d648804a13a", horizon_s: 1800, checks: 237, scored: 106, above_zero: 47, mean_e6: -42_000, median_e6: -28_000, late: 9 },
+        { strategy: "momentum", version: "0d648804a13a", horizon_s: 3600, checks: 32, scored: 0, above_zero: 0, mean_e6: null, median_e6: null, late: 0 },
       ],
     };
     expect(scoreRows(card)).toEqual([
-      { rule: "momentum 0d6488", horizon: "30 min", scored: "106 of 237", above: "47 (44%)", mean: "-$0.04", meanLevel: "loss", median: "-$0.03" },
+      { rule: "momentum 0d6488", horizon: "30 min", scored: "106 of 237 (9 late)", above: "47 (44%)", mean: "-$0.04", meanLevel: "loss", median: "-$0.03" },
       { rule: "momentum 0d6488", horizon: "1 h", scored: "0 of 32", above: "—", mean: "—", meanLevel: "unpriced", median: "—" },
     ]);
   });

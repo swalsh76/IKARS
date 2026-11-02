@@ -231,6 +231,40 @@ def test_an_engine_stopped_too_long_logs_the_missed_window(tmp_path: Path) -> No
     store.close()
 
 
+def test_a_feed_stopped_on_purpose_logs_no_gap_when_it_starts_again(tmp_path: Path) -> None:
+    """M1.R3 C7: a city's feeds stopped because its markets closed kept their last good poll, so
+    starting them days later logged the whole time off as a gap."""
+    store = StateStore(tmp_path / "state.sqlite")
+    store.set_poll_feed("test-news.main", None, None, T0 - 3 * 86_400 * NS)
+    poller = Poller(store, FakeClock(0), user_agent("9.9"))
+    poller.closed("test-news.main")
+    asyncio.run(poller.aclose())
+    _, _, _, store = run_source(tmp_path, Server([items("a")]), sleeps=0, store=store)
+    assert store.gaps() == []
+    store.close()
+
+
+class Searches(News):
+    """A feed whose reply reaches back only an hour (GDELT's searches)."""
+
+    def feeds(self, ctx: PluginContext) -> list[Feed]:
+        return [Feed(name="test-news.main", url=self.url, every_s=self.every_s, reach_s=3_600.0)]
+
+
+@pytest.mark.parametrize(("off_s", "recovery"), [(1_800, "refetched"), (7_200, "unrecoverable")])
+def test_an_outage_longer_than_a_reply_reaches_is_unrecoverable(
+    tmp_path: Path, off_s: int, recovery: str
+) -> None:
+    """M1.R3 C7: a search over the last hour, down for longer, was logged as all recovered."""
+    store = StateStore(tmp_path / "state.sqlite")
+    store.set_poll_feed("test-news.main", None, None, T0 - off_s * NS)
+    _, _, _, store = run_source(tmp_path, Server([items("a")]), sleeps=0, source=Searches(),
+                                store=store)  # fmt: skip
+    [gap] = store.gaps()
+    assert gap.recovery == recovery
+    store.close()
+
+
 @pytest.mark.parametrize(
     ("url", "reply", "problem"),
     [
@@ -337,6 +371,24 @@ def test_an_item_still_listed_after_two_weeks_is_not_recorded_again(tmp_path: Pa
     again.now = later.now + 60 * NS
     emitted, _, _, _ = run_source(tmp_path, server, sleeps=0, store=store, clock=again)
     assert emitted == []
+    store.close()
+
+
+def test_a_feed_unchanged_for_weeks_never_sends_its_old_items_again(tmp_path: Path) -> None:
+    """M1.R3 C3: a "not modified" answer refreshed nothing, so after two weeks of them the ids were
+    forgotten and the feed's next change re-sent every old item as new."""
+    server = Server([items("old", headers={"ETag": '"v1"'})])
+    emitted, _, clock, store = run_source(tmp_path, server, sleeps=0)
+    assert [i.ref.id for i in emitted] == ["old"]
+    later = FakeClock(0)
+    later.now = clock.now + 15 * 86_400 * NS  # fifteen days of "not modified"
+    run_source(tmp_path, Server([httpx.Response(304)]), sleeps=0, store=store, clock=later)
+    store.forget_seen(later.now - 14 * 86_400 * NS)  # the daily prune
+    again = FakeClock(0)
+    again.now = later.now + 60 * NS
+    server = Server([items("old", "new")])
+    emitted, _, _, _ = run_source(tmp_path, server, sleeps=0, store=store, clock=again)
+    assert [i.ref.id for i in emitted] == ["new"]
     store.close()
 
 

@@ -784,7 +784,7 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         lines = [] if service is None else [
             c.ScoreLineView(strategy=x.strategy, version=x.version, horizon_s=x.horizon_s,
                             checks=x.checks, scored=x.scored, above_zero=x.above_zero,
-                            mean_e6=x.mean_e6, median_e6=x.median_e6)
+                            mean_e6=x.mean_e6, median_e6=x.median_e6, late=x.late)
             for x in service.card
         ]  # fmt: skip
         at_utc = None if at is None else utc_text(at)

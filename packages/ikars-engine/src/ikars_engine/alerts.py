@@ -173,6 +173,10 @@ class AlertDesk:
             self.state.held.append({"title": alert.title, "priority": alert.priority})
             outcome = "held"
         self._append({**asdict(alert), "at": now.isoformat(), "outcome": outcome})
+        # a time older than the throttle holds nothing back: dropped, so a key per recommendation
+        # never grows the file for ever (M1.R3 C8)
+        shown = self.state.shown_ns
+        self.state.shown_ns = {k: t for k, t in shown.items() if at - t < self._throttle_ns}
         self._save()
         return outcome
 

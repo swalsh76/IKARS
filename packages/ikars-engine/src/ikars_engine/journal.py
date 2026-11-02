@@ -35,7 +35,15 @@ from msgspec import Meta
 
 from ikars_engine.model import Item, Ref
 from ikars_engine.pnl import mark_score_e6
-from ikars_engine.recommendations import CARD_DAYS, Board, Notices, ScoreLine, figures, scorecard
+from ikars_engine.recommendations import (
+    CARD_DAYS,
+    QUOTE_WAIT_NS,
+    Board,
+    Notices,
+    ScoreLine,
+    figures,
+    scorecard,
+)
 from ikars_engine.store import open_store, transaction
 from ikars_engine.threads import in_daemon_thread
 
@@ -47,7 +55,6 @@ EVERY_S = 1.0  # how often the journal writes, expires and marks
 RECENT = 200  # the most the API lists
 DAY_NS = 86_400 * 1_000_000_000
 LONGEST_NS = 30 * DAY_NS  # the furthest a recommendation may expire or be marked after it is made
-QUOTE_WAIT_NS = 600 * 1_000_000_000  # a missing quote: the mark waits this long for one
 SETTLE_EVERY_NS = 60 * 1_000_000_000  # how often settlements are looked up
 FEES_WAIT_NS = 3_600 * 1_000_000_000  # a check whose fees are not known waits this long
 SCORE_BATCH = 500  # the most checks scored in one pass (a backlog is worked off a second at a time)
@@ -142,6 +149,12 @@ JOURNAL_MIGRATIONS = (
     ALTER TABLE settlement ADD COLUMN yes_paid_e6 INTEGER;
     UPDATE settlement SET yes_paid_e6 = CASE result WHEN 'yes' THEN 1000000 ELSE 0 END;
     """,
+    # 5 (M1.R3 C4, owner 2026-11-02): a check on a closed market is scored at its settlement only,
+    # never sold at a quote kept from before it closed; the ones scored so are scored again
+    """
+    UPDATE mark SET scored = NULL, score_e6 = NULL, at_settlement = NULL
+        WHERE closed = 1 AND scored = 1 AND at_settlement = 0;
+    """,
 )
 # an entry with its settlement and response; the WHERE and ORDER come from this module only
 _ENTRIES = (
@@ -187,6 +200,9 @@ class Journal:
         self.path = path
         self._db = open_store(path, JOURNAL_MIGRATIONS)
         self.changes = 0  # counts every change to what is active or answered (the API's cache key)
+        # the markets not settled yet, each with its newest recommendation's time: read once, then
+        # kept by add and settle (a query twice a minute cost ~95 ms at 30 days: M1.R3 C6)
+        self._unsettled: dict[str, int] | None = None
 
     def close(self) -> None:
         self._db.close()
@@ -230,6 +246,11 @@ class Journal:
                  for h in sorted(set(rec.horizons_s))],
             )  # fmt: skip
         self.changes += 1
+        if self._unsettled is not None:
+            settled = "SELECT 1 FROM settlement WHERE ticker = ?"
+            if self._db.execute(settled, (rec.ticker,)).fetchone() is None:
+                newest = max(self._unsettled.get(rec.ticker, item.received_ns), item.received_ns)
+                self._unsettled[rec.ticker] = newest
         return rec
 
     def expire(self, now_ns: int) -> int:
@@ -313,14 +334,24 @@ class Journal:
         self, rid: str, horizon_s: int, at_ns: int, bid: int | None, ask: int | None,
         closed: bool | None = None,
     ) -> None:  # fmt: skip
-        with transaction(self._db):
-            self._db.execute(
+        self.mark_all([(rid, horizon_s, at_ns, bid, ask, closed)])
+
+    def mark_all(
+        self, marks: list[tuple[str, int, int, int | None, int | None, bool | None]]
+    ) -> None:
+        """Each (id, horizon, at, bid, ask, closed) as a check, in one transaction (a backlog after
+        a restart is thousands: M1.R3 C2)."""
+        if not marks:
+            return
+        with transaction(self._db) as db:
+            db.executemany(
                 "INSERT OR IGNORE INTO mark (id, horizon_s, at_ns, yes_bid_e6, yes_ask_e6, closed)"
                 " VALUES (?, ?, ?, ?, ?, ?)",
-                (rid, horizon_s, at_ns, bid, ask, closed),
+                marks,
             )
-            self._db.execute(
-                "DELETE FROM pending_mark WHERE id = ? AND horizon_s = ?", (rid, horizon_s)
+            db.executemany(
+                "DELETE FROM pending_mark WHERE id = ? AND horizon_s = ?",
+                [(rid, horizon) for rid, horizon, *_ in marks],
             )
         self.changes += 1  # a shown recommendation's checks (merge review 6)
 
@@ -335,12 +366,14 @@ class Journal:
 
     def unsettled(self, since_ns: int) -> list[str]:
         """Markets recommended since ``since_ns`` whose settlement is not known yet."""
-        rows = self._db.execute(
-            "SELECT DISTINCT r.ticker FROM recommendation r LEFT JOIN settlement s"
-            " ON s.ticker = r.ticker WHERE s.ticker IS NULL AND r.received_ns >= ?",
-            (since_ns,),
-        )
-        return [ticker for (ticker,) in rows]
+        if self._unsettled is None:
+            self._unsettled = dict(
+                self._db.execute(
+                    "SELECT r.ticker, MAX(r.received_ns) FROM recommendation r LEFT JOIN settlement"
+                    " s ON s.ticker = r.ticker WHERE s.ticker IS NULL GROUP BY r.ticker"
+                ).fetchall()
+            )
+        return [ticker for ticker, newest in self._unsettled.items() if newest >= since_ns]
 
     def settle(self, ticker: str, result: str, yes_paid_e6: int, at_ns: int) -> None:
         """A market's settlement: its result and what a YES contract paid (kept once)."""
@@ -349,6 +382,8 @@ class Journal:
             " VALUES (?, ?, ?, ?)",
             (ticker, result, at_ns, yes_paid_e6),
         )
+        if self._unsettled is not None:
+            self._unsettled.pop(ticker, None)
 
     def recent(self, limit: int = RECENT) -> list[Entry]:
         """The newest recommendations, newest first, with their marks and settlements."""
@@ -428,6 +463,7 @@ class JournalService:
     rejected: int = 0
     recorded: int = 0
     failures: int = 0  # passes whose expiring or marking failed (said in health; retried next)
+    started_ns: int | None = None  # the first pass: quotes come only from then (M1.R3 C2)
 
     def listen(self, item: Item) -> None:
         if item.ref.kind != KIND:
@@ -470,16 +506,20 @@ class JournalService:
             if self._place(item.ref.id, rec, item.received_ns) and self.notices is not None:
                 self.notices.offer(item.ref.id, rec)
         now = self.now_ns()
+        if self.started_ns is None:
+            self.started_ns = now
         self.journal.expire(now)
         self.board.prune(now)
+        marks = []
         for rid, ticker, horizon, due in self.journal.due(now):
             bid, ask = self.quotes.get(ticker, (None, None))
-            if bid is None and ask is None and now - due < QUOTE_WAIT_NS:
-                continue  # no quote yet (a fresh start, a quiet market): marked when one comes
+            # no quote yet (a quiet market, or a fresh start: Kalshi sends a quote only when it
+            # changes, so the wait runs from the start too: M1.R3 C2): marked when one comes
+            if bid is None and ask is None and now - max(due, self.started_ns) < QUOTE_WAIT_NS:
+                continue
             open_now = self.trading(ticker)
-            self.journal.mark(
-                rid, horizon, now, bid, ask, None if open_now is None else not open_now
-            )
+            marks.append((rid, horizon, now, bid, ask, None if open_now is None else not open_now))
+        self.journal.mark_all(marks)
         if now - self.settled_at_ns >= SETTLE_EVERY_NS:  # once a minute, from the market index
             self.settled_at_ns = now
             for ticker in self.journal.unsettled(now - LONGEST_NS):

@@ -247,6 +247,10 @@ class StateStore:
             (feed, etag, last_modified, last_ok_ns, wait_s),
         )
 
+    def clear_poll_ok(self, feed: str) -> None:
+        """``feed`` stopped on purpose: no last good poll to measure a gap from (M1.R3 C7)."""
+        self._db.execute("UPDATE poll_feed SET last_ok_ns = NULL WHERE feed = ?", (feed,))
+
     def set_poll_ok(self, feed: str, last_ok_ns: int, wait_s: float) -> None:
         """A good poll that changed nothing (304): the validators stay."""
         self._db.execute(
@@ -283,6 +287,11 @@ class StateStore:
                 " ON CONFLICT (feed, id) DO UPDATE SET at_ns = excluded.at_ns",
                 [(feed, one, at_ns) for one in ids],
             )
+
+    def touch_seen(self, feed: str, at_ns: int) -> None:
+        """Every id remembered for ``feed`` seen again now: the feed answered "not modified", so
+        all it listed is still listed (M1.R3 C3)."""
+        self._db.execute("UPDATE poll_seen SET at_ns = ? WHERE feed = ?", (at_ns, feed))
 
     def forget_seen(self, before_ns: int) -> int:
         """Drop remembered ids older than ``before_ns`` (feeds list only recent items)."""

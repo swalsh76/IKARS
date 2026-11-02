@@ -237,3 +237,7 @@ def test_a_check_after_the_market_closed_is_scored_at_its_settlement() -> None:
     assert scored(thin, "yes", 1_000_000) == (None, False)
     before = [Mark(1800, T0 + 1800 * S, None, None, None)]  # a mark from v0.1.7: not known
     assert scored(before, "yes", 1_000_000)[0] is None
+    # a quote kept from before it closed is never a price to sell at: its settlement (M1.R3 C4)
+    stale = [Mark(1800, T0 + 1800 * S, 400_000, 410_000, True)]
+    assert scored(stale, "yes", 1_000_000) == (5_220_000, True)
+    assert scored(stale) == (None, False)  # waits for the settlement

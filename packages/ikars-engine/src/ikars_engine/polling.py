@@ -35,7 +35,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 import httpx
@@ -78,6 +78,16 @@ class Feed(msgspec.Struct, frozen=True, kw_only=True):
     # the source fetches what a gap missed and logs its own gaps, what it recovered and what it
     # could not, so the poller logs none for it (M2.3: GDELT's files; per-commit review)
     backfills: bool = False
+    # how far back one reply reaches (a search over the last hour); a gap longer than this lost
+    # what fell before it, so it is logged as unrecoverable (M1.R3 C7); None: the whole feed
+    reach_s: float | None = None
+
+
+class StopFeed(Protocol):
+    """Stops a feed by name; ``closed``: on purpose, as nothing it serves trades now, so the time
+    it is off is no gap (M1.R3 C7)."""
+
+    def __call__(self, name: str, *, closed: bool = False) -> None: ...
 
 
 class Found(msgspec.Struct, frozen=True, kw_only=True):
@@ -268,8 +278,12 @@ class Poller:
         last_ok, healthy = health.last_ok_ns, max(feed.every_s, health.wait_s or 0.0)
         if not feed.backfills and last_ok is not None and now - last_ok > GAP_AFTER * healthy * NS:
             cause = health.last_error or "the engine was not running"
-            detail = f"no good poll ({cause}); the next one returned the feed's current items"
-            self.log_gap(feed.name, last_ok, now, "refetched", detail)
+            if feed.reach_s is not None and now - last_ok > feed.reach_s * NS:
+                detail = f"no good poll ({cause}); a reply reaches back only {feed.reach_s:.0f} s"
+                self.log_gap(feed.name, last_ok, now, "unrecoverable", detail)
+            else:
+                detail = f"no good poll ({cause}); the next one returned the feed's current items"
+                self.log_gap(feed.name, last_ok, now, "refetched", detail)
             health.gaps += 1
         if fetched is None:  # 304: the validators stay
             self._store.set_poll_ok(feed.name, now, wait_s)
@@ -342,6 +356,16 @@ class Poller:
             self._pruned_ns = now
             self.forget_old()
 
+    def closed(self, name: str) -> None:
+        """``name`` stopped on purpose: its last good poll is forgotten, so starting it again later
+        logs no gap for the time it was off (M1.R3 C7)."""
+        self._store.clear_poll_ok(name)
+
+    def unchanged(self, feed: Feed) -> None:
+        """``feed`` answered "not modified": what it listed is still listed, so never forgotten,
+        however long it stays unchanged (an off-season feed: M1.R3 C3)."""
+        self._store.touch_seen(feed.seen or feed.name, self._clock.now_ns())
+
     def forget_old(self) -> int:
         return self._store.forget_seen(self._clock.now_ns() - SEEN_DAYS * 86_400 * NS)
 
@@ -374,7 +398,7 @@ class PollingSource(PluginBase):
         ctx: PluginContext,
         poller: Poller,
         start: Callable[[Feed], None],
-        stop: Callable[[str], None],
+        stop: StopFeed,
     ) -> None:
         """Start the feeds. The default starts ``feeds()`` once; a source whose feeds come and go
         (M2.2: a city named by markets that open and close) overrides it, and calls ``start`` and
@@ -398,11 +422,13 @@ class PollingSource(PluginBase):
                     task = group.create_task(self._loop(feed, poller, ctx), name=feed.name)
                     running[feed.name] = task
 
-            def stop(name: str) -> None:
+            def stop(name: str, *, closed: bool = False) -> None:
                 task = running.pop(name, None)
                 if task is not None:
                     task.cancel()
                 poller.feeds.pop(name, None)  # a stopped feed leaves health (merge review 3)
+                if closed:
+                    poller.closed(name)
 
             await self.manage(ctx, poller, start, stop)
 
@@ -423,6 +449,7 @@ class PollingSource(PluginBase):
                 fetched = await ctx.call(poller.fetch(feed, turned=True), TIMEOUT_S * 2)
                 if fetched is None:
                     health.not_modified += 1
+                    poller.unchanged(feed)
                 else:
                     await self._emit_new(feed, fetched.body, poller, ctx, health)
                     if fetched.max_age_s is not None:

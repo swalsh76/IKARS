@@ -155,7 +155,7 @@ export function scoreRows(card: ScoreCard): ScoreRow[] {
   return card.lines.map((l) => ({
     rule: shortRule(l.strategy, l.version),
     horizon: horizon(l.horizon_s),
-    scored: `${l.scored} of ${l.checks}`,
+    scored: `${l.scored} of ${l.checks}` + (l.late ? ` (${l.late} late)` : ""),
     above: l.scored ? `${l.above_zero} (${Math.round((100 * l.above_zero) / l.scored)}%)` : "—",
     mean: l.mean_e6 === null ? "—" : dollars(e6(l.mean_e6), { signed: true }),
     meanLevel: level(l.mean_e6),

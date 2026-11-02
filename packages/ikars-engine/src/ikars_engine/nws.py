@@ -32,7 +32,15 @@ from collections.abc import Callable
 from typing import Any
 
 from ikars_engine.plugins import PluginContext, PluginKind, PluginSpec
-from ikars_engine.polling import Feed, Found, Poller, PollError, PollingSource, iso_ns
+from ikars_engine.polling import (
+    Feed,
+    Found,
+    Poller,
+    PollError,
+    PollingSource,
+    StopFeed,
+    iso_ns,
+)
 
 API = "https://api.weather.gov"
 GEO = "application/geo+json"
@@ -185,7 +193,7 @@ class NwsWeather(PollingSource):
         ctx: PluginContext,
         poller: Poller,
         start: Callable[[Feed], None],
-        stop: Callable[[str], None],
+        stop: StopFeed,
     ) -> None:
         if ctx.settings.get("enabled", True) is False:
             ctx.log.info("the nws source is turned off in the settings")
@@ -224,7 +232,7 @@ class NwsWeather(PollingSource):
                     start(feed)
             for code in sorted(running.keys() - open_codes):  # its markets have all closed
                 for name in running.pop(code):
-                    stop(name)
+                    stop(name, closed=True)  # off on purpose: no gap when it opens (M1.R3 C7)
             for code in [c for c in note["unmapped"] if c not in open_codes]:
                 del note["unmapped"][code]
             note["mapped"] = sorted(running)
