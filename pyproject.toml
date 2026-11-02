@@ -47,6 +47,7 @@ mypy_path = [
     "packages/ikars-core/src",
     "packages/ikars-engine/src",
     "tools/ci",
+    "tools/release",
 ]
 explicit_package_bases = true
 
@@ -59,7 +60,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["packages", "tools"]
 # shared test helpers (M1.13); a folder without a conftest.py, so nothing clashes
-pythonpath = ["tools/ci", "packages/ikars-engine/tests/helpers"]
+pythonpath = ["tools/ci", "tools/release", "packages/ikars-engine/tests/helpers"]
 addopts = "--import-mode=importlib"
 markers = [
     "integration: hits the real Kalshi API (opt-in via IKARS_LIVE=1)",

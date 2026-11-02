@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.32.4"]  # as tools/release/build-constraints.txt (M1.R3 E2)
 build-backend = "hatchling.build"
 
 [project]

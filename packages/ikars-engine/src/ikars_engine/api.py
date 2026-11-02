@@ -637,7 +637,9 @@ def read_alerts(index: AlertIndex, after: int | None, limit: int) -> list[c.Aler
 
 def create_app(ctx: ApiContext) -> ASGIApp:
     async def hello(request: Request) -> Response:
-        return _json(c.Hello(api_version=c.API_VERSION, engine_version=engine_version(),
+        # the installed program's version (Velopack's), never the packages' own 0.0.0 (M1.R3 F1)
+        installed = None if ctx.updates is None else ctx.updates.current()
+        return _json(c.Hello(api_version=c.API_VERSION, engine_version=installed or engine_version(),
                              schema_sha256=c.schema_sha256()))  # fmt: skip
 
     async def health(request: Request) -> Response:

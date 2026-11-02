@@ -175,6 +175,11 @@ async def test_the_gap_log_by_days(ctx: ApiContext, tmp_path: Path) -> None:
 async def test_hello_health_and_recommendations(ctx: ApiContext) -> None:
     hello = await get(ctx, "/v1/hello", c.Hello)
     assert hello.api_version == c.API_VERSION and hello.schema_sha256 == c.schema_sha256()
+    from ikars_engine.updates import Updater
+
+    ctx.updates = Updater(version="0.1.19")  # installed: Velopack's version (M1.R3 F1)
+    assert (await get(ctx, "/v1/hello", c.Hello)).engine_version == "0.1.19"
+    ctx.updates = None
     health = await get(ctx, "/v1/health", c.HealthView)
     assert health.feed.open_gaps == 0 and health.detail == {"kalshi": {"open_gaps": 0}}
     assert (await get(ctx, "/v1/recommendations", c.RecommendationPage)).items == []
