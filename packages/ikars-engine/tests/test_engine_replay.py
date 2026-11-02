@@ -591,9 +591,10 @@ async def test_a_full_cycle_records_changes_as_they_come(tmp_path: Path) -> None
     rows.clear()
     rig.kalshi.markets = [market("A", status="closed"), market("B"), market("C")]
     await rig.discovery.full()
-    # A's change and B's arrival are recorded as they come; the dump writes only C
+    # B's arrival and A's change (closed: read in its own pass, M1.14) are recorded as they
+    # come; the dump writes only C
     assert [(r["ticker"], r["status"], r["full"]) for r in rows] == [
-        ("A", "closed", False), ("B", "active", False), ("C", "active", True)
+        ("B", "active", False), ("A", "closed", False), ("C", "active", True)
     ]  # fmt: skip
 
 

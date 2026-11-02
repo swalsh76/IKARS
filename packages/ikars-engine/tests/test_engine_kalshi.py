@@ -377,9 +377,9 @@ async def test_a_restart_gap_runs_until_the_subscriptions_are_live(tmp_path: Pat
     rig = Rig(tmp_path, [market("M1")])
     rig.state.beat({"trade": T0 - 30 * 10**9})
     rig.kalshi.on_markets = lambda: rig.clock.advance_to(rig.clock.now_ns() + 60 * 10**9)
-    await rig.source.start()  # the full discovery's two listings take two minutes
+    await rig.source.start()  # the full discovery's three listings take three minutes (M1.14)
     gap = rig.state.gaps()[0]
-    assert gap.start_ns == T0 - 30 * 10**9 and gap.end_ns == T0 + 120 * 10**9
+    assert gap.start_ns == T0 - 30 * 10**9 and gap.end_ns == T0 + 180 * 10**9
     await rig.source.stop()
 
 

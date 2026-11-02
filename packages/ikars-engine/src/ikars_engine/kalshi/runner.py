@@ -30,6 +30,7 @@ from ikars_core.clock import ClockCheckError, sample_from_response
 from ikars_core.config import Environment, KalshiConfig
 from ikars_core.endpoints import MarketData
 from ikars_core.fees import FeeSchedule
+from ikars_core.models import Candlestick
 from ikars_core.ratelimit import TokenBucket
 from ikars_core.rest import (
     KalshiAccountClient,
@@ -47,9 +48,10 @@ from ikars_engine.backup_service import BackupService
 from ikars_engine.clocks import WallClock
 from ikars_engine.engine import Engine
 from ikars_engine.governor import GB, StorageGovernor
-from ikars_engine.journal import Journal, JournalService
+from ikars_engine.journal import LONGEST_NS, Journal, JournalService
 from ikars_engine.kalshi.discovery import OPEN_STATUSES, Discovery, MarketIndex
 from ikars_engine.kalshi.exchange import ExchangeWatch
+from ikars_engine.kalshi.lookup import MarketLookup
 from ikars_engine.kalshi.source import KalshiSource
 from ikars_engine.kalshi.watched import WatchedSet
 from ikars_engine.ledger import Ledger
@@ -197,6 +199,24 @@ class Live:
     journal_service: JournalService
     recorder: Recorder
     poller: Poller
+    lookup: MarketLookup
+
+
+async def candles_of(
+    data: MarketData, series: str, ticker: str, start: int, end: int, interval: int
+) -> list[Candlestick]:
+    """A market's candlesticks: the live store, or the historical one for a market settled before
+    Kalshi's cutoff (M1.14: a settled market's screen opens again)."""
+    try:
+        return await data.candlesticks(
+            series, ticker, start_ts=start, end_ts=end, period_interval=interval
+        )
+    except KalshiAPIError as exc:
+        if exc.status != 404:
+            raise
+    return await data.historical_candlesticks(
+        ticker, start_ts=start, end_ts=end, period_interval=interval
+    )
 
 
 def describer(index: MarketIndex) -> Describe:
@@ -296,20 +316,24 @@ async def build(
         except PluginError as exc:  # two of one name (merge review 2): the second is left out
             unloaded.append(f"{plugin.spec.name}: {exc}")
 
-    def result(ticker: str) -> str | None:  # a market's settlement, once the index has it
-        found = index.markets.get(ticker)
+    # markets the index lacks (settled before a restart, or long ago), looked up (M1.14)
+    lookup = MarketLookup(data, index, clock.now_ns)
+
+    def result(ticker: str) -> str | None:  # a market's settlement, by the index or a lookup
+        found = lookup.info(ticker)
         return None if found is None else found.result
 
-    def trading(ticker: str) -> bool | None:  # whether the market still trades, by the index
-        found = index.markets.get(ticker)
+    def trading(ticker: str) -> bool | None:  # whether the market still trades, likewise
+        found = lookup.info(ticker)
         return None if found is None else found.status in OPEN_STATUSES
 
     # the strongest recommendations notify (M1.12c), through the engine's own alert desk
-    notices = Notices(desk_for(paths, settings, ENGINE_DESK), market_title(index))
+    notices = Notices(desk_for(paths, settings, ENGINE_DESK), market_title(index, lookup))
     journal_service = JournalService(
         journal, source.quotes, clock.now_ns, result=result, trading=trading,
-        fees=market_fees(index), notices=notices,
+        fees=market_fees(index, lookup), notices=notices,
     )  # fmt: skip
+    engine.health_parts["lookups"] = lookup.health
     engine.listeners += [journal_service.listen, recording(recorder)]
     engine.health_parts["journal"] = journal_service.health
     engine.health_parts["sources"] = poller.health
@@ -358,9 +382,10 @@ async def build(
             now_ns=clock.now_ns,
             gaps=state.gaps_since,
             backup=backups.request,
-            candles=lambda series, ticker, start, end, interval: data.candlesticks(
-                series, ticker, start_ts=start, end_ts=end, period_interval=interval
+            candles=lambda series, ticker, start, end, interval: candles_of(
+                data, series, ticker, start, end, interval
             ),
+            lookup=lookup,
             sessions=sessions,
             web_root=web_root,
             config=TerminalConfig(paths, settings, root, restartable=restartable),
@@ -374,7 +399,7 @@ async def build(
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
     return Live(
         engine, source, state, ledger, service, backups, account_client, gpu_task, api, client,
-        updates, journal, journal_service, recorder, poller,
+        updates, journal, journal_service, recorder, poller, lookup,
     )  # fmt: skip
 
 
@@ -533,6 +558,12 @@ async def run(
         stack.callback(checking.cancel)  # it sleeps a day at a time: cancelled, not awaited
         writing = asyncio.create_task(live.journal_service.run(), name="journal")
         stack.callback(writing.cancel)
+        # the journal's markets the index lacks, looked up until they settle (M1.14)
+        settling = asyncio.create_task(live.lookup.keep_settling(
+            lambda: live.journal.unsettled(live.engine.clock.now_ns() - LONGEST_NS)
+        ), name="lookups")  # fmt: skip
+        stack.callback(settling.cancel)
+        stack.push_async_callback(live.lookup.stop)
         if on_minute is not None:
             on_minute(engine.health())
         started = last = time.monotonic()

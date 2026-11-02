@@ -220,6 +220,9 @@ class KalshiSource:
         if self.watched.current:
             await self._feed.subscribe(ORDERBOOK_CHANNEL, sorted(self.watched.current))
         self._live_since = self._clock.now_ns()
+        # the markets settled lately, after the feed is live: about two minutes of requests that
+        # never hold it back (M1.14; owner, 2026-11-01)
+        self._side_task(self._recent_settled(), "settled")
         # every channel is missing from its last heartbeat until now, when the subscriptions are
         # live again (not when start() began: discovery takes minutes)
         self._gaps_from_downtime(*previous)
@@ -303,6 +306,13 @@ class KalshiSource:
         if now - self._error_gap_at.get(channel, -(10**30)) >= self._every.error_gap_s * NS:
             self._error_gap_at[channel] = now
             self._gap(channel, "processing error", now, repr(exc)[:300])
+
+    async def _recent_settled(self) -> None:
+        try:
+            await self.discovery.recent_settled()
+        except Exception as exc:  # the lookups cover what this missed; said in the log
+            self._metrics.count("kalshi.discovery.errors")
+            log.warning("recently settled markets not read", extra={"error": repr(exc)})
 
     def _side_task(self, work: Coroutine[Any, Any, None], name: str) -> None:
         task = asyncio.create_task(work, name=f"kalshi.{name}")

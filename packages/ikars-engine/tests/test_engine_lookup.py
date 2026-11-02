@@ -1,0 +1,139 @@
+"""M1.14: settled markets after a restart. A fake Kalshi on the core package's made-up fixtures (the
+test-data policy): the full discovery reads the recently closed and settled, a market the index
+lacks is looked up for a screen, and the journal's unsettled markets are looked up until they
+settle."""
+
+import asyncio
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+
+import pytest
+from ikars_core.models import Market
+from ikars_engine.kalshi.lookup import RETRY_NS, MarketLookup
+from kalshi_fakes import RIGS, T0, Rig, market
+
+
+@pytest.fixture(autouse=True)
+def close_rigs() -> Iterator[None]:
+    yield
+    while RIGS:
+        RIGS.pop().state.close()
+
+
+def settled(
+    ticker: str, result: str = "yes", close: str = "2026-01-01T17:00:00Z"
+) -> dict[str, Any]:
+    return {**market(ticker, status="settled"), "result": result, "close_time": close}
+
+
+LONG_AGO = "2025-06-01T17:00:00Z"  # settled long before the index's three days
+
+
+async def test_the_full_discovery_reads_the_closed_and_then_the_settled(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, [market("O"), market("C", status="closed"), settled("S")])
+    await rig.discovery.full()
+    index = rig.discovery.index
+    assert {"O", "C"} <= set(index.markets) and "S" not in index.markets  # not before the feed
+    assert await rig.discovery.recent_settled() == 1  # after it, in the background
+    assert index.markets["S"].result == "yes"
+    asked = [r.url.params for r in rig.kalshi.requests if r.url.path.endswith("/markets")]
+    since = T0 // 10**9 - 3 * 86_400
+    assert {"status": "closed", "min_close_ts": str(since)}.items() <= dict(asked[2]).items()
+    assert {"status": "settled", "min_settled_ts": str(since)}.items() <= dict(asked[3]).items()
+
+
+async def test_the_source_reads_the_settled_after_the_feed_is_live(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, [market("O"), settled("S")])
+    await rig.source.start()
+    for _ in range(50):
+        await asyncio.sleep(0)
+        if "S" in rig.discovery.index.markets:
+            break
+    assert "S" in rig.discovery.index.markets
+    await rig.source.stop()
+
+
+async def test_a_market_the_index_lacks_is_looked_up_once_and_kept(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, [settled("RECENT"), settled("OLD", close=LONG_AGO)])
+    rig.kalshi.historical = [settled("PAST", "no", close=LONG_AGO)]
+    index = rig.discovery.index
+    lookup = MarketLookup(rig.kalshi.data(), index, rig.clock.now_ns)
+    recent = await lookup.get("RECENT")
+    assert recent is not None and "RECENT" in index.markets  # recent: into the index
+    old = await lookup.get("OLD")
+    assert old is not None and old.result == "yes" and "OLD" not in index.markets  # cached only
+    past = await lookup.get("PAST")  # not in the live store: the historical one
+    assert past is not None and past.result == "no"
+    assert await lookup.get("NOWHERE") is None
+    asked = len(rig.kalshi.requests)
+    assert (await lookup.get("OLD")) == old and await lookup.get("NOWHERE") is None
+    assert len(rig.kalshi.requests) == asked  # a settled one and a missing one are not asked again
+    assert lookup.title("PAST") == past.title and lookup.fees("PAST") is index.fees.get("KXDEMO")
+    assert lookup.health()["cached"] == 4
+
+
+async def test_the_journals_unsettled_markets_are_looked_up_until_they_settle(
+    tmp_path: Path,
+) -> None:
+    rig = Rig(tmp_path, [market("KNOWN"), settled("LIVE", close=LONG_AGO)])
+    rig.kalshi.historical = [settled("GONE", "no", close=LONG_AGO)]
+    index = rig.discovery.index
+    index.put(Market.model_validate(market("KNOWN")))
+    lookup = MarketLookup(rig.kalshi.data(), index, rig.clock.now_ns)
+    assert await lookup.settle(["KNOWN", "LIVE", "GONE", "NOWHERE"]) == 3  # KNOWN: the index's
+    listing = [r for r in rig.kalshi.requests if "tickers" in r.url.params]
+    assert len(listing) == 1 and listing[0].url.params["tickers"] == "LIVE,GONE,NOWHERE"
+    assert lookup.info("LIVE").result == "yes" and lookup.info("GONE").result == "no"  # type: ignore[union-attr]
+    assert lookup.settled == 2
+    assert await lookup.settle(["LIVE", "GONE", "NOWHERE"]) == 0  # known, or asked too lately
+    rig.clock.advance_to(rig.clock.now_ns() + RETRY_NS)
+    assert await lookup.settle(["NOWHERE"]) == 1  # asked again after the retry time
+
+
+async def test_a_lists_missing_titles_come_in_the_background(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, [settled("T1", close=LONG_AGO), settled("T2", close=LONG_AGO)])
+    lookup = MarketLookup(rig.kalshi.data(), rig.discovery.index, rig.clock.now_ns)
+    assert lookup.title("T1") == ""
+    lookup.want(["T1", "T2", "T1"])
+    for _ in range(50):
+        await asyncio.sleep(0)
+        if lookup.title("T1") and lookup.title("T2"):
+            break
+    assert lookup.title("T1") and lookup.title("T2") and lookup.version == 2
+    await lookup.stop()
+
+
+async def test_kalshi_failing_is_not_read_as_not_found(tmp_path: Path) -> None:
+    from ikars_core.rest import KalshiAPIError
+
+    rig = Rig(tmp_path, [market("A")])
+    index = rig.discovery.index
+    lookup = MarketLookup(rig.kalshi.data(), index, rig.clock.now_ns)
+    index.put(Market.model_validate(market("A")))
+    asked = len(rig.kalshi.requests)
+    assert await lookup.get("A") is index.markets["A"] and len(rig.kalshi.requests) == asked
+    rig.kalshi.fail = True  # every request answers 404 here: the fake's way to fail
+    assert await lookup.get("X") is None  # 404 from both stores: not found
+    rig.kalshi.fail = False
+
+    async def broken(ticker: str) -> Market:
+        raise KalshiAPIError(503, "busy")
+
+    lookup._data.market = broken  # type: ignore[method-assign]
+    with pytest.raises(KalshiAPIError):
+        await lookup.get("Y")  # a busy Kalshi is an error, never "no such market"
+    lookup.want(["Y"])
+    for _ in range(20):
+        await asyncio.sleep(0)
+    assert lookup.failures == 1  # the background one is counted, not raised
+    await lookup.stop()
+
+
+async def test_a_settled_market_already_known_is_not_asked_again(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, [settled("S", close=LONG_AGO)])
+    lookup = MarketLookup(rig.kalshi.data(), rig.discovery.index, rig.clock.now_ns)
+    assert await lookup.get("S") is not None
+    asked = len(rig.kalshi.requests)
+    rig.clock.advance_to(rig.clock.now_ns() + 2 * RETRY_NS)
+    assert await lookup.settle(["S"]) == 0 and len(rig.kalshi.requests) == asked
