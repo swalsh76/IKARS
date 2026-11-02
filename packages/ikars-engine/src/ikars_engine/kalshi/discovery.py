@@ -26,6 +26,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from ikars_core.endpoints import MarketData
 from ikars_core.fees import FeeSchedule, fee_schedule
+from ikars_core.fixedpoint import E6
 from ikars_core.markets import is_combo, series_ticker_of
 from ikars_core.models import Market
 
@@ -55,12 +56,28 @@ class MarketInfo:
     # the NWS climate report its rules name, such as "CLINYC" (M2.2: weather markets settle on The
     # Weather Company's value from that government station); None when the rules name none
     climate_code: str | None = None
+    # what a YES contract paid once settled (Kalshi's settlement value, dollar millionths); a
+    # scalar result pays a fraction, such as 50c on a tennis walkover (M1.14 live check)
+    settlement_value_e6: int | None = None
     # the ticker and title in lower case, made once: the markets search reads it on every request
     # (review 1.R2 item 5)
     search: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "search", f"{self.ticker}\n{self.title}".lower())
+
+    def settlement(self) -> tuple[str, int] | None:
+        """Its result once settled and what a YES contract paid: $1 on yes, nothing on no, the
+        settlement value on scalar; None before, or for a scalar result without a value (never
+        guessed)."""
+        if self.result == "yes":
+            return "yes", E6
+        if self.result == "no":
+            return "no", 0
+        value = self.settlement_value_e6
+        if self.result == "scalar" and value is not None and 0 <= value <= E6:
+            return "scalar", value
+        return None
 
 
 def _long_settled(
@@ -98,7 +115,8 @@ def market_row(
         "series_ticker": info.series_ticker, "category": info.category, "title": info.title,
         "status": info.status,
         "close_ns": None if info.close_time is None else exact_ns(info.close_time),
-        "result": info.result, "climate_code": info.climate_code,
+        "result": info.result, "settlement_value_e6": info.settlement_value_e6,
+        "climate_code": info.climate_code,
         "fee_type": None if fee_terms is None else fee_terms[0],
         "fee_multiplier_e6": None if fee_terms is None else fee_terms[1],
         "full": full, "removed": removed,
@@ -170,6 +188,7 @@ class MarketIndex:
             result=market.result,
             volume_24h_e2=market.volume_24h_e2 or 0,
             climate_code=code,
+            settlement_value_e6=market.settlement_value_e6,
         )
 
     def _removed(self, info: MarketInfo) -> None:

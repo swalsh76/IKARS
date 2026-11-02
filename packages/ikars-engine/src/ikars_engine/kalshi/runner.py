@@ -319,9 +319,9 @@ async def build(
     # markets the index lacks (settled before a restart, or long ago), looked up (M1.14)
     lookup = MarketLookup(data, index, clock.now_ns)
 
-    def result(ticker: str) -> str | None:  # a market's settlement, by the index or a lookup
+    def result(ticker: str) -> tuple[str, int] | None:  # a settlement, by the index or a lookup
         found = lookup.info(ticker)
-        return None if found is None else found.result
+        return None if found is None else found.settlement()
 
     def trading(ticker: str) -> bool | None:  # whether the market still trades, likewise
         found = lookup.info(ticker)

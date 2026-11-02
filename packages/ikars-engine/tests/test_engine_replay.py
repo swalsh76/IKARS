@@ -684,6 +684,22 @@ def test_a_market_the_index_drops_is_dropped_in_a_replay_too() -> None:
     assert market_row(info, None, T0)["removed"] is False
 
 
+def test_a_replay_knows_what_a_scalar_settlement_paid() -> None:
+    from ikars_engine.replay import ReplayMarkets
+
+    rows: list[dict[str, Any]] = []
+    index = MarketIndex(now_ns=lambda: T0)
+    index.record = rows.append
+    index.put(Market.model_validate({**market("W", status="finalized"), "result": "scalar",
+                                     "settlement_value_dollars": "0.5000"}))  # fmt: skip
+    markets = ReplayMarkets()
+    markets.apply(rows[-1])
+    assert markets.markets["W"].settlement() == ("scalar", 500_000)
+    older = {**rows[-1], "settlement_value_e6": None}  # recorded before the column: not guessed
+    markets.apply(older)
+    assert markets.markets["W"].settlement() is None
+
+
 async def test_a_checkpoint_lands_between_the_frames_the_pump_really_handled(
     tmp_path: Path,
 ) -> None:
