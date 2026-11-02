@@ -3518,3 +3518,24 @@ which sizes itself to its box, so each resize grew the next.
 - **Review:** per commit, nothing found.
 - **Seen beside it and parked (PLAN §9):** after a restart, a settled market is not in the index, so its Market
   screen answers 404. A full discovery reads only unopened and open markets.
+
+## 1.14 Settled markets after a restart (plan APPROVED 2026-11-01)
+
+Brought forward from PLAN §9 (owner, 2026-11-01). Branch `m1/14`, stacked on `m1/13`.
+
+**Found while planning:**
+- **A settled market drops out of the index at a restart.** The index keeps a settled market for 3 days after it
+  closes (`CLOSED_KEPT_NS`), but only while the engine runs: a full discovery reads unopened and open markets only.
+  Its Market screen then answers 404.
+- **The journal never settles such a market.** It settles a recommendation from the index's result, so a market
+  that settled while the engine was down, or more than 3 days before, is never settled and its scores never land.
+- **Kalshi's listing helps:** it filters by close time (`min_close_ts`, with status closed or settled) and fetches
+  markets by name (`tickers=`); markets past the cutoff come from its historical store.
+
+**Owner, 2026-11-01:** approved as proposed.
+- **Both:** at start, the full discovery also reads markets closed in the last 3 days; on request, a market the
+  index lacks is looked up by ticker, with a short cache.
+- **The journal:** an unsettled recommendation's market that the index lacks is looked up, batched, at most once
+  every 10 minutes per market, until it settles.
+- **The rest as shown:** tests with made-up markets, a dry run measuring the start-up requests, a test release, then
+  the check that the settled NBA market seen on 2026-11-01 opens again.
