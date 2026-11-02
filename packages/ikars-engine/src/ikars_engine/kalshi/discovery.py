@@ -13,7 +13,6 @@ from the same point. *Kept from KAPS:* the two cycles, the bookmark rule, reject
 the engine needs it for the watched set, the drill-down tree and tradability, not for history.
 """
 
-import asyncio
 import logging
 import re
 import time
@@ -37,6 +36,7 @@ BOOKMARK = "discovery.updated_s"
 OVERLAP_SECONDS = 120
 OPEN_STATUSES = frozenset({"active", "open"})  # Kalshi's REST and WebSocket names for trading
 CLOSED_KEPT_NS = 3 * 86_400 * 1_000_000_000  # a settled market stays in the index this long
+SETTLED_PAGE_PAUSE_S = 0.5  # between the pages of the recently settled markets (M1.14)
 SETTLED_STATUSES = frozenset({"settled", "finalized"})  # paid out: nobody holds it any more
 log = logging.getLogger("ikars_engine.kalshi.discovery")
 
@@ -130,7 +130,9 @@ class MarketIndex:
         self.version = 0  # moves whenever a market is added, changed or removed
         # (change ``markets`` only through put and prune, so the version stays true)
 
-    def put(self, market: Market) -> None:
+    def put(self, market: Market, *, quietly: bool = False) -> None:
+        """Keep ``market`` (or drop it, long settled). ``quietly``: the version is left for the
+        caller to move once (a bulk load: M1.14)."""
         if is_combo(market.ticker):
             self.combos_skipped += 1
             return
@@ -140,7 +142,8 @@ class MarketIndex:
                 self.version += 1  # a removal, so the API's sorted list is rebuilt
                 self._removed(gone)
             return
-        self.version += 1
+        if not quietly:
+            self.version += 1
         before = self.markets.get(market.ticker)
         info = self.markets[market.ticker] = self.info_of(market, before)
         if self.record is not None and (before is None or not _same(before, info)):
@@ -259,8 +262,8 @@ class Discovery:
         self.cycles = 0
 
     async def full(self) -> int:
-        """Series, every unopened and open market, and those closed in the last
-        ``CLOSED_KEPT_NS``; returns how many markets were read."""
+        """Series, and every unopened, open and closed (not yet settled) market; returns how many
+        markets were read."""
         began = self._clock.now_ns() // 1_000_000_000
         for series in await self._data.series_list():
             if series.category:
@@ -271,17 +274,12 @@ class Discovery:
         count = 0
         self.index.cycle = set()  # the dump below records every market not recorded meanwhile
         try:
-            # the markets that trade or will, then those closed (not yet settled) in the time the
-            # index keeps them (M1.14); the settled ones come after the start (``recent_settled``)
-            recent = began - CLOSED_KEPT_NS // 1_000_000_000
-            passes: tuple[tuple[str, int | None], ...] = (
-                ("unopened", None),
-                ("open", None),
-                ("closed", recent),
-            )
-            for status, closed_since in passes:
+            # the markets that trade or will, then every one closed and waiting for its result (the
+            # owner may hold it: merge review 1); the settled ones come after the start
+            # (``recent_settled``, M1.14)
+            for status in ("unopened", "open", "closed"):
                 async for page in self._data.markets(
-                    status=status, mve_filter="exclude", tolerant=True, min_close_ts=closed_since
+                    status=status, mve_filter="exclude", tolerant=True
                 ):
                     for market in page.items:
                         self.index.put(market)
@@ -303,14 +301,19 @@ class Discovery:
         returns how many were read."""
         since = self._clock.now_ns() // 1_000_000_000 - CLOSED_KEPT_NS // 1_000_000_000
         count = 0
-        async for page in self._data.markets(
-            status="settled", mve_filter="exclude", tolerant=True, min_settled_ts=since
-        ):
-            for market in page.items:
-                self.index.put(market)
-            count += len(page.items)
-            self.index.rejects += len(page.invalid)
-            await asyncio.sleep(0)  # a page at a time: the feed's frames go between
+        try:
+            async for page in self._data.markets(
+                status="settled", mve_filter="exclude", tolerant=True, min_settled_ts=since
+            ):
+                for market in page.items:
+                    self.index.put(market, quietly=True)  # one version change at the end
+                count += len(page.items)
+                self.index.rejects += len(page.invalid)
+                # a pause between pages leaves the request budget to the gap backfill and the
+                # discovery cycles (merge review 3)
+                await self._clock.sleep(SETTLED_PAGE_PAUSE_S)
+        finally:
+            self.index.version += 1  # the lists rebuild once, not for every market (review 4)
         log.info("discovery: recently settled markets", extra={"markets": count})
         return count
 

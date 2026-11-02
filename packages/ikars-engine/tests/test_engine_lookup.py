@@ -39,7 +39,7 @@ async def test_the_full_discovery_reads_the_closed_and_then_the_settled(tmp_path
     assert index.markets["S"].result == "yes"
     asked = [r.url.params for r in rig.kalshi.requests if r.url.path.endswith("/markets")]
     since = T0 // 10**9 - 3 * 86_400
-    assert {"status": "closed", "min_close_ts": str(since)}.items() <= dict(asked[2]).items()
+    assert dict(asked[2]).get("status") == "closed" and "min_close_ts" not in asked[2]  # all closed
     assert {"status": "settled", "min_settled_ts": str(since)}.items() <= dict(asked[3]).items()
 
 
@@ -137,3 +137,45 @@ async def test_a_settled_market_already_known_is_not_asked_again(tmp_path: Path)
     asked = len(rig.kalshi.requests)
     rig.clock.advance_to(rig.clock.now_ns() + 2 * RETRY_NS)
     assert await lookup.settle(["S"]) == 0 and len(rig.kalshi.requests) == asked
+
+
+async def test_concurrent_lookups_share_one_request_and_odd_tickers_are_never_asked(
+    tmp_path: Path,
+) -> None:
+    rig = Rig(tmp_path, [settled("S", close=LONG_AGO)])
+    lookup = MarketLookup(rig.kalshi.data(), rig.discovery.index, rig.clock.now_ns)
+    first, second = await asyncio.gather(lookup.get("S"), lookup.get("S"))
+    assert first == second and first is not None
+    assert sum(1 for r in rig.kalshi.requests if r.url.path.endswith("/markets/S")) == 1
+    asked = len(rig.kalshi.requests)
+    assert await lookup.get("S?status=open") is None and await lookup.get("../x") is None
+    assert len(rig.kalshi.requests) == asked  # never put into a URL
+    version = lookup.version
+    lookup._keep("S", None)
+    lookup._keep("S", None)
+    assert lookup.version == version + 1  # a change once, then nothing new
+
+
+async def test_a_failed_batch_never_holds_back_the_next(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, [settled(f"M{n}", close=LONG_AGO) for n in range(60)])
+    lookup = MarketLookup(rig.kalshi.data(), rig.discovery.index, rig.clock.now_ns)
+    calls = [0]
+    real = lookup._batch
+
+    async def flaky(tickers: list[str]) -> None:
+        calls[0] += 1
+        if calls[0] == 1:
+            raise RuntimeError("a 5xx")
+        await real(tickers)
+
+    lookup._batch = flaky  # type: ignore[method-assign]
+    assert await lookup.settle([f"M{n}" for n in range(60)]) == 60
+    assert lookup.failures == 1 and lookup.info("M59") is not None  # the second batch went on
+
+
+async def test_the_settled_load_moves_the_index_version_once(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, [settled("S1"), settled("S2"), settled("S3")])
+    index = rig.discovery.index
+    before = index.version
+    assert await rig.discovery.recent_settled() == 3
+    assert index.version == before + 1

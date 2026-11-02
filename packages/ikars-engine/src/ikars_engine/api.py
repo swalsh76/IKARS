@@ -26,6 +26,7 @@ arrival to its event leaving is measured (``api.feed_to_stream_ns``, PLAN D20 J)
 """
 
 import asyncio
+import contextlib
 import hmac
 import json
 import logging
@@ -375,6 +376,10 @@ def market_title(index: MarketIndex, lookup: "MarketLookup | None" = None) -> Ca
     return title
 
 
+class LookupFailed(Exception):
+    """Kalshi could not be asked about a market the index lacks (M1.14)."""
+
+
 def wanted(ctx: "ApiContext", tickers: "Iterable[str]") -> None:
     """The titles a page lacks, looked up in the background for its next refresh (M1.14)."""
     if ctx.lookup is not None:
@@ -637,7 +642,7 @@ def create_app(ctx: ApiContext) -> ASGIApp:
 
     async def known(ticker: str) -> MarketInfo | None:
         """The index's market, else one looked up (settled before a restart, or long ago: M1.14).
-        Kalshi failing to answer reads as not found here; the lookups' health counts it."""
+        Kalshi failing to answer raises ``LookupFailed``, never reads as "no such market"."""
         info = ctx.index.markets.get(ticker)
         if info is not None or ctx.lookup is None:
             return info
@@ -646,10 +651,15 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         except Exception as exc:
             ctx.lookup.failures += 1
             log.warning("market lookup failed", extra={"error": type(exc).__name__})
-            return None
+            raise LookupFailed from exc
+
+    unreachable = "Kalshi could not be asked about this market now; try again shortly"
 
     async def market(request: Request) -> Response:
-        info = await known(request.path_params["ticker"])
+        try:
+            info = await known(request.path_params["ticker"])
+        except LookupFailed:  # (merge review 10)
+            return _error(503, "unavailable", unreachable)
         if info is None:
             return _error(404, "not_found", "no such market at Kalshi")
         return _json(market_view(ctx, info))
@@ -693,9 +703,12 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         if interval not in (1, 60):
             raise _BadRequest("interval must be 1 or 60 (minutes)")
         hours = _int(request, "hours", 24, 1, MAX_CANDLE_HOURS) or 24
-        info = await known(ticker)
+        try:
+            info = await known(ticker)
+        except LookupFailed:
+            return _error(503, "unavailable", unreachable)
         if info is None or ctx.candles is None:
-            return _error(404, "not_found", "no such market in the index, or no price history")
+            return _error(404, "not_found", "no such market at Kalshi, or no price history")
         key = (ticker, interval, hours)
         now = asyncio.get_running_loop().time()
         cached = ctx.candle_cache.get(key)
@@ -748,7 +761,8 @@ def create_app(ctx: ApiContext) -> ASGIApp:
             return _error(404, "not_found", "no such recommendation")
         # its market's title and fees, even when the index lacks it; a failing Kalshi only leaves
         # the title out (per-commit review)
-        await known(entry.recommendation.ticker)
+        with contextlib.suppress(LookupFailed):
+            await known(entry.recommendation.ticker)
         fees, title = market_fees(ctx.index, ctx.lookup), market_title(ctx.index, ctx.lookup)
         return _json(recommendation_view(entry, fees, title))
 
