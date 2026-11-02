@@ -30,8 +30,8 @@ WS_URLS: dict[Environment, str] = {
     Environment.PRODUCTION: "wss://external-api-ws.kalshi.com/trade-api/ws/v2",
 }
 
-# Measured live (BUILD-LOG K0.5.3c and K0.5.4): the historical trades endpoint held 10 requests a
-# second for a full minute, but the live trades endpoint and both markets listings answered 429
+# Measured live (KAPS's BUILD-LOG K0.5.3c, K0.5.4): the historical trades endpoint held 10 requests
+# a second for a full minute, but the live trades endpoint and both markets listings answered 429
 # after a burst of about 12 and then allowed only about 4 a second (4 held for 30 seconds).
 DEFAULT_RATE_LIMIT_PER_SECOND = 10.0  # historical trades; PLAN.md D3
 DEFAULT_LIVE_RATE_LIMIT_PER_SECOND = 3.5  # live trades and the markets listings; PLAN.md D3

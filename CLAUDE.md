@@ -18,171 +18,33 @@ P&L net of fees on entry and exit.
 
 ## Status
 
-**M0 is approved (D1 to D21, 2026-10-26); the scope is frozen. M1 is approved and in progress (slice M1.1).** Each
-slice still needs its own approved plan before code.
+M0 (D1 to D21) and M1 are done; **M2 (Sources) is in progress**; the scope is frozen (new ideas go to PLAN §9).
+Each slice needs its own approved plan before code. Where every slice stands: [PLAN §5](docs/PLAN.md); how each
+was built and verified: [BUILD-LOG](docs/BUILD-LOG.md) (the current milestone; M0 and M1 in
+[docs/build-log/M1.md](docs/build-log/M1.md)).
 
 ### Resume point (keep this current at every step that changes it)
 
-*Last updated 2026-10-27.*
+*Last updated 2026-11-02.*
 
-- Survey of KAPS, KalTerm3 and SPARQ done (BUILD-LOG 0.1).
-- **Direction:** beat the humans, not the big bots. Strategies, in order: news/data estimates and momentum, then
-  sniping (as fast alerts), then perpetuals (D13).
-- **Approved 2026-10-26:**
-  - D1: Python engine + terminal (**amended 2026-10-27: a TypeScript web app** — React, Vite, pnpm — served by the
-    engine and opened as an Edge app window with a one-time-code cookie sign-in; WPF retired, tag
-    `wpf-terminal-final`); navigation **Overview → drill-down → cross-reference** (R9).
-  - D2: single box on the workstation.
-  - D3: loopback WebSocket/HTTP with `msgspec`.
-  - D5: weather (NWS/NOAA) + general news (RSS/GDELT + LLM).
-  - D6: **recommend-only through M6, live trading in M7** behind one executor interface (paper now, real later).
-  - D7: P&L with the listed cost-basis factors.
-  - D8: keys via environment variables and DPAPI.
-  - D9: Claude API **plus a local-model option** on the GPU.
-  - D10: **public** `swalsh76/IKARS`, MIT.
-  - D11: quality gates, plus a mini review per commit and merge (R14).
-  - D12: a **portable zip and a user-space installer**.
-  - D13 to D17: strategies, custom order types (watch/paper now, live in M7), GPU, order-book analysis, SPARQ reuse.
-- **Guard lapsed (owner, 2026-10-27):** SPARQ's S1.1b forward test was dropped unopened and SPARQ's guard lapsed
-  with it, so IKARS's matching guard (no edge to settlement on its events before 2026-11-23) lapsed too.
-- **Also approved:** D4 option C (SQLite state, Parquet raw feeds, DuckDB queries); D12 Velopack.
-- **Owner requirement R15 (2026-10-26):** an audit log fit to keep with a Form 1040. Designed as **D18**:
-  - an append-only, hash-chained ledger built from Kalshi's own account records, manual trades included,
-    reconciled against balance and positions;
-  - a per-year package: PDF/A summary, Form 8949 CSV, Form 6781 CSV, the raw JSONL and a SHA-256 manifest;
-  - the store in M1.5, the export in M5.
-  - backups go to the KAPS backup share (the same one as the KAPS database), only inside its own `ikars\` subtree
-    with its own marker; the real path is only in local settings and memory, never in the repository.
-- **Gap review approved as D19 (2026-10-26):** G1 to G17 and G19 approved:
-  - portfolio and exposure
-  - sizing and the risk layer
-  - the replay harness
-  - pre-registration
-  - background run mode
-  - workstation alerts (amended 2026-10-27: no phone pushes; Windows notifications)
-  - other-venue prices
-  - settlement rules and the calendar
-  - the recommendation lifecycle
-  - clock and latency
-  - the storage governor
-  - repository security
-  - interest in the ledger
-  - the restore drill
-  - the first-run wizard
-  - hotkeys, layouts and themes
-  - compliance review before M7 and per-source terms
-  - automatic demotion with a **Strategy review** page
-
-  G18 (fault and soak tests) was dropped; G20 (remote view) and G21 (social sentiment) are parked. Sources,
-  signals, custom order types and venues are **plugins** (entry points), so parked items need no restructuring.
-- **Second gap review approved as D20 (2026-10-26):**
-  - A: point-in-time source times; the replay obeys received time; record-only from M2's first slice
-  - B: LLM injection hardening, a response cache, a cost meter
-  - C: fill probability and adverse selection
-  - D: return per day of capital tied up
-  - E: tradability filters
-  - F: provenance on every recommendation
-  - G: safe upgrades (migrations, backup first, version handshake, rollback)
-  - H: alert hygiene
-  - I: redacted logs, a support bundle, the workstation-lost runbook
-  - J: latency and frame-time targets
-- **D21 approved (2026-10-26):** milestone gates with pre-registered stop rules (PLAN §4.2); the end-to-end
-  momentum slice M1.12; IKARS's own read-only key and a request budget that protects KAPS's ingest; the test-data
-  policy; a monthly cost ceiling. **Scope frozen** at D1 to D21.
-- **IKARS's own read-only Kalshi key is set up (2026-10-26):** User environment variables `IKARS_KALSHI_KEY_ID` and
-  `IKARS_KALSHI_PRIVATE_KEY_PATH` (separate from KAPS/SPARQ's `KALSHI_*`). Never print or read the id, the path or the
-  file; check with `Test-Path` only; load into a single command's process. First use: M1.2's live tests.
-- **M1 slice list and gates approved (2026-10-26).** **M1.1 done:** PR #1 merged as `2f19222`, CI green on `main`
-  (BUILD-LOG 1.1). **M1.2 done** (PR #3 merged as `3485b16`; BUILD-LOG 1.2). **M1.3 approved for now** (source in `docs/design/mockups/`).
-  **M1.4a done** (PR #4 merged as `b29a86e`). **M1.4b done** (PR #5 merged as `58abbe5`; BUILD-LOG 1.4b).
-  Owner 2026-10-27: GPU detection moved to M1.6; recording volume (about 2.1 GB a day) kept. **Keep
-  [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) current** in every slice that adds or drops a dependency (for the
-  install instructions). Those docs merged as PR #6 (`a8ff41a`).
-  **M1.5 plan APPROVED** (owner 2026-10-27: all 6 as recommended: split a/b, NAS go-ahead for M1.5b, tax zone =
-  workstation's (America/Denver), REST import each minute, owner labels unexplained money, FIFO).
-  **M1.5a done** (PR #7 merged as `087b819`): reconciles **exactly** with Kalshi.
-  **M1.5 done** (PR #8 merged as `5b6f702`): the real ledger lives in `%LOCALAPPDATA%\IKARS\ledger`; share backups
-  and the restore drill pass. **M1.6 done** (PR #9 merged as `2efc95f`): the engine runs in the background with the watchdog task and
-  auto-start (the owner's sign-out check pending). **M1.7 done** (PR #10 merged as `0ba5d83`): token-guarded loopback API with an SSE stream. **M1.8a (WPF) done** (PR #11 merged as `77849e3`; BUILD-LOG 1.8a); D20 J amended by the owner: **update to screen
-  p99 <= 33 ms**. **Direction change (owner, 2026-10-27):** the terminal becomes a **TypeScript web app** (D1, D3,
-  D11, D12 amended; BUILD-LOG 1.8w; all recommended answers approved: engine-served Edge app window, one-time code to
-  an HttpOnly cookie, React with Vite and pnpm). PR #12 merged (`d73921b`); tag `wpf-terminal-final` pushed. **WPF
-  pruned:** PR #13 merged as `1b92d49`. The `main protection` ruleset requires `python`, `hygiene` and
-  `CodeQL` (strict; CodeQL added at the owner's request 2026-10-27); `web` joins once that job exists.
-  **M1.R Base hardening** (owner 2026-10-27: a whole-code-base review before the web terminal; items 1 to 26
-  approved): **done** (PR #14 merged as `fca7941`, CI green on `main`; BUILD-LOG 1.R). Resting orders checked live 2026-10-27 (Kalshi's
-  balance does not hold back a resting buy; reconciliation exact). The M1.6 auto-start check passed 2026-10-27.
-  **Web review and security posture decided** (owner 2026-10-27; BUILD-LOG 1.8w-sec): browser hardening and npm
-  rules fold into M1.8a-web; **CodeQL** added (PR #15 merged as `179dd8c`; green on `main`; required since 2026-10-27).
-  **Platform review 1.R2 done** (owner approved placement 2026-10-27): items 1 to 5 go into M1.8a-web (stable
-  port and session across restarts, typed health, 2^53 test, one time format, search key), 8 and 9 into M1.12,
-  6 and 7 into the new **M1.13** replay slice, 10 parked.
-  **M1.8a-web plan APPROVED** (owner 2026-10-27; BUILD-LOG 1.8a-web): four slices, **1a** engine side (serving,
-  sign-in with a fixed port and a 30-day sliding DPAPI-signed cookie, `ikars open`, contracts 2.0, made-up-data
-  mode), **1b** web foundation (Node 24, `web/`, types, client, hub, money, navigator, CI `web` job, Overview and
-  Health), **2a** Markets and Market, **2b** Ledger, Alerts, meter and load test. Answers: fixed port in settings,
-  30-day session, `vite build --watch`, validate every reply. **M1.8a-web-1a done** (PR #16 merged as
-  `d70cb83`). **M1.8a-web-1b done** (PR #17 merged as `0fe5415`, CI green on `main`;
-  BUILD-LOG 1.8a-web-1b; Node 24.22.1 and pnpm 12.14.0 per user; `web/` with Overview and Health). The ruleset now
-  requires `python`, `hygiene`, `CodeQL` and **`web`** (owner, 2026-10-27). **M1.8a-web-2a done** (PR #19 merged as `94dbcaa`). **M1.8a-web-2b built** on `m1/8a-web-2b`
-  (BUILD-LOG 1.8a-web-2b; Ledger, Alerts, the update-to-screen meter, `pnpm load`; merge review 10 itemized): PR
-  **done** (PR #20 merged as `1aeb2bf`; the owner's console run passed: p99 19 ms). **M1.8a-web is complete.**
-  **M1.8b plan APPROVED** (owner 2026-10-27, all as recommended; BUILD-LOG 1.8b): **1b-1** mock-ups of
-  Settings and the wizard (approved before building), hotkeys, themes, Settings and the wizard; **1b-2** layouts
-  (sets of windows) and the support bundle. Mock-ups approved; skins added by the owner (built-in palettes
-  only). **M1.8b-1 done** (PR #21 merged as `db0bf9a`; the settings race fix PR #22 as `e6a29f3`).
-  **M1.8b-2 done** (PR #23 merged as `47984db`, CI green on `main`; BUILD-LOG 1.8b-2; layouts and the support
-  bundle). **M1.8 is complete.** Pending from the owner: the two-monitor layout check.
-  **M1.8c New window** (approved addition, owner 2026-10-27; BUILD-LOG 1.8c): **done** (PR #24 merged as `b336930`,
-  CI green on `main`; merge review 10 itemized). **M1.9 plan APPROVED** (owner 2026-10-27, all as
-  recommended; BUILD-LOG 1.9): **M1.9a** build, install, uninstall (program in `%LOCALAPPDATA%\IKARS-App`, data
-  untouched; Windows Sandbox for the clean test, the owner enables it), **M1.9b** CI releases, updates on the
-  owner's click, the rollback drill, signing (unsigned now, apply to SignPath). **M1.9a done** (PR #25
-  merged as `31a992a`, CI green on `main`; BUILD-LOG 1.9a; CodeQL now scans C# too). **M1.9b done** (PR #26 merged as `d11165d`, CI green on `main`; BUILD-LOG
-  1.9b; test pre-releases v0.1.0 to v0.1.6; the rollback drill passed; IKARS runs installed on the workstation).
-  **M1.9 is complete.** Start at sign-in points at the installed IKARS (the owner ran `install-autostart`).
-  Pending from the owner: the SignPath application (docs/CODE-SIGNING.md). **M1.12 plan APPROVED** (owner 2026-10-27, all as recommended; BUILD-LOG
-  1.12): a engine (plugins in the live runner, recording, received time, the journal), b momentum (continuation,
-  4c in 5 min on 50 contracts, spread <= 3c, 10c..90c, valid 30 min, scored at 30 and 60 min; 10 contracts;
-  registered by hash), c terminal (Overview list, Recommendation drill-down, normal throttled toast). **M1.12a
-  done** (PR #27 merged as `099b94b`). **M1.12b done** (PR #28 merged as `3f0f8bd`, CI green on `main`; momentum plugin
-  version `0d648804a13a`, pnl.py, merge review 9 fixed; owner: SPARQ guard lapsed; any market with a depth check).
-  **Live check passed** on v0.1.7 (2026-10-28; BUILD-LOG 1.12b): about 20 recommendations a minute at first on
-  in-play sports, half the 30-minute checks found the market closed. **Owner:** v1 keeps running a week
-  unchanged (until about 2026-11-04), then its record decides; a closed market's check is scored at settlement
-  (built, `f810687`). The M1.6 auto-start check passed (the installed IKARS started at sign-in after a restart).
-  **M1.12c** (owner 2026-10-28: proceed as recommended: a ranked list, toasts for the strongest few) on
-  `m1/12c`: **plan APPROVED** (BUILD-LOG 1.12c; all as recommended: top-ranked toasts, 3 an hour; T/I/D
-  and C now; the scorecard now; no redraw). **Built** (`cd72d8f` engine, `c1fb678` terminal, `7a4592a` merge
-  review 9 fixed, 1 no change); PR #29 open, CI green. **v0.1.8 published** (test pre-release from
-  `bac418d`, 2026-10-28); installed; live checks 2026-10-28 19:00 MDT passed: ranked list, drill-down, T/I/D across a restart,
-  D off the list, scorecard exact vs the journal, GET only. Notifications: 2 shown in the first hour (cap
-  3), none in quiet hours (overnight not yet seen). **M1.12c done** (PR #29 merged at the owner's word).
-  **M1.12d approved** (owner 2026-10-28; BUILD-LOG 1.12d): a row opens its recommendation, highlighted row with
-  arrow keys, Enter and C/T/I/D on the Overview, a Back button, the last crumb named; **built** on `m1/12d` (`c6a424f`, `3b11a27`; merge review 7 fixed, 1 no
-  change); **M1.12d done** (PR #30 merged as `40283b4`); v0.1.9 published (from `66d8699`, 2026-10-28); live check
-  passed (owner: "everything looks good"). **M1.11 Close-out plan APPROVED** (owner 2026-10-28; BUILD-LOG 1.11): M1.10 moved to M2;
-  M1.13 before M3. **M1.11 built** on `m1/11` (BUILD-LOG 1.11): restore + runbook (tested end to end, exact
-  reconcile), network wait, **Back up now** (owner's addition, mock-up approved), clean-account Sandbox pass
-  (vGPU off), milestone + merge reviews all fixed. PR #31 open, CI green; **v0.1.10 published** (from
-  `87f5a4b`); Back up now checked live (23:07, share copies and clock). **M1.11 done** (PR #31 merged as `14fb25d`):
-  **M1 is complete.** **M2 proposal APPROVED** (owner 2026-10-28; PLAN §4.3: D22 to D30, slices M2.1 to
-  M2.10, M1.13 after M2.3; **local LLM only** via Strata, Claude deferred to an M3 decision (amended); $20
-  monthly ceiling; GDELT + curated RSS; embeddings M2.5 before the LLM layer M2.6). **M2.1 plan
-  APPROVED** (owner 2026-10-28; BUILD-LOG 2.1: contact = repo URL, gap past 2x interval); **built** on `m2/1`
-  (BUILD-LOG 2.1; merge review 10 fixed); **M2.1 done** (PR #33 merged as `86726d7`). **M2.2 plan APPROVED**
-  (owner 2026-10-29; NWS = proxy for TWC settlement; all codes) and **built** on `m2/2` (BUILD-LOG 2.2; merge review
-  10 fixed); PR #34 open, CI green; **v0.1.11 published** (from `f0e5b10`):
-  installed 00:32 2026-10-29: migrations OK ($20), 24/24 stations, 96 feeds, 0 errors, recording. **Gap check
-  passed** 2026-11-01 (91.8 h, no restart, 39,670 polls, 1 logged gap, no unlogged gaps); **quiet hours passed**
-  (4 nights, none shown). **M2.2 done** (PR #34 merged as `436bef2`; a dated `pnpm audit` exception for
-  minimatch GHSA-g3hv-75wg-m249, owner 2026-11-01, removal parked in PLAN §9). M2 weather 7-day clock started
-  2026-10-29. **M2.3 News: plan APPROVED** (owner 2026-11-01; BUILD-LOG 2.3: GDELT both = GKG files + DOC topic queries; government RSS only; defusedxml + own parser; rest as shown); **built** on `m2/3` (`7c0d40d`, review fixes `a19a332`; BUILD-LOG 2.3: settings v7, gdelt +
-  rss plugins, 12 gov feeds; merge review 15 fixed incl. a fresh-eyes sub-agent per **R16**; dry run clean, DOC API
-  still 429). PR #35 open, CI green; **v0.1.12 published** (test pre-release from `b2548b5`, 2026-11-01). Installed ~20:39 2026-11-01: settings v7 (v6 backed up), 4 plugins running, 12/12 feeds OK, GKG recording, DOC 429. News 7-day clock started 2026-11-01. Next: ~2026-11-02 evening the gap check; then the owner's merge. **M1.13 Replay plan APPROVED** (owner 2026-11-01; BUILD-LOG 1.13: all-market tickers, a market channel, one row one item, rest as shown); **built** on `m1/13` stacked on `m2/3` (`d3f26fa`, fixes `3d2d972`; merge review 18 fixed incl. sub-agent; real-data replay deterministic, settled books 100%). **PR #36 open** (base m2/3 until #35 merges, then retarget to main and rebase); **v0.1.13 published** (test pre-release from `25e2bee`, 2026-11-01; includes M2.3). Installed ~21:45 2026-11-01: upgrade clean (open hour folded, new channels recording, 4 plugins). Chart fix `cff4f24` (no-book markets grew the chart without bound; owner report). **Live check passed** 2026-11-02 (BUILD-LOG 1.13): books 7,060/7,060 settled; momentum parity 239/239 once both sides start equal at the window (a scratch run). Found: the replay does not reproduce a restart (plugins' memory, the live journal's valid recommendations); **fixed** (owner: fix now; `06557b2` on `m1/13`; `m1/14` rebased, its commits now `64d1094` `014d0ea` `c74bf41`): the real command gives 239/239 with no warm-up; 223/239 with 40 min, all 30 on markets from the v0.1.12 stretch without market details. Main got Dependabot PRs #39 to #46 (no conflicts with the stack). **v0.1.14 tagged** (chart fix, from `93d299d`). **M1.14 Settled markets after a restart: plan APPROVED** (owner 2026-11-01, brought forward from §9; BUILD-LOG 1.14: both start + on request, journal settles too), **built** on `m1/14` stacked on `m1/13` (`64d1094`, fixes `014d0ea`; settled markets in the background after the feed is live, owner; merge review 10 fixed). PR #37 open (base m1/13); **v0.1.15 published** (test pre-release from `4f28b12`, 2026-11-01); installed 23:04 2026-11-01; **live check passed** (NBA market reopens, settled pass 4 m 51 s, 527 settled). It found **scalar settlements never scored** (60 markets, 111 checks); owner: fix in M1.14; **built** (`c74bf41`: journal migration 4 `yes_paid_e6`, scored at the payout). **v0.1.16 published** (test pre-release from `93610d8`, 2026-11-01 23:27). Installed; **the fix's live check passed** 2026-11-01 23:46 (backup first, migration 4, 60 scalar markets settled, 105 checks scored). **M1.14 is built and checked**; PR #37 merges after #35 and #36 (drop `6f38e5f` when rebasing onto `main`). Next: PR; a test release on the owner's word; check the NBA market opens. M1.13 after M2.3; momentum v1's week ends ~2026-11-04. **Fresh-eyes review done** (owner 2026-11-02; five sub-agents, 55 findings, itemized to the owner); **M1.R3 approved as listed**; **M1.R3 plan APPROVED** (owner 2026-11-02, all four as recommended; BUILD-LOG 1.R3): `m1/r3a` stacked on `m1/14` (retarget to main after the stack merges); closed checks scored at settlement and the 920 re-scored (journal migration 5); releases gated on green CI + SHA256SUMS + provenance; fees stay in cents (A6 parked). R3a (A, B, C) then R3b (D, E), both before M2.4. **R3a built** on `m1/r3a` (stacked on `m1/14`; `c2530b3` `cd07cf2` `0348da7`, merge-review fixes `8ead5f1`; BUILD-LOG 1.R3a: 19 review findings, 17 fixed, 2 no change; A10 = environment only, owner 2026-11-02). PR #47 open (base m1/14); **v0.1.17 published** (test pre-release from `ad44ffd`, 2026-11-02); **live check on v0.1.17 passed** (BUILD-LOG 1.R3a: re-score at settlement, late checks, ledger exact, flush stall 10-15 ms vs 26-32, replay 120/120 across the restart, books 100% settled); it found 515 never-scored checks (NULL in the scoring filter), **fixed** (`2537c63`), **v0.1.18 published** (test pre-release from `899652b`, 2026-11-02) and its **live check passed** (the 515 scored; only 8 closed checks wait). **M1.R3a is built and checked**; PR #47 merges after #35-#37. **M1.R3b built** on `m1/r3b` stacked on `m1/r3a` (owner: continue; BUILD-LOG 1.R3b; `c41000d` `83c16ad` `7eef70c` `670b10e`, review fixes `0454e16`; merge review 19: 17 fixed, 2 parked in PLAN §9). **PR #48 open** (base m1/r3a), CI green; **v0.1.19 published** (from `078b0ed`; the new workflow passed: gate, build, attest, publish, SHA256SUMS). Next: the owner installs it (one `ikars open` after), then the R3b live checks. **Docs streamlining** asked by the owner 2026-11-02: analysis by two sub-agents, proposal to the owner first. Then on the owner's word (it runs the new release workflow; one `ikars open` needed: cookies now name the port), live checks (incl. a real-data book check, as B11 changes the replay). Then R3b. **Candidate family R. Reversion / fade** (owner
-  2026-11-01: the manual in-play Bengals trade) recorded under D13 as *not approved* and in §9, for the M3 proposal;
-  the trade's figures stay out of the repository (PR #38 merged as `935829d`; drop `6f38e5f` from `m1/14` when the
-  stack is rebased onto `main`). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+- **The open stack** (each PR's base is the one before; merge in this order, only when the owner says so):
+  #35 M2.3 News (`m2/3` → main) → #36 M1.13 Replay → #37 M1.14 Settled markets → #47 M1.R3a → #48 M1.R3b →
+  #49 the docs streamlining (`docs/streamline`: PLAN, BUILD-LOG and this file condensed; the log split by
+  milestone; owner-approved 2026-11-02). When rebasing onto main, drop `6f38e5f` from `m1/14` and update the
+  hashes the docs cite. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+- **Installed:** v0.1.19 (published 2026-11-02 through the four-job release workflow). After the upgrade one
+  `ikars open` signs in again (cookies now name their port). The M1.R3b live check passed on it (BUILD-LOG
+  1.R3b); the Update window's Install click is seen on the next update.
+- **Due:** the M2.3 news gap check (2026-11-02 evening), then the merges above; momentum v1's week ends about
+  2026-11-04, then the Strategy review decides v2 (with M1.R3 C1 and C5).
+- **Then:** M2.4 (settlement rules and the event calendar), plan first.
+- **Still with the owner:** the SignPath application (docs/CODE-SIGNING.md); the two-monitor layout check.
+- **Test releases** are published only on the owner's word ("publish 0.1.x"), from a commit whose CI passed.
+- **IKARS's own read-only Kalshi key** is in the User environment variables `IKARS_KALSHI_KEY_ID` and
+  `IKARS_KALSHI_PRIVATE_KEY_PATH` (separate from KAPS and SPARQ's `KALSHI_*`). Never print or read the id, the path
+  or the file; check with `Test-Path` only; load them into a single command's process.
+- **Backups** go to the KAPS backup share, only inside its own `ikars\` subtree with its own marker; the real path
+  is only in local settings and memory, never in the repository.
 
 ## How the owner wants the work run
 
