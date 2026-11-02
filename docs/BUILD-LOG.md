@@ -1,656 +1,352 @@
 # IKARS build log
 
-One section per milestone and one subsection per slice, each with **Built**, **Verified** (local, live),
-**Review** (the per-commit and per-merge mini reviews' findings and what was done about each; R14),
-**Problems and fixes**, and any decisions taken. The slice table in [PLAN.md](PLAN.md) marks a slice
-"done (BUILD-LOG x.y)".
+How each slice was planned, built and verified: the owner's decisions that shaped it, what was found, what exists,
+the tests and live checks with their numbers, and every review finding with what was done about it (R14). The
+decisions themselves, the build order and the progress table are in [PLAN.md](PLAN.md); a slice there points here
+as "BUILD-LOG <id>". Old wording is in the git history (condensed 2026-11-02, nothing decided or measured dropped).
+
+Each slice uses these blocks, leaving out any that would be empty:
+
+```
+### <id> <title>
+**Status.** Plan approved <date> (<answers>). Built on `<branch>`: `<sha>` (what), ... Done: PR #N merged as
+`<sha>` | Open: PR #N. Releases. Packages. Machine changes.
+**Owner's decisions (<date>).** Choices that shaped the code; deviations from the plan.
+**Found.** Facts learned while planning, building or checking live.
+**Built.** What exists, by area. Never the plan restated.
+**Verified.** Tests and gates; live checks as check | result (the final outcome, with date and version).
+**Review.** Per commit; the merge review as an itemized table (finding, what was done).
+**Kept, changed and why.** Reference code (KAPS, SPARQ, KalTerm3) taken, changed or left.
+**Open.** Owner actions still pending; items parked in PLAN §9.
+```
+
+A passed check replaces its pending line, and the merge goes into Status.
 
 ## M0 Foundation
 
-### 0.1 Survey and proposal (2026-10-26)
+### 0.1 Survey and proposal
 
-**Built:** `CLAUDE.md`, `docs/PLAN.md` (M0 decisions D1 to D12, proposed), this log. No code, no repository yet.
+**Status.** Done 2026-10-26. Built `CLAUDE.md`, `docs/PLAN.md` and this log; no code and no repository yet. The
+decisions the proposal led to are in PLAN (D1 to D21; the M1 slices in §4.1, the gates in §4.2).
 
-**Surveyed:**
-
-- **KAPS** (`main` at `d8eda3b`): Python `uv` workspace. `kaps-core` (signing, REST, WebSocket, fixed-point money,
-  fees) depends only on `cryptography`, `httpx`, `pydantic`, `websockets` and is portable to Windows (one
+**Found (the survey).**
+- **KAPS** (`main` at `d8eda3b`): a Python `uv` workspace. `kaps-core` (signing, REST, WebSocket, fixed-point money,
+  fees) depends only on `cryptography`, `httpx`, `pydantic` and `websockets` and is portable to Windows (one
   POSIX-only file-mode check in `auth.py`, guarded by `os.name`). `kaps-server` and `kaps-analytics` are
   Linux/macOS only by design. KAPS is frozen; its ingest keeps recording on the server host.
-- **KalTerm3** (`main` at `4095516`): .NET 10, WPF terminal (`net10.0-windows`, ScottPlot.WPF, Windows toasts),
-  reconnecting stream client, contracts, fixed-point money and fees in C#, a DPAPI key vault, trading client with a
-  risk layer. Its terminal talks to its own SQL Server–backed API, so IKARS's engine must serve a compatible
-  (or adapted) contract.
+- **KalTerm3** (`main` at `4095516`): .NET 10, a WPF terminal (`net10.0-windows`, ScottPlot.WPF, Windows toasts), a
+  reconnecting stream client, contracts, fixed-point money and fees in C#, a DPAPI key vault, a trading client with
+  a risk layer. Its terminal talks to its own SQL Server–backed API, so IKARS's engine must serve a compatible (or
+  adapted) contract.
 - **SPARQ** (`main` at `8d82def`): forked from KAPS; holds the history and live-book studies (Parquet on the
-  analytics node; read-only role on the KAPS database).
+  analytics node; a read-only role on the KAPS database).
+- **For the owner's additions R10 to R13** (D14 to D17): KAPS's plan already listed synthetic orders (stop,
+  take-profit, bracket/OCO, trailing, condition-triggered) with the warning that they protect nothing while the app
+  is down, but KalshiTerm2 has no implementation of them. SPARQ's notes on the `orderbook_delta` channel, its S1.2a
+  live-book measures and its S1.2b recorder plan cover much of D16. SPARQ's forward test ran to 2026-11-23, so D17
+  added a guard against contaminating it.
 
-**Decisions taken (owner, 2026-10-26):**
+**Owner's decisions (2026-10-26).** The proposal went to the owner in rounds the same day; each outcome is in PLAN:
+1. The direction (beat human traders, not professional bots; PLAN §1.1); D1 with **R9** (Overview, drill-down,
+   cross-reference); D2 (confirmed: the single box, with IKARS's own read-only Kalshi key there); D6 as
+   recommend-only (one-click and auto-snipe parked); D13.
+2. D3, D5, D7 to D11 and D14 to D17 (from R10 to R13). Because custom order types are to become live trade
+   functions, D6 became recommend-only through M6 and live trading in a new M7, behind one executor interface. D9
+   gained a local-model option; D10 public (unlimited Actions minutes); D12 a portable zip plus a user-space
+   installer. D4 (five options) and the installer tool were compared in PLAN; the M1 slices proposed (§4.1).
+3. D4 option C and D12 Velopack. New requirement **R15** designed as D18 (store in M1.5, export in M5); its backups go
+   to the KAPS backup share in an `ikars\` subtree of their own (own marker, a path guard so KAPS's pgBackRest files
+   are never touched, retention per folder).
+4. D18 approved. "What am I missing": a gap review of 21 items became **D19** (fault and soak testing dropped, proved
+   in SPARQ; automatic demotion with its own Strategy review page; remote view parked; social sentiment parked, with
+   a plugin architecture so adding it needs no restructuring). Tier 1 and Tier 2 approved as shown; the compliance
+   review approved. The M1 list was renumbered M1.1 to M1.10, then gained M1.11 (close-out).
+5. A second gap review (A to J) became **D20**; M1.4 split into M1.4a (engine core) and M1.4b (Kalshi feeds).
+6. A third gap review became **D21**. The **scope is frozen** at D1 to D21; the final M1 list (M1.1 to M1.12) and
+   the gates were presented.
 
-- Direction: beat human traders, not professional bots; sniping, momentum and perpetuals are in scope (PLAN §1.1).
-- **D1** approved: Python engine + .NET WPF terminal. Added **R9**: an Overview main screen with drill-down and
-  cross-reference views (PLAN D1, "Terminal navigation model").
-- **D2** confirmed: single box on the workstation; read-only Kalshi key there.
-- **D6** approved as **recommend-only**; one-click and auto-snipe parked.
-- **D13** approved as recommended: news + momentum, then sniping, then perpetuals.
-- D3 to D5 and D7 to D12 still await the owner.
-- Owner additions R10 to R13 (custom order types, GPU, live order-book analysis, SPARQ reuse) became proposals D14
-  to D17. Checked for them: KAPS's plan already listed synthetic orders (stop, take-profit, bracket/OCO, trailing,
-  condition-triggered) with the warning that they protect nothing while the app is down, but KalshiTerm2 has no
-  implementation of them. SPARQ's notes on the `orderbook_delta` channel, its S1.2a live-book measures and its
-  S1.2b recorder plan cover much of D16. SPARQ's forward test runs to 2026-11-23, so D17 adds a guard against
-  contaminating it.
-- Owner's answers later the same day:
-  - Custom order types are to become **live trade functions** eventually, so D6 is amended to recommend-only
-    through M6 and live trading in a new M7, behind one executor interface.
-  - D3, D5, D7, D8 and D11 approved.
-  - D9 approved, with a local-model option added.
-  - D10: **public** (unlimited Actions minutes).
-  - D12: a **portable zip plus a user-space installer**.
-  - D14 to D17 approved.
-  - D4: the owner asked for a comparison. Five options were compared in PLAN D4, and C is recommended (SQLite for
-    state, Parquet for raw feeds, DuckDB for queries).
-  - The installer tool was compared in PLAN D12; Velopack is recommended.
-  - The M1 slices were proposed (PLAN §4.1).
-- Owner, the same day: **D4 option C approved; D12 Velopack approved.** New requirement R15: an audit log fit to
-  keep with a 1040. Designed as D18 (PLAN): an append-only, hash-chained ledger from Kalshi's account records with
-  reconciliation, and a tax-year package (PDF/A summary, Form 8949 and Form 6781 CSVs, JSONL, SHA-256 manifest).
-  The store becomes slice M1.5 and the export goes in M5. The M1 list was renumbered to M1.1 to M1.10 and
-  re-presented.
-- Owner, the same day: the ledger's backups go to **the same NAS share as the KAPS database backups**, in a subfolder
-  tree of their own (PLAN D18): `ikars\` with its own marker, a path guard so KAPS's pgBackRest files are never
-  touched, and retention per folder.
-- Owner, the same day: **D18 approved.** Asked "what am I missing"; a gap review of 21 items was answered and
-  recorded as **D19**:
-  - Tier 1 and Tier 2 approved as shown.
-  - Compliance review approved.
-  - Fault and soak testing dropped (proved in SPARQ).
-  - Automatic demotion approved, with its own Strategy review page.
-  - Remote view parked.
-  - Social sentiment parked, with a plugin architecture so that adding it needs no restructuring.
-  - The M1 slices were revised to M1.1 to M1.11 and re-presented.
-- Owner, the same day: a second gap review (A to J) was approved as **D20**:
-  - point-in-time correctness
-  - LLM safety and reproducibility
-  - fill probability and adverse selection
-  - return per day of capital
-  - tradability filters
-  - provenance
-  - safe upgrades
-  - alert hygiene
-  - diagnostics and the rebuild runbook
-  - performance targets
+**Options weighed (2026-10-26; moved from PLAN in the 2026-11-02 docs streamlining).**
 
-  M1 was refined (M1.4 split into M1.4a engine core and M1.4b Kalshi feeds) and re-presented.
-- Owner, the same day: a third gap review was approved as **D21**:
-  - milestone gates and pre-registered stop rules
-  - the end-to-end momentum slice M1.12
-  - IKARS's own read-only key and a Kalshi request budget that protects KAPS's ingest
-  - the test-data policy
-  - a monthly cost ceiling
+*D1, not chosen:* (a) **all .NET**, reusing all of KalTerm3; (b) **all Python** with a Qt (PySide6) GUI. The
+approved stack was then a Python engine plus a .NET 10 WPF terminal forked from KalTerm3 (`KalTerm.Terminal`,
+`KalTerm.Client`, `KalTerm.Contracts`; WPF Fluent theme), with money computed only in the engine. The terminal part
+was replaced on 2026-10-27 (1.8w).
 
-  The **scope is frozen** at D1 to D21. The final M1 list (M1.1 to M1.12) and the gates were presented.
+*D4, local storage.* Three kinds of data: (1) high-rate raw feeds (book deltas, ticker frames, trades; thousands of
+rows a second at bursts, append-only, read later for back-tests); (2) operational state (items, links, signals,
+recommendations, watch orders, the journal, settings, later orders and fills; frequent small transactional writes
+that must survive a crash, read by the API while the engine writes); (3) analysis over gigabytes (the 77-day
+history, recorded feeds; mostly columnar scans).
+
+| Option | Raw feeds | Operational state | Analysis | Other processes reading while the engine runs | Deployment | Verdict |
+|---|---|---|---|---|---|---|
+| **A. DuckDB only** | Good (appender) | Fair: single-row transactions are much slower than SQLite's | Excellent | **No:** one read-write process locks the file; other processes can open it read-only only when no writer has it | One file, pip package | Simple, but notebooks and tools are blocked while the engine runs, and it is weak at small transactional writes |
+| **B. SQLite only (WAL)** | Fair: fine with batching, but the file grows fast and large scans are slow | **Excellent:** durable (`synchronous=FULL`), mature, readers do not block the writer | Poor at GB-scale scans | Yes | Built into Python and .NET; nothing to install | Ideal for state, wrong tool for analysis |
+| **C. SQLite (state) + Parquet (raw feeds) + DuckDB as the query engine (chosen)** | **Excellent:** hourly Parquet files (Arrow IPC for the open hour, then compacted to Parquet), the same layout SPARQ uses | **Excellent** (SQLite) | **Excellent:** DuckDB queries Parquet directly and can attach the SQLite file read-only | **Yes:** Parquet and SQLite can both be read while the engine writes | Two embedded libraries, no service | Each tool does what it is best at; the format matches SPARQ/KAPS history, so back-tests use one code path |
+| **D. PostgreSQL + TimescaleDB on the workstation** | Excellent | Excellent | Good | Yes | **Poor:** a Windows service, admin install, upgrades and backups. It breaks the portable zip and user-space install (D12). | KAPS's choice for a server, too heavy for a desktop app |
+| **E. The KAPS database on the server host** | (KAPS records no book deltas) | Remote writes would need a write role on KAPS's production database | Good | Yes | Depends on the server and the network | Contradicts D2 (single box) and KAPS's maintenance-only rule; read-only use stays optional (D17) |
+
+*D5, first sources.*
+
+| Option | Source (cost) | Kalshi markets | Notes |
+|---|---|---|---|
+| **A** | BLS, BEA, FRED, Fed calendars; nowcasts such as the Cleveland Fed inflation nowcast (free) | Economics (CPI, jobs, rates) | Release moments are a speed race; the edge, if any, is in pre-release estimates. |
+| **B** (chosen) | NWS / NOAA `api.weather.gov` forecasts and station observations (free) | Weather (highs, rain) | Settles on station values; the KAPS review's option A. Structured, hourly, a good first fit. |
+| **C** (chosen) | General news: RSS/Atom feeds and GDELT (free), with an LLM to link items to markets and estimate impact | Politics, mentions, culture, the long tail | The "news" part proper; human-paced markets; LLM cost to budget. |
+| **D** | Live scores / odds feeds (mostly paid) | Sports | Fast-moving; professionals dominate. |
+| **E** | Exchange spot prices (Coinbase/Kraken WebSocket, free) | Crypto ranges | Fair value from spot and volatility; the KAPS review's option B. |
+
+*D12, installer tooling.*
+
+| Tool | Output | Per-user, no admin | Updates | Licence | Notes |
+|---|---|---|---|---|---|
+| **Velopack (chosen)** | `Setup.exe` **and** a portable zip from one command | Yes (`%LOCALAPPDATA%`) | **Built-in auto-update and delta updates from GitHub Releases** | MIT | Successor to Squirrel; packages any folder, so the Python engine rides along. |
+| WiX Toolset | MSI | Yes (per-user MSI) | None built in | MS-RL | The standard if a true MSI is needed (for example for managed deployment); more authoring work. |
+| Inno Setup | exe | Yes (`PrivilegesRequired=lowest`) | None built in | Free (Inno licence) | Simple and proven; the zip is built separately. |
+| MSIX | msix | Yes | Through App Installer | — | Needs a trusted signing certificate; its sandbox complicates a child Python process. |
+
+WiX was to be added only if an MSI is required (PLAN §9). Whether Velopack's own MSI output fits was to be checked in
+the packaging slice; M1.9 did not need it.
+
+*D15, a note:* a local LLM was trialled for development tooling in KalTerm3 (2026-10-18) and removed; the optional
+local news classifier would be a product use, raised only because the owner asked about the GPU.
 
 ## M1 Skeleton
 
-### 1.1 Repository, CI and security (plan APPROVED 2026-10-26 with open questions 1 to 3 as recommended; branch `m1/1-repo-ci`)
+### 1.1 Repository, CI and security
 
-**Builds.**
-- **Repository:**
-  - `git init` in this folder.
-  - Commit identity is repository-local: `Steve Walsh` and the GitHub no-reply address, as in KAPS. The personal
-    address is never used.
-  - A first commit on `main` holds only the M0 documents: `CLAUDE.md`, `docs/PLAN.md`, `docs/BUILD-LOG.md`,
-    `README.md` (what IKARS is, its status, and a not-affiliated-with-Kalshi note), `LICENSE` (MIT, Steven Walsh),
-    `SECURITY.md`.
-  - Everything else goes on the branch and reaches `main` through PR #1.
-- **Repository hygiene files:**
-  - `.gitattributes`: LF everywhere.
-  - `.editorconfig`: SPARQ's rules plus KalTerm3's C# rules, with LF instead of KalTerm3's CRLF.
-  - `.gitignore`: SPARQ's list plus `*.sqlite*`, `*.db`, `*.arrow`, ledger exports (`*.jsonl`, `IKARS-*.pdf`),
-    `logs/`, `data/`, `bin/`, `obj/`, `TestResults/`, `.vs/`.
-- **Python workspace (`uv`):**
-  - The root `pyproject.toml` takes SPARQ's ruff, mypy strict, pytest and coverage settings (90% gate; the 95%
-    money and fee gate is wired here and takes effect in M1.2).
-  - `.python-version` 3.13: library support, such as CUDA and ONNX wheels, lags on 3.14. It is installed by `uv`
-    into its own cache, leaving the system Python alone.
-  - `packages/ikars-core` and `packages/ikars-engine`, each with only a version module and one test. M1.2 seeds the
-    core from `sparq_core`.
-  - `uv.lock`, with hashes.
-- **.NET solution:**
-  - `Ikars.slnx` (the .NET 10 solution format), `global.json` (SDK 10.0.402), and `Directory.Build.props` from
-    KalTerm3 (nullable, warnings as errors, analysers, Windows-only attribute).
-  - `Directory.Packages.props` (central versions) and NuGet lock files restored in locked mode in CI.
-  - `src/Ikars.Core` (`BuildInfo` only) and `tests/Ikars.Core.Tests` (xUnit v3 on Microsoft Testing Platform), so
-    CI exercises the whole toolchain.
-  - `tools/ci/check-coverage.ps1` from KalTerm3.
-- **CI (`.github/workflows/ci.yml`, `windows-latest`):** every action is pinned by commit SHA, the token is
-  read-only, and runs of the same branch cancel each other.
-  - `python` job: uv pinned, `sync --locked`, ruff format and lint, mypy, pytest with coverage, `pip-audit` on the
-    locked requirements.
-  - `dotnet` job: locked restore, `dotnet format --verify-no-changes`, build, vulnerable-package check, tests, the
-    coverage gate.
-  - `hygiene` job:
-    - **gitleaks** (a pinned release binary, checksum-verified, over the full history);
-    - a **data guard** that fails on any committed data file (`*.parquet`, `*.duckdb`, `*.sqlite*`, `*.arrow`,
-      `*.pem`, `*.pfx`) or any file over 1 MB under `tests/`.
-- **`.github/dependabot.yml`:** weekly updates for `github-actions`, `nuget` and `uv`.
-- **`.github/pull_request_template.md`:** the R14 mini-review checklist, both the per-commit and the per-merge parts.
-- **`docs/TESTING.md`, the test-data policy (D21-4):**
-  - test kinds and markers: `integration` (live Kalshi, opt-in) and `localdata` (needs the workstation's recordings,
-    skipped in CI);
-  - synthetic fixture generators live in each package's `tests/`; the first real ones arrive in M1.2;
-  - only tiny hand-written samples of live data are committed;
-  - never committed: real feeds, articles, account data.
-- `CLAUDE.md` Dev commands filled in.
-
-**Changes on this machine:**
-- A `.git` folder in `IKARS`.
-- `uv` downloads Python 3.13 into its cache; packages go to the `uv` and NuGet caches.
-- Optional (open question 1): gitleaks installed with `winget` for a local pre-commit hook.
-
-**Changes on GitHub (outward-facing):**
-- Create public `swalsh76/IKARS` (MIT), with a description and topics. Wiki and projects off.
-- Turn on secret scanning with **push protection**, Dependabot alerts and security updates, and private
-  vulnerability reporting.
-- Actions:
-  - the default token is read-only;
-  - workflows from fork pull requests need approval.
-- A **ruleset on `main`:**
-  - a pull request is required;
-  - the `python`, `dotnet` and `hygiene` checks must pass;
-  - no force-push or deletion.
-  - No review requirement, since a sole owner cannot approve their own pull request. The owner merges.
-- Push `main` (docs only), push the branch, open PR #1.
-
-**New packages and licences:**
-
-| Package | Licence |
-|---|---|
-| ruff | MIT |
-| mypy | MIT |
-| pytest | MIT |
-| pytest-asyncio | Apache-2.0 |
-| pytest-cov | MIT |
-| coverage | Apache-2.0 |
-| hypothesis | MPL-2.0 |
-| pip-audit | Apache-2.0 |
-| xunit.v3 | Apache-2.0 |
-| coverlet.MTP | MIT |
-| Microsoft.Testing.Extensions.TrxReport | MIT |
-| gitleaks (binary, CI) | MIT |
-
-**Checks:**
-- Everything green locally, then in CI on GitHub's Windows runner.
-- **Planted failures, proved locally and then discarded, never pushed:**
-  - a fake key that gitleaks must catch;
-  - a `*.parquet` file the data guard must catch;
-  - a failing test, a format error and a type error, each of which must turn its job red.
-- The ruleset is shown to block a direct push to `main`.
-- No live Kalshi calls in this slice.
-
-**Open questions:**
-1. Install gitleaks locally (`winget install Gitleaks.Gitleaks`) for a pre-commit hook? Recommended: yes, so a
-   secret is stopped before it is committed rather than only in CI.
-2. .NET naming: the `Ikars.*` prefix and `.slnx`. Recommended: yes.
-3. Repository description. Proposed: "IKARS: real-time Kalshi trade recommendations from news, data and live order
-   books, for Windows 11. Not affiliated with Kalshi."
-
-#### 1.1 progress (2026-10-26): built and verified locally; GitHub steps waiting for the owner's go-ahead
+**Status.** Plan approved 2026-10-26 (open questions 1 to 3 as recommended: gitleaks installed locally for a
+pre-commit hook; the `Ikars.*` prefix and `.slnx`; the proposed repository description). `main` first held only the
+M0 docs (`8f0bcca`). Built on `m1/1-repo-ci`: `e0374c6` (the slice), `d7cbc53` (per-commit review fixes), `f9db0d9`
+(merge-review fixes). GitHub set up on the owner's go-ahead (2026-10-26). **Done:** PR #1 merged as `2f19222`.
+Packages: ruff, mypy, pytest, pytest-asyncio, pytest-cov, coverage, hypothesis, pip-audit, xunit.v3, coverlet.MTP,
+Microsoft.Testing.Extensions.TrxReport, gitleaks (binary, CI). Machine changes: a `.git` folder; `uv` put Python 3.13
+in its cache; gitleaks 8.30.1 installed with `winget`; the pre-commit hook enabled through `core.hooksPath
+tools/hooks`.
 
 **Built.**
-- Commits:
-  - `main` holds the M0 docs (`8f0bcca`);
-  - branch `m1/1-repo-ci` holds the slice (`e0374c6`) and its review fixes (`d7cbc53`).
-- Repository-local identity: Steve Walsh and the GitHub no-reply address.
-- gitleaks 8.30.1 installed with `winget`.
-- The pre-commit hook is enabled through `core.hooksPath tools/hooks`.
+- **Repository:** commit identity repository-local (`Steve Walsh` and the GitHub no-reply address, as in KAPS; the
+  personal address is never used). The first commit on `main` holds only `CLAUDE.md`, `docs/PLAN.md`,
+  `docs/BUILD-LOG.md`, `README.md` (what IKARS is, its status, a not-affiliated-with-Kalshi note), `LICENSE` (MIT,
+  Steven Walsh) and `SECURITY.md`; everything else reaches `main` by pull request.
+- **Hygiene files:** `.gitattributes` (LF everywhere); `.editorconfig` (SPARQ's rules plus KalTerm3's C# rules, LF);
+  `.gitignore` (SPARQ's list plus databases, `*.arrow`, the ledger's exports, `logs/`, `data/`, `bin/`, `obj/`,
+  `TestResults/`, `.vs/`).
+- **Python workspace (`uv`):** the root `pyproject.toml` takes SPARQ's ruff, mypy strict, pytest and coverage
+  settings (90% gate; the 95% money and fee gate wired for M1.2); `.python-version` 3.13 (library support, such as
+  CUDA and ONNX wheels, lags on 3.14; installed by `uv` into its own cache, leaving the system Python alone);
+  `packages/ikars-core` and `packages/ikars-engine` with a version module and one test each; `uv.lock` with hashes.
+  Opt-in tests: IKARS's own `IKARS_LIVE` (on only for exactly `1`) and `IKARS_LOCAL_DATA` (must name an existing
+  folder), matched with `get_closest_marker` in one root `conftest.py`; tested with `pytester`
+  (`tools/ci/test_optin.py`, 9 cases).
+- **.NET solution:** `Ikars.slnx`, `global.json` (SDK 10.0.402), `Directory.Build.props` from KalTerm3 (nullable,
+  warnings as errors, analysers, the Windows-only attribute; NuGetAudit on all packages at level low, so a
+  vulnerable package fails the restore; `RestoreLockedMode` under `GITHUB_ACTIONS`), `Directory.Packages.props`
+  (central versions) and NuGet lock files; `src/Ikars.Core` (`BuildInfo` only) and `tests/Ikars.Core.Tests` (xUnit
+  v3 on Microsoft Testing Platform); `tools/ci/check-coverage.ps1` from KalTerm3.
+- **CI (`.github/workflows/ci.yml`, `windows-latest`):** every action pinned by commit SHA, a read-only token,
+  cancellation of superseded runs for pull requests only, caches (`astral-sh/setup-uv` v10.3.0 and `setup-dotnet`'s
+  NuGet cache keyed on the lock files). Jobs: `python` (uv pinned, `sync --locked`, ruff format and lint, mypy on the
+  packages, `tools/` and `conftest.py`, pytest with coverage, `pip-audit` on the locked requirements); `dotnet`
+  (locked restore, `dotnet format --verify-no-changes`, build, tests, the coverage gate); `hygiene` (**gitleaks**, a
+  pinned, checksum-verified release binary over the full history, and a **data guard**,
+  `tools/ci/data_guard.py`).
+- **Data guard:** fails on any committed data file (Parquet, DuckDB and SQLite files with their WAL, SHM and journal
+  files, `.arrow`, `.feather`, `.pem`, `.pfx`, `.p12`, the ledger's exports `IKARS-<year>-*`; every suffix of a name
+  is checked) or any file over 1 MB under `tests/`, reading sizes from the index (`git ls-files --format`) at the
+  repository's top level. The hook (mode 100755) runs gitleaks on the staged changes and the guard.
+- **`.github/dependabot.yml`** (weekly: `github-actions`, `nuget`, `uv`); **`.github/pull_request_template.md`**
+  (the R14 checklist, per commit and per merge).
+- **`docs/TESTING.md`, the test-data policy (D21-4):** markers `integration` (live Kalshi, opt-in) and `localdata`
+  (the workstation's recordings, skipped in CI); synthetic fixture generators in each package's `tests/`; only tiny
+  hand-written samples of live data committed; never real feeds, articles or account data. `CLAUDE.md` Dev commands
+  filled in.
+- **GitHub:** public `swalsh76/IKARS` with the approved description; wiki, projects and discussions off; branches
+  deleted after merge. Secret scanning **with push protection**, Dependabot alerts and security fixes, private
+  vulnerability reporting. Workflow token read-only by default; workflows from fork pull requests need approval for
+  all outside contributors. Ruleset **"main protection"** (id 25919620), active with no bypass: deletion and
+  non-fast-forward blocked; a pull request required (no review count: a sole owner cannot approve their own pull
+  request; the owner merges); `python`, `dotnet` and `hygiene` must pass.
 
-**Verified locally.**
-- Python 3.13.16 (uv-managed):
-  - ruff format and lint clean; mypy strict clean;
-  - pytest 5 passed, 100% coverage;
-  - pip-audit finds no known vulnerabilities.
-- .NET 10.0.402:
-  - locked restore;
-  - `dotnet format` clean;
-  - build with 0 warnings;
-  - 1 test passed; the coverage gate passes (`Ikars.Core` 100%);
-  - no vulnerable packages.
-- Hygiene: the data guard passes (39 tracked files); gitleaks finds nothing in the history or the staged changes.
-- **Planted failures, all caught and then removed** (none committed):
-  - a fake private key, refused by the hook (gitleaks);
-  - a force-added `.parquet`, refused by the data guard;
-  - a Python failing test, format error and type error;
-  - a C# failing test and format error.
-- **Review fix checked:** a 1 MB file staged and then shrunk on disk is still refused, and the guard gives the same
-  result from a subfolder.
+**Found.** `gitleaks dir .` reported 200 findings, all inside the ignored `.venv` (third-party package test data).
+The hook and CI scan only what git tracks, so the documented command is `gitleaks git`.
 
-**Review (R14).**
-- The M0 commit is docs only. A scan for real host names, the share path and local paths found nothing; gitleaks
-  is clean.
-- The slice commit had `/code-review` run on it at low effort. Two findings, both **fixed** in `d7cbc53`:
-  1. `check-coverage.ps1`, inherited from KalTerm3, judged an assembly with no instrumented lines as 0% and failed
-     CI. It now skips the assembly and lists it.
-  2. `data_guard.py` read sizes from the working tree, so a large staged file could pass once changed on disk, and
-     it only worked from the repository root. It now reads sizes from the index (`git ls-files --format`) at the
-     repository's top level.
-- The fix commit was reviewed by hand: a small diff, and the behaviour was proved by the staged-then-shrunk test.
+**Verified.**
+- **Locally:** Python 3.13.16: ruff format and lint, mypy strict clean; pytest 5 passed, 100% coverage; pip-audit
+  clean. .NET 10.0.402: locked restore, `dotnet format` clean, build with 0 warnings, 1 test passed, the coverage gate
+  passes (`Ikars.Core` 100%), no vulnerable packages. The data guard passes (39 tracked files); gitleaks finds nothing
+  in the history or the staged changes.
+- **Planted failures, all caught and then removed** (none committed): a fake private key (refused by the hook's
+  gitleaks); a force-added `.parquet` (refused by the data guard); a Python failing test, format error and type
+  error; a C# failing test and format error. A 1 MB file staged and then shrunk on disk is still refused, and the
+  guard gives the same result from a subfolder. NuGetAudit, proved in a scratch copy of the .NET files:
+  System.Text.Json 8.0.0 failed the restore with **NU1903**.
+- **GitHub:** a direct push to `main` was refused (`GH013: Repository rule violations`; remote `main` stayed at
+  `8f0bcca`). CI on PR #1, all green on `windows-latest`: first run `python` 39 s, `dotnet` 1 m 0 s, `hygiene` 15 s;
+  after the fixes (`f9db0d9`) 36 s, 1 m 16 s, 14 s.
+
+**Review.** The M0 commit is docs only: a scan for real host names, the share path and local paths found nothing;
+gitleaks clean. Per commit: `e0374c6` (`/code-review` low), 2 findings, both fixed in `d7cbc53`:
+
+| # | Finding | Done |
+|---|---|---|
+| 1 | `check-coverage.ps1`, inherited from KalTerm3, judged an assembly with no instrumented lines as 0% and failed CI | It now skips the assembly and lists it |
+| 2 | `data_guard.py` read sizes from the working tree, so a large staged file could pass once changed on disk, and it only worked from the repository root | It now reads sizes from the index (`git ls-files --format`) at the repository's top level |
+
+`d7cbc53` reviewed by hand (a small diff; the behaviour proved by the staged-then-shrunk test). Merge review
+(`/code-review` medium over the branch against `main`), 10 findings, all checked against the code and fixed in
+`f9db0d9`:
+
+| # | Finding | Done |
+|---|---|---|
+| 1 | `KALSHI_INTEGRATION=0` turned live tests *on* (any non-empty value counted), and the variable is shared with KAPS and SPARQ | IKARS's own `IKARS_LIVE`, on only for exactly `1`; `IKARS_LOCAL_DATA` must name an existing folder |
+| 2 | `marker in item.keywords` also matched folder, module and test names | `get_closest_marker`; both behaviours tested with `pytester` (`tools/ci/test_optin.py`, 9 cases) |
+| 3 | The data guard missed `.sqlite3`, `-wal`/`-shm`/`-journal`, `.duckdb.wal`, `.feather`, `.p12` and the ledger's exports | All refused (every suffix of a name is checked; the exports match `IKARS-<year>-*`); `.gitignore` widened to match |
+| 4 | The coverage merge keyed lines on each report's relative filename, so different `<sources>` roots could double-count | Lines keyed on full paths; a duplicated report was shown to leave the totals unchanged |
+| 5 | An unmeasured or uninstrumented production assembly passed the gate | Every `src` project must be measured or listed in `-AllowEmpty`; a required project missing from the reports was shown to fail (exit 1) |
+| 6 | The hook was committed as 100644, so other platforms would ignore it | Now 100755 |
+| 7 | mypy did not check `tools/` or `conftest.py` | It does now, in CI and in the dev commands |
+| 8 | A newer push to `main` cancelled the previous merge's CI | Cancellation applies to pull requests only |
+| 9 | The hand-made vulnerable-package step duplicated NuGetAudit with a fragile regex | NuGetAudit set in `Directory.Build.props` (all packages, level low, errors through warnings-as-errors); proved in a scratch copy: System.Text.Json 8.0.0 failed the restore with **NU1903** |
+| 10 | No caching on the Windows runners | `astral-sh/setup-uv` v10.3.0 (pinned by SHA; a release over two weeks old) with its cache, and `setup-dotnet`'s NuGet cache keyed on the lock files |
+
+Per commit: `f9db0d9` (`/code-review` low): "locked mode no longer set" was a **false positive**
+(`RestoreLockedMode` is in `Directory.Build.props` under `GITHUB_ACTIONS`, outside the reviewed hunk); a report with
+no `<sources>` crashed the coverage gate, **fixed** and tested with a hand-made report; the ledger-export rule
+blocked any `ikars-*.csv/.pdf/.txt`, **fixed** (it matches only `IKARS-<year>-*`; `ikars-notes.csv` tested as
+allowed).
 
 **Kept, changed and why.**
-- *Kept:*
-  - SPARQ's ruff, mypy, pytest and coverage settings, and its `.gitignore`, extended for databases, ledger exports
-    and logs;
-  - KalTerm3's `Directory.Build.props`, the central package versions, the test project shape and the coverage
-    script.
-- *Changed:*
-  - LF instead of KalTerm3's CRLF;
-  - NuGet lock files restored in locked mode (KalTerm3 had none);
-  - Python 3.13 floor (SPARQ allows 3.12);
-  - the opt-in test markers live in one root `conftest.py` instead of per package;
-  - gitleaks and the data guard are new.
+- *Kept:* SPARQ's ruff, mypy, pytest and coverage settings, and its `.gitignore`, extended for databases, ledger
+  exports and logs; KalTerm3's `Directory.Build.props`, the central package versions, the test project shape and the
+  coverage script.
+- *Changed:* LF instead of KalTerm3's CRLF; NuGet lock files restored in locked mode (KalTerm3 had none); a Python
+  3.13 floor (SPARQ allows 3.12); the opt-in test markers live in one root `conftest.py` instead of per package;
+  gitleaks and the data guard are new.
 
-**Problems and fixes.**
-- `gitleaks dir .` reported 200 findings, all inside the ignored `.venv`: third-party package test data. The hook
-  and CI scan only what git tracks, so the documented command is `gitleaks git`.
-- Files written by Python on Windows get CRLF in the working tree. git normalises them to LF on commit
-  (`.gitattributes`), so this only matters for exact-text edits.
+### 1.2 `ikars-core`
 
-#### 1.1 GitHub (2026-10-26, owner's go-ahead)
+**Status.** Plan approved 2026-10-26. Built on `m1/2-core`: `344bb3c` (the seed), `046a396` (key files private on
+Windows), `3d2b23d` (the account signer and client), `0f1769c` (account models and reader), `4d3801c` (the order
+book), `8a0726f` (native order options), `96a5df4` (the key-id guard and live checks), `ef0a714` (books without a
+`clock`), `ff5a13d` (merge-review fixes), then the CI fix for the runner's ACLs. **Done:** PR #3 merged by the
+owner's instruction as `3485b16` (2026-10-27 00:18 UTC). Packages (carried from SPARQ): cryptography, httpx,
+pydantic, websockets; dev `hypothesis` already present. Machine changes: none beyond the repository (the slice reads
+the key file's ACL, never its contents). The owner added a local permission rule so the assistant can run
+`gh pr merge` when asked (`.claude/settings.local.json`, git-ignored).
 
-**Done.**
-- Created public `swalsh76/IKARS` with the approved description; wiki, projects and discussions off; branches
-  deleted after merge.
-- Secret scanning **with push protection**, Dependabot alerts and security fixes, and private vulnerability
-  reporting turned on.
-- Workflow token read-only by default; workflows from fork pull requests need approval for all outside
-  contributors.
-- `main` pushed (`8f0bcca`).
-- Ruleset **"main protection"** (id 25919620), active with no bypass:
-  - deletion and non-fast-forward blocked;
-  - a pull request is required (no review count: a sole owner cannot approve their own pull request);
-  - the checks `python`, `dotnet` and `hygiene` must pass (GitHub Actions).
-- PR #1 opened from `m1/1-repo-ci`.
-
-**Verified.**
-- **A direct push to `main` was refused:** `GH013: Repository rule violations`. Remote `main` stayed at `8f0bcca`.
-- CI on PR #1, first run, all green on `windows-latest`:
-  - `python` 39 s;
-  - `dotnet` 1 m 0 s;
-  - `hygiene` 15 s.
-
-**Review (R14), per merge.**
-
-`/code-review` at medium effort over the branch against `main` found 10 issues. All were checked against the code
-and all **fixed** in `f9db0d9`:
-
-1. `KALSHI_INTEGRATION=0` turned live tests *on* (any non-empty value counted), and the variable is shared with
-   KAPS and SPARQ. Now IKARS's own `IKARS_LIVE`, on only for exactly `1`; `IKARS_LOCAL_DATA` must name an
-   existing folder.
-2. `marker in item.keywords` also matched folder, module and test names. Now `get_closest_marker`. Both behaviours
-   are tested with `pytester` (`tools/ci/test_optin.py`, 9 cases).
-3. The data guard missed `.sqlite3`, `-wal`/`-shm`/`-journal`, `.duckdb.wal`, `.feather`, `.p12` and the ledger's
-   exports. All are now refused (every suffix of a name is checked; the exports match `IKARS-<year>-*`), and
-   `.gitignore` is widened to match.
-4. The coverage merge keyed lines on each report's relative filename, so different `<sources>` roots could
-   double-count. Lines are now keyed on full paths; a duplicated report was shown to leave the totals unchanged.
-5. An unmeasured or uninstrumented production assembly passed the gate. Every `src` project must now be measured,
-   or be listed in `-AllowEmpty`; a required project missing from the reports was shown to fail (exit 1).
-6. The hook was committed as 100644, so other platforms would ignore it. Now 100755.
-7. mypy did not check `tools/` or `conftest.py`. It does now, in CI and in the dev commands.
-8. A newer push to `main` cancelled the previous merge's CI. Cancellation now applies to pull requests only.
-9. The hand-made vulnerable-package step duplicated NuGetAudit with a fragile regex. NuGetAudit is now set in
-   `Directory.Build.props` (all packages, level low, errors through warnings-as-errors). Proved in a scratch copy:
-   System.Text.Json 8.0.0 failed the restore with **NU1903**.
-10. No caching on the Windows runners. Now `astral-sh/setup-uv` v10.3.0 (pinned by SHA; a release over two weeks
-    old) with its cache, and `setup-dotnet`'s NuGet cache keyed on the lock files.
-
-Per-commit `/code-review` (low) on `f9db0d9`:
-- "Locked mode no longer set": **false positive**. `RestoreLockedMode` is in `Directory.Build.props` under
-  `GITHUB_ACTIONS`; it was outside the reviewed hunk.
-- A report with no `<sources>` crashed the coverage gate: **fixed**, and tested with a hand-made report.
-- The ledger-export rule blocked any `ikars-*.csv/.pdf/.txt`: **fixed**. It now matches only `IKARS-<year>-*`, and
-  `ikars-notes.csv` is tested as allowed.
-
-**Problems and fixes.** A PowerShell test command was blocked by the assistant's safety check (a `Remove-Item` on a
-temp wildcard was misread); nothing had run. The vulnerable-package test was redone in a scratch copy of the .NET
-files instead, which left the working tree untouched.
-
-**CI after the fixes** (`f9db0d9`), all green:
-- `python` 36 s
-- `dotnet` 1 m 16 s
-- `hygiene` 14 s
-
-The caches fill on this first run, so later runs should be quicker. **Ready for the owner to merge PR #1.**
-
-### 1.2 `ikars-core` (plan APPROVED 2026-10-26; branch `m1/2-core`)
-
-**Builds.**
-
-1. **Seed `ikars_core` from SPARQ's `sparq_core`.**
-   - The source is about 2,260 lines in 11 modules: auth, clock, config, endpoints, fees, fixedpoint, models,
-     ratelimit, rest, ws, ws_models.
-   - Its tests come too (about 3,900 lines), with the 12 fixtures (already made-up: `KXDEMO-…`) and the golden
-     vectors. `fees.json` is 970,569 bytes, under the data guard's 1 MB limit.
-   - The exact SPARQ commit is recorded (open question 1).
-   - Renames:
-     - `sparq` → `ikars`;
-     - `SPARQ_*` settings → `IKARS_*`;
-     - the live switch → `IKARS_LIVE`;
-     - the key → `IKARS_KALSHI_KEY_ID` and `IKARS_KALSHI_PRIVATE_KEY_PATH`.
-   - **`test_live_ratelimit.py` is dropped entirely**: the rate-limit ramp stays banned.
-   - The 95% coverage gate on `fixedpoint.py` and `fees.py` goes into CI.
-2. **A key-file permission check on Windows.** SPARQ's check is POSIX-only, so on Windows it checks nothing.
-   - The new check reads the file's ACL through the Windows API (`ctypes`, no new package).
-   - It refuses to load a key that any principal other than the owner, SYSTEM or Administrators can read, and
-     gives the `icacls` command that fixes it.
-   - Tested on temporary files whose ACLs the tests set.
-3. **A signed read-only account client** for D18's ledger import and D21-3's limits:
-   - GET only, through the same guard as the public client;
-   - its own allow-list (`/portfolio/...` reads and `/account/limits`), signed with the existing `DataSigner`;
-   - account responses are never logged;
-   - models for balance, positions, fills, settlements and account limits. Transfers and interest come too *if*
-     the API has endpoints for them; checked against Kalshi's docs in the slice, and recorded as a D18 gap if not.
-4. **Order-book models:**
-   - `orderbook_snapshot` and `orderbook_delta` messages (`seq`, `clock`, fixed-point levels);
-   - a pure in-memory book that applies deltas and reports a gap.
-
-   The keeper and resync logic belong to M1.4b. SPARQ's unmerged branches are checked first, and anything already
-   built there is reused.
-5. **Native order options re-checked** against Kalshi's API reference (for D14). Written up in
-   `docs/research/kalshi-order-options.md`: types, time-in-force, post-only, reduce-only, expiry, self-trade
-   prevention, order groups if any.
-6. **Account-level limits (D21-3):** read once from `GET /account/limits` and recorded (open question 2).
-7. **Contract tests:** hand-written fixtures with made-up values for every new model.
-
-**Changes on this machine:** none beyond the repository. The slice reads the key file's ACL (not its contents) to
-check it. If the ACL is too open, the owner is given the command; the assistant does not change it (open
-question 3).
-
-**New packages and licences** (carried from SPARQ):
-
-| Package | Licence |
-|---|---|
-| cryptography | Apache-2.0 or BSD-3 |
-| httpx | BSD-3 |
-| pydantic | MIT |
-| websockets | BSD-3 |
-
-Dev only: `hypothesis` (MPL-2.0), already present. The engine–terminal contracts use `msgspec` from M1.7; the core
-keeps SPARQ's pydantic models.
-
-**Live checks** (GET only, IKARS's own key, about 100 requests in all, nothing printed but public data and status
-codes):
-- `test_live_public` (about 15 GETs);
-- `test_live_bounds` (about 40);
-- `test_live_ws` (subscribe commands on public channels);
-- new `test_live_account`: signed GETs for balance, positions, fills, settlements and limits. It asserts shapes
-  only and **never reports an account value**.
-
-**Open questions.**
-1. **Seed from SPARQ `main` (`15669a4`) or its review clean-up branch `s1/2q-cleanup` (`c017add`)?** The clean-up
-   was approved in SPARQ but is not merged yet. It touches 12 files in `sparq-core`: one rate-limited client
-   config, generic endpoint readers, one model base. *Recommended: `c017add`*, so the refactor is not ported twice.
-   The commit is recorded in this log.
-2. **WebSocket market-subscription limit:** read the account limits only now, and learn the WebSocket limit
-   passively in M1.4b (by recording any "limit reached" error), never by probing? *Recommended: yes.* Probing
-   would be close to the benchmarking the Developer Agreement forbids.
+**Owner's decisions (2026-10-26).**
+1. Seed from SPARQ's review clean-up branch `s1/2q-cleanup` at **`c017add`** (approved in SPARQ, not yet merged; it
+   touches 12 files in `sparq-core`: one rate-limited client config, generic endpoint readers, one model base), so
+   the refactor is not ported twice.
+2. The WebSocket market-subscription limit is learned passively in M1.4b (by recording any "limit reached" error),
+   never probed: probing would be close to the benchmarking the Developer Agreement forbids.
 3. If the key file's ACL lets other users read it, the owner runs the `icacls` command the assistant gives; the
-   assistant never changes the key file. *Recommended: yes.*
+   assistant never changes the key file.
 
-**Owner's answers (2026-10-26):**
-1. Seed from SPARQ's `s1/2q-cleanup` at **`c017add`**.
-2. The WebSocket subscription limit is learned passively in M1.4b, never probed.
-3. If the key file's ACL is too open, the owner runs the `icacls` command; the assistant never changes it.
-
-PR #1 (M1.1) was merged by the owner as `2f19222`, and CI on `main` is green.
-
-#### 1.2 progress (2026-10-26)
-
-**Built (commits on `m1/2-core`).**
-1. **Seed** (`344bb3c`): `sparq-core` at SPARQ `c017add`, copied with its tests, made-up fixtures and golden
-   vectors.
-   - Renamed throughout. IKARS's own variables: `IKARS_LIVE`, `IKARS_KALSHI_ENV`, `IKARS_KALSHI_KEY_ID`,
-     `IKARS_KALSHI_PRIVATE_KEY_PATH`; KAPS's `KALSHI_ENV` can no longer switch IKARS to production.
-   - The rate-limit ramp test is dropped.
-   - The package conftest's own opt-in hook is removed, since it used SPARQ's fragile `item.keywords` check.
-   - mypy runs in two CI steps (two modules named `conftest`).
-   - The 95% coverage gate for money and fee code is added to CI.
-   - 923 tests pass on Windows.
-2. **Key files private on Windows** (`046a396`): `winacl` reads the DACL through `ctypes` and refuses a key that
-   anyone but the owner (or OWNER RIGHTS), SYSTEM or Administrators can read, giving the `icacls` fix. SPARQ's
-   check was POSIX-only. **The owner's IKARS key file passes**; only its ACL was read.
-3. **Account reader** (`3d2b23d`):
-   - `AccountSigner` signs exactly the account reads D18 needs, plus the account limits.
-   - `KalshiAccountClient` is the one GET-only client class, preset for those reads, with every attempt signed
-     afresh.
-   - **A hole closed:** SPARQ's data signer and public client allowed every `/historical` route, but Kalshi's
-     reference shows `/historical/fills`, `/orders` and `/positions` are account data. Both now allow only cutoff,
-     markets and trades there.
-4. **Account models and reader** (`0f1769c`): balance, positions (live and archived), fills (live and historical),
-   settlements, deposits, withdrawals, instance transfers and limits. Kalshi's cent fields are converted to dollar
-   millionths. **Kalshi has no interest endpoint (D18 gap):** interest reaches the ledger only as a balance change
-   it cannot explain, so reconciliation must show it and the tax package must name it.
-5. **Order book** (`4d3801c`): the `orderbook_snapshot` and `orderbook_delta` models and a pure in-memory
-   `OrderBook` (stale-clock, no-snapshot and broken-on-negative rules; best ask is $1 minus the other side's best
-   bid; crossed books reported). SPARQ had no book code on any branch.
-6. **Native order options** (`8a0726f`): `docs/research/kalshi-order-options.md`. Every order is a priced limit on
-   the YES book. There is no market, stop, take-profit, trailing, OCO or bracket order. Order groups (cancel all
-   when a contracts cap is hit within a rolling 15 s), `expiration_time`, `cancel_order_on_pause`, `post_only` and
-   `reduce_only` are the native building blocks. Each D14 type is mapped onto them.
-7. **Key-id guard and live checks** (`96a5df4`): see Problems.
-
-**Verified.**
-- Locally: about 1,020 tests pass, coverage 97.5%, money and fees 100%; ruff, mypy and pip-audit clean.
-- **Live (public, no key; about 55 GETs), all passed:**
-  - trades `min_ts` inclusive and `max_ts` exclusive, live and historical;
-  - the largest page is 1,000 (1,001 gives HTTP 400);
-  - cursors are stable, with no duplicates, newest first;
-  - one 429 on each paged walk, retried.
-- **Live with the key: blocked** (see Problems).
-
-**Review (R14).** `/code-review` at low effort on every commit:
-- seed, ACL check, signers, account models, book: no findings;
-- key-id guard: one finding, **fixed** before the commit (the error reason was judged on the untrimmed value).
-
-**Problems and fixes.**
-- The first signed live run got **401 `INVALID_PARAMETER`** on every host. The stored `IKARS_KALSHI_KEY_ID`
-  contains quotes or spaces, so it is not the bare 36-character id; the key file itself loads. **The owner is
-  re-setting the variable.**
-- The signer now refuses such an id with a clear reason that never shows the value.
-- After the variable is fixed: run `test_live_account` and `test_live_ws` (including the order-book check), then
-  close the slice.
-
-#### 1.2 live checks and merge review (2026-10-26, after the owner re-set the key id)
-
-**Verified live with IKARS's own key** (GET and subscribe only):
+**Found.**
+- **A hole in SPARQ:** its data signer and public client allowed every `/historical` route, but Kalshi's reference
+  shows `/historical/fills`, `/orders` and `/positions` are account data.
+- **Kalshi has no interest endpoint (D18 gap):** interest reaches the ledger only as a balance change it cannot
+  explain, so reconciliation must show it and the tax package must name it.
+- **Native order options** (`docs/research/kalshi-order-options.md`): every order is a priced limit on the YES book.
+  There is no market, stop, take-profit, trailing, OCO or bracket order. Order groups (cancel all when a contracts
+  cap is hit within a rolling 15 s), `expiration_time`, `cancel_order_on_pause`, `post_only` and `reduce_only` are
+  the native building blocks; each D14 type is mapped onto them.
+- SPARQ had no order-book code on any branch.
+- The first signed live run got **401 `INVALID_PARAMETER`** on every host: the stored `IKARS_KALSHI_KEY_ID`
+  contained quotes or spaces, so it was not the bare 36-character id (the key file itself loaded). The owner re-set
+  the variable; the signer now refuses such an id with a clear reason that never shows the value.
 - Production accepts the signature on both hosts; the demo answers "not found", as expected for a production key.
-- **Account (4 checks):** every one of the owner's real records parsed, under the final, stricter models: positions
-  (live, settled and archived), fills, historical fills, settlements, deposits, withdrawals and instance transfers.
-  Fills carry a direction and dollar fields arrive as text.
-  - Kalshi's undocumented `updated_ts` and `created_ts` are **Unix seconds**.
-  - The API tier is **basic**: read bucket 200 tokens/s with a burst of 600, write 100/s with a burst of 100 (each
-    request costs tokens). This is the D21-3 budget input.
-- **WebSocket (5 checks):**
-  - the signed handshake succeeds;
-  - 1,563 frames parsed with no errors and no unknown fields;
-  - no `seq` gaps;
-  - a forced disconnect reconnects;
-  - adding and removing markets is not a gap;
-  - the receive delay after `sending_ts_ms` is about 46 ms.
-- **Order book:**
-  - Production book messages carry **no `clock`** (Kalshi's reference has it; the changelog dates it
-    2026-10-29). The first run therefore rejected 17,772 deltas in 20 s, and the model was fixed (`ef0a714`).
-  - After the fix: 33,464 book messages applied in 30 s on the three busiest markets, **none broken**.
-  - The book at each ticker frame's own `ts_ms` matched the ticker **86 of 87 times**, which confirms that both
-    sides are bids and a YES ask is $1 minus the best NO bid.
-  - Delta rates were **783, 234 and 98 a second** (the 15-minute BTC, ETH and XRP contracts). This sizes M1.4b's
-    watched set.
+- Fills carry a direction, and dollar fields arrive as text. Kalshi's undocumented `updated_ts` and `created_ts`
+  are **Unix seconds**.
+- The API tier is **basic**: read bucket 200 tokens/s with a burst of 600, write 100/s with a burst of 100 (each
+  request costs tokens). This is the D21-3 budget input.
+- **Production book messages carry no `clock`** (Kalshi's reference has it; the changelog dates it 2026-10-29). The
+  first run therefore rejected 17,772 deltas in 20 s; the model was fixed (`ef0a714`).
+- The book at each ticker frame's own `ts_ms` matched the ticker **86 of 87 times**, which confirms that both sides
+  are bids and a YES ask is $1 minus the best NO bid. (A first comparison was too naive for markets this fast, about
+  800 deltas a second against a ticker about once a second; it now compares at matching times.)
+- Delta rates were **783, 234 and 98 a second** (the 15-minute BTC, ETH and XRP contracts). This sizes M1.4b's
+  watched set.
+- **CI on PR #3 (a real Windows difference):** on GitHub's runner, files that `runneradmin` creates are owned by the
+  Administrators group, so the user's own access to its key was reported as another reader. The account running the
+  process is now an expected reader too, read from its access token. An undeclared `GetCurrentProcess` handle was
+  truncated to 32 bits at first; pointer-sized `ctypes` declarations fixed that. The deny test denies read-data only
+  (`(RD)`): denying `(R)` also denies `READ_CONTROL`, and with it reading the ACL.
 
-**Review (R14), per merge.** `/code-review` at medium effort over `main...m1/2-core` found 10 issues. All were
-checked against the code, and all **fixed** in `ff5a13d`:
+**Built.**
+- **The seed** (`344bb3c`): `sparq-core` at SPARQ `c017add` (about 2,260 lines in 11 modules: auth, clock, config,
+  endpoints, fees, fixedpoint, models, ratelimit, rest, ws, ws_models), copied with its tests (about 3,900 lines),
+  the 12 made-up fixtures (`KXDEMO-…`) and the golden vectors (`fees.json` 970,569 bytes, under the guard's 1 MB).
+  IKARS's own variables: `IKARS_LIVE`, `IKARS_KALSHI_ENV`, `IKARS_KALSHI_KEY_ID`, `IKARS_KALSHI_PRIVATE_KEY_PATH`;
+  KAPS's `KALSHI_ENV` can no longer switch IKARS to production. mypy runs in two CI steps (two modules named
+  `conftest`); the 95% coverage gate on `fixedpoint.py` and `fees.py` is in CI.
+- **Key files private on Windows** (`winacl`): reads the DACL through `ctypes` (no new package) and refuses a key
+  that anyone but the owner (or OWNER RIGHTS), SYSTEM, Administrators or the account running the process can read,
+  counting conditional (callback) allow entries and `WRITE_DAC`/`WRITE_OWNER`, and gives the `icacls` fix. Key-loading
+  errors say "the private key file" and the fix commands use the environment variable, never the path.
+- **The account reader:** `AccountSigner` signs exactly the account reads D18 needs plus `/account/limits`;
+  `KalshiAccountClient` is the one GET-only client class, preset for those reads, every attempt signed afresh, and it
+  refuses any other signer. Account responses are never logged. Models for balance, positions (live and archived),
+  fills (live and historical; the direction required, from `outcome_side` or `book_side`, else the legacy `side` and
+  `action`, disagreeing fields refused), settlements, deposits, withdrawals, instance transfers and limits. Kalshi's
+  cent fields become dollar millionths; account dollar fields take text only. One `payloads()` paging loop.
+- **Route rules:** one table (`auth.public_route`); `/historical` allows only cutoff, markets and trades for both the
+  data signer and the public client. The data key's WebSocket accepts market-data channels only
+  (`MARKET_DATA_CHANNELS`).
+- **The order book:** `orderbook_snapshot` and `orderbook_delta` models (`seq`, an optional `clock`, fixed-point
+  levels) and a pure in-memory `OrderBook` (stale-clock, no-snapshot and broken-on-negative rules; best ask is $1
+  minus the other side's best bid; crossed books reported). A snapshot builds both sides before replacing either; the
+  parser refuses negative sizes and non-positive prices. The keeper and resync belong to M1.4b.
+- The core keeps SPARQ's pydantic models; the engine–terminal contracts use `msgspec` from M1.7.
 
-1. The data key's WebSocket would subscribe to *any* channel, private account channels included. It now accepts
-   market-data channels only (`MARKET_DATA_CHANNELS`).
-2. The data key could sign `/account/limits` (account data), and the account client did not check its signer at
-   run time. Limits are now the account reader's only, and the client refuses any other signer. The reference
-   signing vectors for that route pass through the account reader with the identical signature.
-3. A bad side in a snapshot left a half-applied book reporting ready. Both sides are now built before either is
-   replaced, and the parser refuses negative sizes and non-positive prices.
-4. Key-loading errors contained the key file's path (CLAUDE.md forbids printing key paths). They now say "the
-   private key file", and the fix commands use the environment variable.
-5. A fill could parse with no direction, which would silently corrupt the ledger's cost basis. The direction is
-   now required: taken from `outcome_side` or `book_side`, or else from the legacy `side` and `action`.
-   Disagreeing fields are refused.
-6. The ACL check missed conditional (callback) allow entries and `WRITE_DAC`/`WRITE_OWNER`. They are now counted;
-   the rights are tested with icacls.
-7. `positions` duplicated the client's paging loop with weaker checks. There is now one `payloads()` loop.
-8. The public route rules existed twice with different regexes. There is now one table (`auth.public_route`).
-9. An integer in a dollar field would have been read as whole dollars, a 100-fold error if Kalshi ever sent cents
-   there. Account dollar fields now take text only.
-10. A 36-character malformed key id got a misleading reason. It now gets the right one.
+**Verified.** 1,025 tests (923 at the seed; about 1,020 at 97.5% before the merge review); coverage about 97%, money and fees 100%; ruff, mypy and pip-audit clean. Live: 8 public
+and 9 signed checks pass (GET and subscribe only, IKARS's own key):
 
-**Problems and fixes (this part).**
-- The missing `clock`: see above.
-- The first live book comparison was too naive for markets this fast (about 800 deltas a second against a ticker
-  about once a second). It now compares at matching times.
+| Check | Result |
+|---|---|
+| Public (no key, about 55 GETs) | trades `min_ts` inclusive and `max_ts` exclusive, live and historical; the largest page is 1,000 (1,001 gives HTTP 400); cursors stable, no duplicates, newest first; one 429 on each paged walk, retried |
+| Account (4 checks) | every one of the owner's real records parsed under the final, stricter models: positions (live, settled and archived), fills, historical fills, settlements, deposits, withdrawals and instance transfers; no account value reported |
+| WebSocket (5 checks) | the signed handshake succeeds; 1,563 frames parsed with no errors and no unknown fields; no `seq` gaps; a forced disconnect reconnects; adding and removing markets is not a gap; receive delay after `sending_ts_ms` about 46 ms |
+| Order book | after the `clock` fix, 33,464 book messages applied in 30 s on the three busiest markets, **none broken**; 86 of 87 ticker matches |
+| Key file ACL | the owner's IKARS key file passes (only its ACL read), also after the CI fix |
 
-**Close-out of M1.2.**
-- Offline: 1,025 tests pass; coverage about 97%, money and fees 100%; ruff, mypy and pip-audit clean.
-- Live: 8 public checks and 9 signed checks pass.
-- Left for later slices: the order-book keeper and resync, the watched set and the request budget (M1.4b); the
-  ledger store and import (M1.5).
-- Interest is not exposed by Kalshi's API (a D18 gap): the ledger's reconciliation must show unexplained balance
-  changes and the tax package must name them.
+**Review.** Per commit (`/code-review` low on every commit): seed, ACL check, signers, account models, book: no
+findings; key-id guard: 1, fixed before the commit (the error reason was judged on the untrimmed value). Merge review
+(`/code-review` medium over `main...m1/2-core`), 10 findings, all checked against the code and fixed in `ff5a13d`:
 
-**CI on PR #3 (first run): `python` failed, a real Windows difference.**
-- On GitHub's runner, files that `runneradmin` creates are owned by the Administrators group, so the user's own
-  access to its key was reported as another reader.
-- Fixed: the account running the process is an expected reader too, read from its access token. An undeclared
-  `GetCurrentProcess` handle was truncated to 32 bits at first; pointer-sized `ctypes` declarations fixed that.
-- The deny test now denies read-data only (`(RD)`): denying `(R)` also denies `READ_CONTROL`, and with it reading
-  the ACL.
-- The owner's own key file still passes.
-
-**M1.2 done:** PR #3 merged by the owner's instruction as `3485b16` (2026-10-27 00:18 UTC). The owner added a
-local permission rule so the assistant can run `gh pr merge` when asked; `.claude/settings.local.json` is
-git-ignored.
-
-### 1.3 UI mock-ups (plan APPROVED 2026-10-27: an HTML Artifact; branch `m1/3-mockups`)
-
-**Builds.** Clickable mock-ups of the terminal's navigation model (R9), with made-up data (`KXDEMO-…`), for the
-owner's approval **before M1.8 builds any screen**. They follow the Windows 11 Fluent look of KalTerm3's WPF
-terminal, and its existing views (Markets, MarketDetail, OrderBook, CandleChart, Alerts, Status) are the starting
-point.
-
-1. **Overview (main screen):**
-   - top recommendations (expected value after costs, return per day, size, a "why" line);
-   - live movers;
-   - latest source items with their linked markets;
-   - portfolio and exposure (G1);
-   - perp funding;
-   - the journal's scorecard;
-   - a health strip (feeds, latency, backups, storage, cost).
-
-   Every element links to a drill-down.
-2. **Drill-down, markets path:** category → series → event → market detail (price chart with news markers, order
-   book depth, the entry and exit P&L scenarios of D7) → recommendation detail (evidence, provenance, lifecycle).
-   Breadcrumbs, back and forward.
-3. **Cross-reference panel:** a docked panel for whatever is selected: source items that moved it, related
-   markets, a perp hedge, past recommendations and outcomes; selection kept in sync.
-4. **Health view** (G10, G11, J, D21-5) and the **alert** styles by priority (H).
-5. **Hotkeys overlay, dark and light, a multi-monitor layout sketch** (G16).
-
-**Medium (open question 1).** *Recommended:* one self-contained HTML mock-up, published as a **private claude.ai
-Artifact** for the owner to click through and comment on. Its source is kept in `docs/design/mockups/` (made-up
-data only). It is fast to change between rounds; the WPF build in M1.8 then follows the approved version.
-*Alternative:* a throwaway WPF/XAML prototype, closer to the final look but slower to iterate.
-
-**Changes on any machine:** none (a private artifact on the owner's claude.ai account).
-
-**New packages:** none in the product. The mock-up may load a charting library from a CDN, pinned and only in the
-mock-up.
-
-**Live checks:** none.
-
-**Open questions.**
-1. HTML Artifact (recommended) or a WPF prototype?
-2. Rounds: the owner comments; the assistant revises; **approval is recorded in this log** before M1.8.
-
-### 1.4a Engine core (plan APPROVED 2026-10-27: TOML settings, drop-oldest with a recorded gap, JSON-lines logs; branch `m1/4a-engine-core`)
-
-**Builds** (in `ikars-engine`; no network in this slice):
-
-1. **Configuration and paths.**
-   - Settings in a versioned TOML file (G15, G): read with the standard library's `tomllib`, written with
-     `tomli-w` (already in the lock).
-   - Data, logs and settings under `%LOCALAPPDATA%\IKARS`, or beside the program when `portable.marker` exists
-     (D12).
-   - Secrets are never stored in the settings, only the names of the environment variables (D8).
-2. **Logging (I).** The standard library's `logging`, as JSON lines, rotated by size, with a **redaction filter**:
-   - the key id and key path (from the environment), PEM blocks and bearer tokens are masked;
-   - account models are never passed to a logger (enforced by a test).
-3. **Item, reference and link model (D1, D19, A).**
-   - Typed references (`Ref(kind, id)`).
-   - Items with **publisher time and received time**.
-   - Links between references.
-   - All as `msgspec` structs, which the loopback API (M1.7) reuses as its contracts.
-4. **Plugin registry (D19):** plugins found through Python entry points (group `ikars.plugins`); kinds source,
-   signal, order type and venue, each a small typed interface that declares its settings, secrets, rate budget
-   and item kinds. Each plugin runs in **its own task** with:
-   - a bounded queue (open question 2);
-   - a timeout on every call;
-   - a crash boundary with restart backoff.
-
-   One failing plugin never stalls the others.
-5. **One input interface, live or replay (G3, A).**
-   - An `EventClock` (the wall clock, or a virtual clock in replay) and an event stream ordered by **received
-     time**.
-   - The replay source reads recorded Parquet (the schema is defined here and written by M1.4b's recorder) and
-     releases each item **only at its received time**, so nothing downstream can see the future.
-   - The same engine code runs on either source.
-6. **Clock skew (G10):** `ikars_core.clock`'s estimator wired in; the offset is used by the signers and reported
-   in health.
-7. **Metrics (J):**
-   - counters;
-   - latency histograms (fixed log-scale buckets, cheap enough for the hot path);
-   - **feed-to-alert latency** stages stamped with monotonic times;
-   - a hook for the terminal's frame time (M1.8).
-8. **Cost tracking (D21-5):** per-plugin spend against a monthly budget; past a threshold a plugin is told to
-   degrade (cheaper model, slower polling), and at the ceiling it is paused.
-9. `python -m ikars_engine` runs the core with no plugins and a replay of a synthetic recording, as a smoke test.
-
-**Changes on this machine:** none beyond the repository and package caches.
-
-**New packages:**
-
-| Package | Version | Licence |
+| # | Finding | Done |
 |---|---|---|
-| `msgspec` | 0.22.0 (2026-09-29) | BSD-3 |
-| `pyarrow` | 26.0.0 (2026-10-09) | Apache-2.0 |
+| 1 | The data key's WebSocket would subscribe to *any* channel, private account channels included | It accepts market-data channels only (`MARKET_DATA_CHANNELS`) |
+| 2 | The data key could sign `/account/limits` (account data), and the account client did not check its signer at run time | Limits are the account reader's only, and the client refuses any other signer; the reference signing vectors for that route pass through the account reader with the identical signature |
+| 3 | A bad side in a snapshot left a half-applied book reporting ready | Both sides are built before either is replaced; the parser refuses negative sizes and non-positive prices |
+| 4 | Key-loading errors contained the key file's path (CLAUDE.md forbids printing key paths) | They say "the private key file", and the fix commands use the environment variable |
+| 5 | A fill could parse with no direction, which would silently corrupt the ledger's cost basis | The direction is required: from `outcome_side` or `book_side`, or else from the legacy `side` and `action`; disagreeing fields are refused |
+| 6 | The ACL check missed conditional (callback) allow entries and `WRITE_DAC`/`WRITE_OWNER` | They are counted; the rights are tested with icacls |
+| 7 | `positions` duplicated the client's paging loop with weaker checks | One `payloads()` loop |
+| 8 | The public route rules existed twice with different regexes | One table (`auth.public_route`) |
+| 9 | An integer in a dollar field would have been read as whole dollars, a 100-fold error if Kalshi ever sent cents there | Account dollar fields take text only |
+| 10 | A 36-character malformed key id got a misleading reason | It gets the right one |
 
-Both are over two weeks old; `pyarrow` is also what M1.4b writes with.
+**Kept, changed and why.**
+- *Kept:* SPARQ's `sparq-core` at `c017add` with its tests, fixtures and golden vectors.
+- *Changed:* `sparq` → `ikars` and `SPARQ_*` → `IKARS_*` throughout, with IKARS's own live switch and key variables;
+  **`test_live_ratelimit.py` dropped** (the rate-limit ramp stays banned); the package conftest's own opt-in hook
+  removed (SPARQ's fragile `item.keywords` check); a Windows ACL check added (SPARQ's check is POSIX-only, so on
+  Windows it checked nothing); the `/historical` hole closed.
 
-**Tests.**
-- **Determinism:** the same recording replayed twice gives byte-identical outputs.
-- **Point-in-time:** an item is never released before its received time.
-- **Isolation:** a plugin that raises, hangs or floods is contained, restarted with backoff, and counted.
-- **Redaction:** planted secrets never reach a log file.
-- **Settings:** migration from an older version.
-- Property tests on the clock and the histogram.
+### 1.3 UI mock-ups
 
-**Live checks:** none (offline slice).
-
-**Open questions.**
-1. **Settings format:** TOML (recommended: human-editable, `tomllib` in the standard library) or JSON.
-2. **When a plugin's queue is full:** *recommended* drop the oldest item and **record a gap** (counted, shown in
-   health, kept in the gap log), never a silent drop and never blocking the feed. *Alternative:* block the
-   producer with a timeout.
-3. **Logs:** JSON lines (recommended: machine-readable for the support bundle) or plain text.
-
-#### 1.3 round 1 (2026-10-27)
+**Status.** Plan approved 2026-10-27 (an HTML mock-up as a private claude.ai Artifact rather than a throwaway WPF
+prototype; rounds of owner comments and revisions, with approval recorded in this log before M1.8). Branch
+`m1/3-mockups`. Round 1 on 2026-10-27. **Approved for now** by the owner (2026-10-27: "looks good for now"); the
+source is in `docs/design/mockups/` (made-up data; a privacy scan's only match was the variable name `navItems`) and
+stays revisable before M1.8. Machine changes: none (a private artifact on the owner's claude.ai account). No new
+packages in the product.
 
 **Built.** A private Design canvas on the owner's claude.ai account (the link is kept out of this public
-repository), with six screens, all with made-up data:
+repository), with six screens, all with made-up data (`KXDEMO-…`), linked to each other for clicking through:
 1. **Overview**, with a light/dark toggle;
 2. **Market drill-down**, with the cross-reference panel docked;
 3. **Recommendation detail**: evidence, size and limits, provenance, taken/ignored/dismissed, and a bracket as a
@@ -659,18 +355,25 @@ repository), with six screens, all with made-up data:
 5. **Alerts** by priority, with the hotkeys list;
 6. a **two-monitor layout** sketch.
 
-The screens link to each other for clicking through.
+**Found.** The first draft's sample P&L added the spread to the cost basis, which double-counts it when the ask is
+paid. It now shows the spread separately and the figures follow D7: cost basis $17.49, YES +$22.51, NO −$17.49,
+maker exit at $0.55 +$4.33, stop at $0.41 −$1.77, EV +$3.71, break-even 0.437.
 
-**Problems and fixes.** The first draft's sample P&L added the spread to the cost basis, which double-counts it
-when the ask is paid. It now shows the spread separately and the figures follow D7: cost basis $17.49, YES
-+$22.51, NO −$17.49, maker exit at $0.55 +$4.33, stop at $0.41 −$1.77, EV +$3.71, break-even 0.437.
+**Kept, changed and why.** The screens follow the Windows 11 Fluent look of KalTerm3's WPF terminal, with its
+existing views (Markets, MarketDetail, OrderBook, CandleChart, Alerts, Status) as the starting point.
 
-**Waiting on the owner:** comments or approval. The approved source goes into `docs/design/mockups/` on branch
-`m1/3-mockups`.
+### 1.4a Engine core
 
-#### 1.4a built (2026-10-27)
+**Status.** Plan approved 2026-10-27 (settings in TOML; a full plugin queue drops the oldest item and **records a
+gap**, never a silent drop and never blocking the feed; logs as JSON lines, machine-readable for the support bundle).
+Built on `m1/4a-engine-core`, offline: `7ab6439` (the core), `49468ba` (merge-review fixes). **Done:** PR #4 merged
+by the owner's instruction as `b29a86e` (2026-10-27). Packages: `msgspec` 0.22.0 (BSD-3) and `pyarrow` 26.0.0
+(Apache-2.0), both over two weeks old; `tomli-w` was already in the lock. No machine changes beyond the repository
+and package caches.
 
-**Built** (`ikars-engine`, offline; commits `7ab6439` and `49468ba`):
+**Found.** `pyarrow` ships no type stubs: a mypy override, as in SPARQ.
+
+**Built** (`ikars-engine`, offline):
 
 | Area | What |
 |---|---|
@@ -684,34 +387,27 @@ when the ask is paid. It now shows the spread separately and the figures follow 
 | Measures | Log-scale latency histograms (percentiles never optimistic), stage timings, a monthly cost tracker in dollar millionths, a skew monitor over `ikars_core.clock`. |
 | Smoke | `python -m ikars_engine smoke`: an offline replay of 100 synthetic items through a test plugin. |
 
-**Verified.**
-- 1,118 tests pass; coverage 97.5%; ruff, mypy (64 files) and pip-audit clean.
-- Covered by the tests:
-  - byte-identical replays;
-  - nothing released before its received time (also a property test);
-  - containment of raising, hanging, flooding and crashing plugins;
-  - planted secrets never in the log file or another handler;
-  - settings migration, backup and refusal;
-  - live and replay hop limits;
-  - budget degrade, pause and resume across a month;
-  - listener faults contained.
+**Verified.** 1,118 tests; coverage 97.5%; ruff, mypy (64 files) and pip-audit clean. Covered: byte-identical
+replays; nothing released before its received time (also a property test); containment of raising, hanging, flooding
+and crashing plugins; planted secrets never in the log file or another handler; settings migration, backup and
+refusal; live and replay hop limits; budget degrade, pause and resume across a month; listener faults contained.
 
-**Review (R14).**
-- **Per commit:** three rounds on the core found 9 issues, all fixed before `7ab6439`:
-  1. the hop limit did nothing live;
-  2. a pause could be undone by a backoff;
-  3. pause did not stop a running producer;
-  4. `seconds=0` meant the default;
-  5. lifetime crash counting;
-  6. a slow listener timed out its plugin;
-  7. budget pauses were never lifted;
-  8. a resume right after a pause restarted nothing;
-  9. a finished one-shot source re-ran on resume.
-- **Per merge:** the medium review over the branch found 10 issues, and its follow-up found 3 more; all fixed in
-  `49468ba`. They are listed in that commit: silent drops at stop; narrow secret detection; case-sensitive
-  redaction; redaction on one handler only; a truncating money migration; raw version errors; downstream time
-  charged upstream; no fsync and colliding backup names; a stale month total; listener faults; plus routing an
-  emit made outside a delivery, serialising deliveries, and counting leftovers on cancellation.
+**Review.** Per commit: three rounds on the core found 9 issues, all fixed before `7ab6439`:
+1. the hop limit did nothing live;
+2. a pause could be undone by a backoff;
+3. pause did not stop a running producer;
+4. `seconds=0` meant the default;
+5. lifetime crash counting;
+6. a slow listener timed out its plugin;
+7. budget pauses were never lifted;
+8. a resume right after a pause restarted nothing;
+9. a finished one-shot source re-ran on resume.
+
+Merge review (medium): 10 findings, and its follow-up 3 more; all fixed in `49468ba` and listed in that commit: silent
+drops at stop; narrow secret detection; case-sensitive redaction; redaction on one handler only; a truncating money
+migration; raw version errors; downstream time charged upstream; no fsync and colliding backup names; a stale month
+total; listener faults; plus routing an emit made outside a delivery, serialising deliveries, and counting leftovers
+on cancellation.
 
 **Kept, changed and why.**
 - *Kept:* SPARQ's clock estimator (`ikars_core.clock`), wrapped and not copied; KAPS's "log what was skipped" rule,
@@ -720,110 +416,37 @@ when the ask is paid. It now shows the spread separately and the figures follow 
 - *Moved to M1.5:* the test that account models are never passed to a logger. No engine code touches account data
   until the ledger, so there is nothing yet to enforce; the redaction layer it backs up is in place and tested.
 
-**Problems and fixes.**
-- `pyarrow` ships no type stubs: a mypy override, as in SPARQ.
-- Python on Windows writes CRLF and the shell mangled two large inline edit scripts; edits now go through script
-  files or exact `Edit` calls.
+### 1.4b Kalshi feeds and recording
 
-**M1.4a done:** PR #4 merged by the owner's instruction as `b29a86e` (2026-10-27).
+**Status.** Plan approved 2026-10-27 (answers below). Built on `m1/4b-feeds`: `b2cfe8c` (the slice), `71489fc`
+(merge-review fixes), `f2d57fb`. **Done:** PR #5 merged as `58abbe5`; the docs close-out (including
+[DEPENDENCIES.md](DEPENDENCIES.md)) as PR #6, `a8ff41a`. No new packages (the standard library's `sqlite3`; `pyarrow`
+and `msgspec` already in). Machine changes: recordings, `state.sqlite` and logs under `%LOCALAPPDATA%\IKARS` (or the
+portable folder); nothing installed and no task scheduled (that is M1.6).
 
-**M1.3 approved for now** by the owner (2026-10-27: "looks good for now"). The source is in
-`docs/design/mockups/` (made-up data; a privacy scan's only match was the variable name `navItems`), and stays
-revisable before M1.8.
+**Owner's decisions (2026-10-27).**
+- Plan answers: record the watched set plus all-market trades (the full all-market history already lives in KAPS's
+  database and SPARQ's Parquet copies); typed tables per channel; **a watched set of up to 100 markets** (raised from
+  the recommended 50) with a budget of 3,000 deltas a second; IKARS takes at most **25% of the account's read
+  bucket** (50 of 200 tokens a second), so it backs off before it can crowd KAPS's ingest; a **200 GB** storage budget
+  for raw recordings.
+- At the merge: **GPU detection moves to M1.6** (it was in PLAN §4.1's line for M1.4b but not in the approved slice
+  plan, so it was not built); the recording volume (about 2.1 GB a day) stays as is. A dependencies register,
+  [DEPENDENCIES.md](DEPENDENCIES.md), lists what IKARS needs installed now and later, for the install instructions;
+  each slice keeps it current.
 
-### 1.4b Kalshi feeds and recording (plan APPROVED 2026-10-27; branch `m1/4b-feeds`)
+**Found.**
+- Production order-book messages carry no `clock`; the book treats it as optional (the M1.2 finding, confirmed
+  again).
+- **Recording volume:** about 2.1 GB a day, above the plan's "few hundred MB" estimate, because all-market trades are
+  busy (about 300 a second). The 200 GB budget holds about three months before the governor prunes.
+- gitleaks is on the user PATH (WinGet links) but not in a session started before it was installed; the commit adds
+  that folder for the hook.
+- A known-ids window that ended at "now" missed a later gap in a test with a virtual clock; it now ends at the later
+  of the two.
 
-**Owner's answers:**
-1. Record the watched set plus all-market trades.
-2. Typed tables per channel.
-3. **A watched set of up to 100 markets** (raised from 50), with the 3,000 deltas a second budget.
-4. 25% of the read bucket.
-5. A 200 GB storage budget.
-
-**Builds** (in `ikars-engine`; uses IKARS's own read-only key). The Kalshi feed is a built-in source on the
-M1.4a core. KAPS's production ingest is the design guide (read critically; its storage, PostgreSQL on the server
-host, does not carry over):
-
-1. **Discovery** (from KAPS `discovery.py`):
-   - a full cycle at start and daily, and an incremental one every minute (`min_updated_ts`);
-   - the bookmark advances only after a whole cycle succeeds, set two minutes back;
-   - combo markets are skipped and counted;
-   - a market that does not parse is set aside and counted, never failing the cycle.
-
-   It keeps an in-memory market index (series, event, category, status, close time, rules) with a daily Parquet
-   snapshot. It feeds the watched set, the drill-down tree and tradability (E).
-2. **Exchange status and schedule** (from KAPS `exchange.py`): status polled every minute and stored only on
-   change; the schedule daily. Used for tradability (E) and so that a pause is not mistaken for an outage.
-3. **The live feed:**
-   - ticker, trade and lifecycle for **all** markets;
-   - `orderbook_delta` for a **watched set** (open question 3), each with an `OrderBook` (M1.2): a `seq` gap or a
-     broken book asks for a fresh snapshot (`get_snapshot`);
-   - every frame stamped with its received time and handed to the engine as an `Item`.
-4. **The gap log** (from KAPS `gaps.py` and `pump.py`):
-   - a reconnect, restart, `seq` gap, queue overflow or drop-oldest is written at once, from the **last frame
-     actually received**, with a heartbeat saved every few seconds;
-   - what is recoverable: trades by backfill, lifecycle by discovery;
-   - what is not: ticker and books, marked `unrecoverable`.
-5. **Trade backfill** (from KAPS `backfill.py`): the missed window from REST (live or historical by the cutoff), in
-   one-hour slices, safe to repeat (de-duplicated by `trade_id`), never truncated; unfinished gaps are re-run at
-   start.
-6. **Recording** (D4 C):
-   - typed tables per channel (open question 2);
-   - the open hour in Arrow IPC, flushed every few seconds, then compacted to Parquet (zstd) at the hour;
-   - a hard crash loses at most the last unflushed seconds, and that loss is in the gap log.
-   - The replay source (M1.4a) gains readers for these tables, so a recorded hour replays through the same engine.
-7. **The operational state store:** a `state.sqlite` (WAL, `synchronous=FULL`) holding the gap log, the discovery
-   bookmark and the heartbeat, with the **versioned migration helper (backup first)** that M1.5's ledger reuses.
-8. **The storage governor (G11):** a budget (open question 5); a warning at 80%; at 95% the oldest raw recordings
-   are pruned first. The ledger and state are never pruned. It reports to health.
-9. **The request budget (D21-3):** one token bucket for all of IKARS's REST calls, sized as a share of the
-   account's read tier (open question 4), so IKARS backs off before it can crowd KAPS's ingest; 429s counted.
-   The WebSocket subscription limit is learned passively (M1.2 decision): a "limit reached" error is logged and
-   shrinks the watched set.
-10. **Clock and latency (G10, J):** HTTP `Date` samples from REST replies and `sending_ts_ms` from frames feed the
-    skew monitor; the signers use its offset. **Feed-to-alert latency** is stamped from frame receipt to the
-    engine's listeners, against the 250 ms target.
-11. `python -m ikars_engine run`: the live engine in the foreground, until Ctrl+C, printing health every minute.
-    The background run mode is M1.6.
-
-**Changes on this machine:**
-- Recordings, `state.sqlite` and logs under `%LOCALAPPDATA%\IKARS` (or the portable folder).
-- No other change; nothing installed, and no task scheduled (that is M1.6).
-
-**New packages:** none (the standard library's `sqlite3`; `pyarrow` and `msgspec` are already in).
-
-**Tests:** fakes for REST and the WebSocket; discovery's bookmark rules; changes-only status; gap-log rules for
-each kind of loss; backfill idempotence and slicing; book resync on a `seq` gap; recording, compaction and replay
-of a recorded hour; the governor's pruning order; the budget's share; migration with backup.
-
-**Live checks** (GET and subscribe only):
-- a **30-minute live run** on the watched set, measuring CPU, deltas a second, feed-to-alert p50/p99 against
-  250 ms, recording size per hour and REST tokens used;
-- a **forced reconnect**, giving gap rows and a backfill that matches Kalshi's trade count for the window;
-- a **restart in the middle of an hour**, with nothing lost beyond the logged gap.
-
-**Open questions.**
-1. **What to record locally?**
-   - *Recommended:* the **watched set only** (its books, trades and ticker), plus all-market trades. About a few
-     hundred MB a day. The full all-market history already lives in KAPS's database and SPARQ's Parquet copies.
-   - *Alternative:* everything KAPS records (all-market ticker and trades, about 3 GB a day) plus the books.
-2. **Recording format:** *recommended:* typed tables per channel (ticker, trade, lifecycle, book snapshot, book
-   delta), with real columns: smaller, faster to replay, and the same shape as SPARQ's live copies. *Alternative:*
-   the generic item table from M1.4a (JSON payloads), simpler but several times larger.
-3. **The watched set's size.** *Recommended:* up to **50 markets** and a budget of **3,000 deltas a second** in
-   total, chosen in this order: open positions, live recommendations, markets open in the terminal, then the most
-   active markets inside the human-paced filter (D17).
-   - The hyperactive 15-minute crypto markets (around 800 a second each) are included only when a position, a
-     recommendation or the owner asks for them.
-   - The slice measures the CPU cost per delta and reports whether the budget should change.
-4. **Request budget:** *recommended:* IKARS takes at most **25% of the account's read bucket** (50 of 200 tokens a
-   second).
-5. **Storage budget:** *recommended:* **200 GB** of the workstation's 2 TB for raw recordings (warn at 80%, prune
-   the oldest at 95%).
-
-#### 1.4b built (2026-10-27)
-
-**Built** (`ikars-engine`, plus small additions to `ikars-core`; commits `b2cfe8c`, `71489fc`, `f2d57fb`):
+**Built** (`ikars-engine`, plus small additions to `ikars-core`). The Kalshi feed is a built-in source on the M1.4a
+core, with KAPS's production ingest as the design guide:
 
 | Area | What |
 |---|---|
@@ -840,142 +463,86 @@ of a recorded hour; the governor's pruning order; the budget's share; migration 
 | Clock and latency | HTTP `Date` samples (at most one a minute) and `sending_ts_ms` feed the skew monitor; the signer gets the offset; feed-to-route p50 and p99 in health. |
 | Runner | `python -m ikars_engine run [--minutes N] [--root DIR]`: the live engine in the foreground, a one-line health summary every minute. |
 
-**Verified.**
-- 1,165 tests pass; coverage 95.2%; ruff, mypy and the data guard clean; gitleaks clean on the whole history.
-- **30-minute live run** (01:43 to 02:14 UTC, across an hour boundary):
+**Verified.** 1,165 tests; coverage 95.2%; ruff, mypy and the data guard clean; gitleaks clean on the whole history.
+**30-minute live run** (2026-10-27, 01:43 to 02:14 UTC, across an hour boundary):
 
-  | Measure | Result |
-  |---|---|
-  | Watched books | 100 of 100 ready; none held out |
-  | Deltas a second | 956 to 2,044 (budget 3,000) |
-  | Losses | no gaps, no `seq` gaps, no overflows, no bad frames (queue high-water 1,578 of 200,000) |
-  | CPU and memory | 14 to 19% of one core (about 2% of the machine); 230 to 280 MB |
-  | Feed to route | p99 at most 50 ms every minute (target 250 ms); p50 0.5 ms (bucket bounds, so conservative) |
-  | Recording | about 44 MB compacted for 30 minutes, about 2.1 GB a day (57% book deltas, 39% all-market trades); hour 01 compacted live at 02:02 |
-  | REST tokens | about 2,900 at start (full discovery of about 227,000 markets plus a backfill), then about 20 a minute, against 50 a second |
+| Measure | Result |
+|---|---|
+| Watched books | 100 of 100 ready; none held out |
+| Deltas a second | 956 to 2,044 (budget 3,000) |
+| Losses | no gaps, no `seq` gaps, no overflows, no bad frames (queue high-water 1,578 of 200,000) |
+| CPU and memory | 14 to 19% of one core (about 2% of the machine); 230 to 280 MB |
+| Feed to route | p99 at most 50 ms every minute (target 250 ms); p50 0.5 ms (bucket bounds, so conservative) |
+| Recording | about 44 MB compacted for 30 minutes, about 2.1 GB a day (57% book deltas, 39% all-market trades); hour 01 compacted live at 02:02 |
+| REST tokens | about 2,900 at start (full discovery of about 227,000 markets plus a backfill), then about 20 a minute, against 50 a second |
 
-- **Forced reconnect** (the WebSocket closed from our side): back in 0.5 s; one gap per channel; the trade backfill fetched 71 trades. Kalshi lists 2,647 trades in the padded window and all 2,647 are recorded, none twice. The lifecycle gap closes at the next discovery cycle (seen live in the restart check).
-- **Hard kill in the middle of an hour, then a restart:** five open hours left behind, all five recovered and compacted at start; "restart" gaps of 83 s with 17,668 trades backfilled. The earlier clean stop gave "stopped" gaps of 315 s with 83,044 trades backfilled. Trades recorded: 715,311 rows, no duplicates.
+| Check | Result |
+|---|---|
+| Forced reconnect (the WebSocket closed from our side) | back in 0.5 s; one gap per channel; the trade backfill fetched 71 trades. Kalshi lists 2,647 trades in the padded window and all 2,647 are recorded, none twice. The lifecycle gap closes at the next discovery cycle (seen live in the restart check) |
+| Hard kill in the middle of an hour, then a restart | five open hours left behind, all five recovered and compacted at start; "restart" gaps of 83 s with 17,668 trades backfilled. The earlier clean stop gave "stopped" gaps of 315 s with 83,044 trades backfilled. Trades recorded: 715,311 rows, no duplicates |
 
-**Review (R14).**
-- **Per commit (`b2cfe8c`):** findings fixed before the commit, including an hour-boundary row loss in the recorder.
-- **Per merge (medium):** 10 findings, all fixed in `71489fc` with a regression test each:
-  1. a stale book sid after a reconnect;
-  2. the pump died silently on one exception, and a failed compaction stopped recording;
-  3. downtime after a clean stop was not logged, and a crash during start looked clean;
-  4. snapshot requests stalled the pump and were repeated;
-  5. a repeated backfill could store a trade twice across hours;
-  6. a quiet channel's loss was an empty gap;
-  7. a refused resubscription was never sent again;
-  8. the rebalance could exceed the cap and keep a set the exchange did not hold;
-  9. compaction blocked the event loop;
-  10. a crash during compaction could duplicate rows.
-- **Per commit (`71489fc`):** one more: a row later than the grace period could reopen a closed hour while a worker compacted it. Fixed and tested.
-- **Per commit (`f2d57fb`):** none.
+**Review.** Per commit: `b2cfe8c`, findings fixed before the commit, including an hour-boundary row loss in the
+recorder. Merge review (medium), 10 findings, all fixed in `71489fc` with a regression test each:
+1. a stale book sid after a reconnect;
+2. the pump died silently on one exception, and a failed compaction stopped recording;
+3. downtime after a clean stop was not logged, and a crash during start looked clean;
+4. snapshot requests stalled the pump and were repeated;
+5. a repeated backfill could store a trade twice across hours;
+6. a quiet channel's loss was an empty gap;
+7. a refused resubscription was never sent again;
+8. the rebalance could exceed the cap and keep a set the exchange did not hold;
+9. compaction blocked the event loop;
+10. a crash during compaction could duplicate rows.
+
+Per commit: `71489fc`, one more: a row later than the grace period could reopen a closed hour while a worker compacted
+it; fixed and tested. `f2d57fb`: none.
 
 **Kept, changed and why.**
-- *Kept from KAPS:* the discovery bookmark rule, "log every loss from the last frame", backfill by window, the exchange watch.
-- *Changed:* KAPS writes PostgreSQL on the server host; IKARS records typed Parquet hours on the workstation. KAPS's backfill trusted the database's unique key; IKARS checks recorded trade ids before writing, since Parquet has none. Losses during a clean stop are logged too (KAPS logged only crashes).
+- *Kept from KAPS:* the discovery bookmark rule, "log every loss from the last frame", backfill by window, the
+  exchange watch.
+- *Changed:* KAPS writes PostgreSQL on the server host; IKARS records typed Parquet hours on the workstation. KAPS's
+  backfill trusted the database's unique key; IKARS checks recorded trade ids before writing, since Parquet has none.
+  Losses during a clean stop are logged too (KAPS logged only crashes).
 
-**Problems and fixes.**
-- Production order-book messages carry no `clock`; the book treats it as optional (M1.2 finding, confirmed again).
-- gitleaks is on the user PATH (WinGet links) but not in a session started before it was installed; the commit adds that folder for the hook.
-- A known-ids window that ended at "now" missed a later gap in a test with a virtual clock; it now ends at the later of the two.
+### 1.5 Audit and tax ledger, portfolio
 
-**Open for the owner.**
-- **GPU detection** is in PLAN §4.1's line for M1.4b but was not in the approved slice plan, so it was not built. *Recommended:* move it to M1.6 (background run mode, which already reports the machine) or to M2's local-model slice, where it is first used.
-- **Recording volume:** about 2.1 GB a day, above the plan's "few hundred MB" estimate, because all-market trades are busy (about 300 a second). The 200 GB budget holds about three months before the governor prunes.
+**Status.** Plan approved 2026-10-27 (all six answers as recommended). Split like M1.4: **1.5a** the ledger (store,
+chain, import, reconciliation, `verify`), **1.5b** the share (backups, restore drill) and the portfolio (G1), each
+reviewed and merged on its own. The tax-year package stays in M5 (D18). **Done:** 1.5a PR #7 merged as `087b819`;
+1.5b PR #8 merged as `5b6f702` (2026-10-27). Packages: `tzdata` (Apache-2.0; Windows Python has no time-zone
+database, so `zoneinfo` needs it for the tax zone). Machine changes: `ledger.sqlite`, checkpoints and the paper ledger
+under `%LOCALAPPDATA%\IKARS\data`; on the NAS share, `ikars\` and `.ikars-backup-marker` (owner's go-ahead), then the
+D18 tree inside it, through the owner's saved Windows credential; nothing outside `ikars\` is read, listed or written;
+the share's real path is only in the local settings file.
 
-**Owner's decisions (2026-10-27):** merge (PR #5 merged as `58abbe5`); GPU detection moves to **M1.6**; the
-recording volume stays as is. A dependencies register, [DEPENDENCIES.md](DEPENDENCIES.md), now lists what IKARS
-needs installed now and later, for the install instructions; each slice keeps it current.
+**Owner's decisions (2026-10-27).** Split into 1.5a and 1.5b; go-ahead to create `ikars\` and its marker on the share
+(in 1.5b); the tax zone is the workstation's (`America/Denver`); REST import every minute (Kalshi's private fill and
+position channels left for M7, as they relax M1.2's market-data-only guard); unexplained money (interest, incentives)
+shown as a difference and labelled only by the owner (`ledger annotate`), never guessed; FIFO lots, as D18's tax
+package.
 
-**M1.4b done.**
+**Built (design).** Append-only and separate from `state.sqlite`; corrections are adjustment records pointing to the
+record they correct. App actions (engine start and stop, settings changed, key loaded as a fingerprint only) share the
+chain. The paper stream has its own table and chain, clearly marked, never read by the tax package, and stays empty
+until the paper executor (M3/M4). Account models and ledger rows never reach a log; replies, health and logs show
+counts and status, never amounts.
 
-### 1.5 Audit and tax ledger, portfolio (plan APPROVED 2026-10-27, all six answers as recommended; branches `m1/5a-ledger`, then M1.5b's)
+#### 1.5a The ledger
 
-**Proposed split** (like M1.4): **M1.5a** the ledger (store, chain, import, reconciliation, `verify`); **M1.5b**
-the share (backups, restore drill) and the portfolio (positions and exposure, G1). Each is reviewed and merged on its
-own. The tax-year package stays in M5 (D18).
+**Status.** Built on `m1/5a-ledger`: `3b272fb` (the ledger), `8314c9e` (live fixes), `1072db0` (merge-review fixes).
+**Done:** PR #7 merged as `087b819`.
 
-**M1.5a builds** (a new `ledger` module in `ikars-engine`, on M1.2's `Account` reader and M1.4b's migrator):
-1. **The ledger store:** `ledger.sqlite`, separate from `state.sqlite` (WAL, `synchronous=FULL`), versioned migrations
-   with a backup first (G). Append-only: SQLite triggers refuse `UPDATE` and `DELETE`; corrections are adjustment
-   records pointing to the record they correct.
-2. **The record** (D18): sequence; kind (fill, settlement, deposit, withdrawal, transfer, fee, funding, interest,
-   adjustment, app action); UTC time and the tax-zone time; Kalshi ids; tickers and the market title at the time;
-   side, action, contracts (10^-2); price, fee, cash amount and balance after where given (dollars at 10^-6);
-   Kalshi's raw JSON verbatim; IKARS context ids; `prev_hash` and `hash`.
-3. **The hash chain:** SHA-256 over a defined canonical encoding (sorted keys, no whitespace, UTF-8, integers only,
-   no floats), checked at every start and by `python -m ikars_engine ledger verify`; a daily checkpoint file with the
-   day's last hash.
-4. **The import:** the account's whole history on first run (fills live and historical, settlements, deposits,
-   withdrawals, instance transfers), then new records every minute while the engine runs. Idempotent: a Kalshi id is
-   never imported twice; records are added in Kalshi's time order within each import. Manual trades are included.
-5. **Reconciliation** after each import: the cash the ledger explains against Kalshi's balance, and the contracts it
-   explains against Kalshi's positions. A difference is shown in health and logged as a **reconciliation
-   record**; it is never fixed silently. Interest has no API endpoint (M1.2): an unexplained balance change stays
-   unexplained until the owner labels it (`ledger annotate`, which appends an adjustment record of the chosen kind).
-6. **App actions** in the same chain: engine start and stop, settings changed, key loaded (its fingerprint only,
-   never the id or path).
-7. **The paper stream:** its own table and chain, clearly marked, never read by the tax package. Empty until the
-   paper executor (M3/M4).
-8. **Privacy:** the test deferred from M1.4a: account models and ledger rows never reach a log; replies, health and
-   logs show counts and status, never amounts.
+**Found.**
+- The first live import was **not** exact. A diagnosis that printed only counts compared each market with Kalshi's
+  position records: fees matched on all 41 markets; the netting rule matched all 16 markets closed before
+  settlement; all 18 differences were finalized markets that had moved to Kalshi's archive, with no settlement
+  record; the 7 listed settlements were off because their `fee_cost` repeats the fills' fees. Both fixed in
+  `8314c9e`; the import has reconciled exactly since.
+- Kalshi's settlement `fee_cost` is not a separate charge, and archived settlements have no records; confirmed against
+  Kalshi's realised P&L and recorded in the module's notes.
+- Interest has no API endpoint (M1.2), so an unexplained balance change stays unexplained until the owner labels it.
 
-**M1.5b builds:**
-1. **Backups to the share** (D18 tree under `ikars\`): nightly while the engine runs, and at start if the last one is
-   older than a day. SQLite online backup to a temporary name, hash-checked, then renamed; `SHA256SUMS` and the
-   checkpoint beside it. Every path is resolved under `<share>\ikars\` and anything outside is refused; nothing is
-   written without `.ikars-backup-marker`. Retention as D18 (ledger dailies 90 days, monthlies and checkpoints forever,
-   state dailies 30 days). The ledger is also backed up before every ledger migration (G).
-2. **`ledger restore-drill`** (G14): restore the newest copy from the share to a scratch file, verify its chain, compare
-   its head with the local ledger's.
-3. **Portfolio (G1, model only; the view is M1.8):** positions from the ledger, cross-checked with Kalshi's positions;
-   FIFO lots for cost basis; marked to market from the live feed's last prices; unrealised P&L **after exit costs**
-   (D7 fees on exit); exposure by event, series and category (from the discovery index); balance.
-
-**Changes on this machine and the network:**
-- `ledger.sqlite`, checkpoints and the paper ledger under `%LOCALAPPDATA%\IKARS\data`.
-- **On the NAS share: creates `ikars\` and `.ikars-backup-marker`** (owner's go-ahead needed), then the D18 tree inside
-  it. Nothing outside `ikars\` is read, listed or written. Access uses the owner's saved Windows credential.
-- The share's real path goes only in the local settings file, never in the repository.
-- No scheduled task (M1.6 adds the logon task, so backups run while the engine runs).
-
-**New packages:** `tzdata` (Apache-2.0): Windows Python has no time-zone database, so `zoneinfo` needs it for the tax
-time zone. Added to DEPENDENCIES.md.
-
-**Tests:** canonical encoding and hash vectors; a broken, reordered or edited chain is caught; the triggers refuse edits;
-idempotent import against a fake account (made-up records, per docs/TESTING.md); reconciliation exact, short and
-over; annotation; migration with backup; the share guard (outside paths, a missing marker,
-`\127.0.0.1\ikars-no-such-share`); interrupted backup copies; the restore drill; FIFO lots and unrealised P&L in
-integers; nothing from the account in logs.
-
-**Live checks** (GET only; results reported as counts and pass or fail, never amounts):
-- the full history imports; a second import adds nothing; `verify` passes;
-- reconciliation is **exact** against Kalshi's balance and positions (the M1 gate), or every difference is shown;
-- M1.5b: a backup lands on the share inside `ikars\`, a second run is idempotent, the restore drill passes; the
-  portfolio's positions match Kalshi's.
-
-**Open questions.**
-1. **Split into M1.5a and M1.5b?** *Recommended:* yes, as above; each about the size of M1.4a.
-2. **Go-ahead to create `ikars\` and its marker on the NAS share** (the one in memory), in M1.5b. *Recommended:* yes.
-3. **The tax time zone** (year boundaries and the local time on each record). *Recommended:* the workstation's zone
-   as the default setting; please confirm which zone you file in.
-4. **Import cadence:** *recommended:* REST every minute while the engine runs (portfolio reads are allowed for the
-   read-only key; M1.2 confirmed them). *Alternative:* Kalshi's private fill and position WebSocket channels for
-   real time; that relaxes M1.2's market-data-only guard, and is better left for M7.
-5. **Unexplained balance changes (interest, incentives):** *recommended:* shown and recorded as differences, and
-   classified only by you (`ledger annotate`), never guessed.
-6. **Lot method for the portfolio's cost basis:** *recommended:* FIFO, the same default as D18's tax package.
-
-**Owner's answers (2026-10-27):** all six as recommended: split into M1.5a and M1.5b; go-ahead to create `ikars\`
-and its marker on the share (in M1.5b); the tax zone is the workstation's (`America/Denver`); REST import every
-minute; unexplained money labelled by the owner; FIFO.
-
-#### 1.5a built (2026-10-27)
-
-**Built** (`ikars-engine`; commits `3b272fb`, `8314c9e`, `1072db0`):
+**Built** (`ikars-engine`, a new `ledger` module on M1.2's `Account` reader and M1.4b's migrator):
 
 | Area | What |
 |---|---|
@@ -988,42 +555,31 @@ minute; unexplained money labelled by the owner; FIFO.
 | App actions | Engine start and stop, key loaded (public-key fingerprint only), settings changed (a hash), in the same chain. |
 | Service | Checks the chain before the feed starts; a broken chain stops every append; the import each minute; a checkpoint after each. |
 | Commands | `python -m ikars_engine ledger verify | status | import | annotate`; `import` and `annotate` refuse a broken chain. |
-| Tax zone | `taxzone.py`: the setting, else the workstation's zone (Windows name mapped by CLDR's table), else UTC with a health flag; settings v3. New package `tzdata` (Apache-2.0). |
+| Tax zone | `taxzone.py`: the setting, else the workstation's zone (Windows name mapped by CLDR's table), else UTC with a health flag; settings v3. |
 
-**Verified.**
-- 1,198 tests pass; coverage 94.9%; ruff, mypy, data guard and gitleaks clean. Made-up records only.
-- Tests cover: canonical text and float refusal; tampering (edited, deleted, reordered, rebuilt with a valid hash,
-  a float slipped in, cut back behind the checkpoint); the triggers; the netting cash rule; idempotent imports;
-  reconciliation exact and not; reversals; derived settlements confirmed and not (a cent off, scalar, no market
-  data); the double-settlement guard; app actions; a broken chain; the commands; the tax zone and the settings
-  migration; **account values never in a log** (the test deferred from M1.4a).
-- **Live** (GET only; results as counts):
+**Verified.** 1,198 tests; coverage 94.9%; ruff, mypy, data guard and gitleaks clean; made-up records only. Tests
+cover canonical text and float refusal; tampering (edited, deleted, reordered, rebuilt with a valid hash, a float
+slipped in, cut back behind the checkpoint); the triggers; the netting cash rule; idempotent imports; reconciliation
+exact and not; reversals; derived settlements confirmed and not (a cent off, scalar, no market data); the
+double-settlement guard; app actions; a broken chain; the commands; the tax zone and the settings migration;
+**account values never in a log** (the test deferred from M1.4a). Live (GET only; counts):
 
-  | Check | Result |
-  |---|---|
-  | First import | 4 deposits, 147 fills, 25 settlements (7 listed, 18 derived from the archive), 1 withdrawal, 6 transfers |
-  | Reconciliation | **exact**: cash to the millionth and every position |
-  | Second import | adds nothing |
-  | `verify` | passes, with the checkpoint; 188 records after the engine's app actions |
-  | Engine, 2 minutes | ledger checked before the feed, imports each minute, still exact, clean shutdown |
-  | Titles | every fill and settlement record (172 of 172) |
+| Check | Result |
+|---|---|
+| First import | 4 deposits, 147 fills, 25 settlements (7 listed, 18 derived from the archive), 1 withdrawal, 6 transfers |
+| Reconciliation | **exact**: cash to the millionth and every position |
+| Second import | adds nothing |
+| `verify` | passes, with the checkpoint; 188 records after the engine's app actions |
+| Engine, 2 minutes | ledger checked before the feed, imports each minute, still exact, clean shutdown |
+| Titles | every fill and settlement record (172 of 172) |
 
-  The first live import was **not** exact. A diagnosis that printed only counts compared each market with Kalshi's
-  position records:
-  - fees matched on all 41 markets;
-  - the netting rule matched all 16 markets closed before settlement;
-  - all 18 differences were finalized markets that had moved to Kalshi's archive, with no settlement record;
-  - the 7 listed settlements were off because their `fee_cost` repeats the fills' fees.
-
-  Both were fixed (`8314c9e`) and the import has reconciled exactly since.
-
-**Review (R14).**
-- **Per commit (`3b272fb`):** 3 fixed: the commands appended on a broken chain; a float in a tampered body crashed
+**Review.**
+- Per commit `3b272fb`: 3 fixed: the commands appended on a broken chain; a float in a tampered body crashed
   `verify`; a client could be opened before a bad tax-zone setting failed. gitleaks flagged a made-up 16-hex
   fingerprint in a test; the value was changed, not allow-listed.
-- **Per commit (`8314c9e`):** one candidate (a flat market as an archive candidate); no change: flat markets are
-  left out of the replay and the derived record is keyed by ticker.
-- **Per merge (medium):** 10 candidates; 9 fixed in `1072db0`:
+- Per commit `8314c9e`: one candidate (a flat market as an archive candidate); no change: flat markets are left out
+  of the replay and the derived record is keyed by ticker.
+- Merge review (medium): 10 candidates; 9 fixed in `1072db0`:
   1. later imports never read archived fills;
   2. a failure after the history kept every run in first-import mode;
   3. one start time for fills and settlements;
@@ -1034,25 +590,19 @@ minute; unexplained money labelled by the owner; FIFO.
   8. truncation undetected by `verify`;
   9. a stale resume point.
 
-  The tenth (the v2 settings migration) needs no change: no v2 file was ever written, and the old value was only
-  the default.
-- **Per commit (`1072db0`):** none. That review ran just after the commit, not before it: a slip in the order,
-  noted here.
+  The tenth (the v2 settings migration) needs no change: no v2 file was ever written, and the old value was only the
+  default.
+- Per commit `1072db0`: none. That review ran just after the commit, not before it: a slip in the order, noted here.
 
-**Kept, changed and why.**
-- *New:* neither KAPS nor SPARQ has a money ledger (SPARQ's `ledger.py` is a database-durability log).
-- *Kept:* M1.2's account reader and its cents-to-millionths rules; M1.4b's migrator.
+**Kept, changed and why.** *New:* neither KAPS nor SPARQ has a money ledger (SPARQ's `ledger.py` is a
+database-durability log). *Kept:* M1.2's account reader and its cents-to-millionths rules; M1.4b's migrator.
 
-**Problems and fixes.**
-- Kalshi's settlement `fee_cost` is not a separate charge, and archived settlements have no records; both found
-  live, confirmed against Kalshi's realised P&L, and recorded in the module's notes.
-- A long inline shell script failed to parse twice; long edits now go through script files or whole-file writes.
+#### 1.5b Share backups, restore drill and portfolio
 
-**M1.5a done**, subject to the owner's merge. Next: M1.5b (backups to the share, the restore drill, the portfolio).
+**Status.** Built: `682b581` (share, drill, portfolio), `9ff0be2` (merge-review fixes). **Done:** PR #8 merged as
+`5b6f702` (2026-10-27); with it **M1.5 is complete**.
 
-#### 1.5b built (2026-10-27)
-
-**Built** (`ikars-engine`; commits `682b581`, `9ff0be2`):
+**Built** (`ikars-engine`):
 
 | Area | What |
 |---|---|
@@ -1060,31 +610,21 @@ minute; unexplained money labelled by the owner; FIFO.
 | Copies | Each copy is a consistent SQLite snapshot (online backup) staged in a folder of the run's own, written under a unique temporary name, read back and hash-checked, then renamed. A dated folder is built whole and swapped in, and leftovers of a dead run are swept after an hour. |
 | Tree | Per D18: ledger daily, monthly and checkpoints; the state daily; the settings; the pre-migration copy (G). Each folder has a `SHA256SUMS`. Only missing checkpoints and the newest two are sent. Retention: ledger dailies 90 days, state 30; the rest kept forever. |
 | Service | Backs up daily while the engine runs, and at start when the last backup is over a day old. It runs in a daemon thread (a stuck NAS never holds up the exit), and health never touches the share. |
-| Restore drill | `ledger restore-drill`: the newest daily copy, its hashes, its chain, its checkpoint, and its head in the local ledger. An unreachable share or a read error is a result, not a traceback. |
+| Restore drill | `ledger restore-drill` (G14): the newest daily copy, its hashes, its chain, its checkpoint, and its head in the local ledger. An unreachable share or a read error is a result, not a traceback. |
 | Portfolio (G1) | FIFO lots with exact fee splits; marked at the YES or NO bid after the taker fee, rounded up to the cent; unpriced rather than guessed; no bid means worth nothing; exposure by event, series and category. Its cash comes from the same `Book` the reconciliation uses. In health as counts, with the lots cached by the ledger's head; `ledger portfolio [--summary]` for the owner. |
 | Supporting | Discovery keeps each series' fee terms; the source keeps each market's YES bid and ask; `open_store` hands a migration's backup to a callback. |
 
-**Verified.**
-- 1,221 tests pass; coverage 94.5%; ruff, mypy, data guard and gitleaks clean. The "share" in tests is a folder of
-  the test's own; account records are made up.
-- **Live** (on the owner's go-ahead):
-  - the share is reachable;
-  - `ikars\` and its marker were created, and nothing else;
-  - the real ledger was started in `%LOCALAPPDATA%\IKARS` (183 records from Kalshi, reconciled exactly);
-  - backups ran twice the same day;
-  - status is clean;
-  - **the restore drill passes** (188 records);
-  - the engine runs with backups configured, and its only warnings are the expected "stopped" gaps of the four
-    feed channels.
-- The portfolio holds **0 positions**, matching Kalshi's 0 open positions. So the pricing path is so far tested
-  offline only; it is checked live the first time a position is held.
+**Verified.** 1,221 tests; coverage 94.5%; ruff, mypy, data guard and gitleaks clean (the "share" in tests is a folder
+of the test's own; account records made up). Live, on the owner's go-ahead: the share is reachable; `ikars\` and its
+marker were created, and nothing else; the real ledger was started in `%LOCALAPPDATA%\IKARS` (183 records from Kalshi,
+reconciled exactly); backups ran twice the same day; status clean; **the restore drill passes** (188 records); the
+engine runs with backups configured, its only warnings the expected "stopped" gaps of the four feed channels. The
+portfolio holds **0 positions**, matching Kalshi's 0 open positions.
 
-**Review (R14).**
-- **Per commit (`682b581`):** 3 fixed:
-  1. no share set, or an unreachable one, crashed the commands;
-  2. one unreadable series failed the whole portfolio;
-  3. `backup init` saved a share before checking it.
-- **Per merge (medium), all 10 fixed in `9ff0be2`:**
+**Review.**
+- Per commit `682b581`: 3 fixed: (1) no share set, or an unreachable one, crashed the commands; (2) one unreadable
+  series failed the whole portfolio; (3) `backup init` saved a share before checking it.
+- Merge review (medium), all 10 fixed in `9ff0be2`:
 
   | # | Finding | Fix |
   |---|---|---|
@@ -1098,143 +638,68 @@ minute; unexplained money labelled by the owner; FIFO.
   | 8 | Every backup re-read every checkpoint on the share, a list that only grows | Only missing checkpoints and the newest two are sent |
   | 9 | The portfolio's replay duplicated the import's | One pass that feeds the import's `Book` |
   | 10 | `ledger portfolio` replayed the ledger twice | The holdings are computed once and passed in |
-- **Per commit (`9ff0be2`):** none.
+- Per commit `9ff0be2`: none.
 
-**Kept, changed and why.**
-- *Kept from KAPS:* the marker-file rule for the share (KAPS's `.kaps-backup-marker`), applied to IKARS's own
-  subtree.
-- *New:* everything else. KAPS backs up PostgreSQL with pgBackRest, which IKARS never touches.
+**Kept, changed and why.** *Kept from KAPS:* the marker-file rule for the share (KAPS's `.kaps-backup-marker`),
+applied to IKARS's own subtree. *New:* everything else; KAPS backs up PostgreSQL with pgBackRest, which IKARS never
+touches.
 
-**Problems and fixes.**
-- Long inline shell scripts with backslashes or nested quotes failed to parse; edits now go through script files
-  written with the file tool, or direct edits.
+**Open.** The portfolio's pricing path is so far tested offline only; it is checked live the first time a position is
+held.
 
-**M1.5b done**, subject to the owner's merge. **M1.5 complete** with it.
+### 1.6 Run mode and alerts
 
-**M1.5 done:** PR #8 merged as `5b6f702` (2026-10-27).
+**Status.** Plan approved 2026-10-27 (all four answers as recommended). Built on `m1/6-run-mode`: `ad60325` (run mode,
+watchdog, alerts, auto-start, GPU), `532a3f2` (a live fix), `fd4fd1a` (merge-review fixes). **Done:** PR #9 merged as
+`2efc95f`. No new packages. Machine changes (all user space, no admin rights; `remove-autostart` undoes all three): a
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value `IKARS Engine`; a per-user scheduled task `IKARS Watchdog`
+every 5 minutes; the notification name `IKARS` under `HKCU\Software\Classes\AppUserModelId`.
 
-### 1.6 Run mode and alerts (plan APPROVED 2026-10-27, all four answers as recommended; branch `m1/6-run-mode`)
+**Owner's decisions (2026-10-27).** **No phone pushes** (item 6, ntfy, removed; notifications stay on the
+workstation; PLAN G6, the M1 and M4 outlines, the M1.6 row and DEPENDENCIES amended). GPU detection (D15) moved into
+this slice. Answers, all as recommended: (1) notifications through Windows' own classes via Windows PowerShell, no new
+package (not `windows-toasts`); (2) quiet hours 22:00 to 07:00, when only urgent alerts (engine down, ledger chain
+broken, backup failed) pop up, the rest waiting for the digest and the alert log; (3) the system kept awake while the
+engine runs, the display free to sleep; (4) the watchdog every 5 minutes with the 2-check confirmation, so an alert
+comes about 10 minutes after a failure.
 
-**Builds** (in `ikars-engine`; no new packages):
-1. **Background run mode (G5):**
-   - `python -m ikars_engine serve`: the engine without a console (`pythonw`), until asked to stop.
-   - **One instance only:** a lock file in the data folder, so the auto-start and the watchdog never run two
-     engines.
-   - **Stop:** `python -m ikars_engine stop` writes a stop request; the engine shuts down cleanly within seconds.
-   - `python -m ikars_engine status` reads the engine's heartbeat and health snapshot (counts only).
-   - The engine writes a small health snapshot file every minute, for the watchdog and `status`. M1.7's API
-     replaces this.
-2. **Auto-start at login:** a per-user entry under `HKCU\...\Run` (no admin rights). This shell has no admin
-   token, and a logon-triggered scheduled task usually needs one. `install-autostart` and
-   `remove-autostart` commands manage it.
-3. **Keep awake while running:** Windows' `SetThreadExecutionState`, so the system doesn't sleep while the
-   engine runs. The display may still turn off. It's released when the engine stops.
-4. **The watchdog (from KAPS's `watchdog.py`, adapted to Windows):** a separate short-lived process, run every
-   5 minutes by a per-user scheduled task (time-triggered, no admin rights needed; checked live).
-   - It reads the heartbeat and health snapshot.
-   - If the engine has died and wasn't asked to stop, it restarts it, at most 3 times an hour (more is reported,
-     not retried).
-   - It alerts on: engine down; feed stale (no frame for 10 minutes while the exchange is open); backup failed or
-     over 36 hours old; ledger chain broken; reconciliation not exact; storage over its warning level.
-   - **Kept from KAPS:** a problem must hold for 2 checks in a row before it alerts; a reminder every 6 hours
-     while it lasts; one message when it clears; its own small state file, so it never repeats itself; a
-     notification that fails to show is retried at the next check.
-5. **The alert framework (H):**
-   - priority levels: urgent, high, normal, low;
-   - de-duplication by key, and a minimum interval per key (throttling);
-   - **quiet hours** (a setting), during which only urgent alerts pop up;
-   - lower priorities held for an **hourly digest**.
-   - It is one module, used by the watchdog now and by the engine's recommendations in M4.
-6. **Workstation notifications (G6, as amended):** **no phone pushes** (owner, 2026-10-27).
-   - Alerts appear as **Windows notifications (toasts)** on the workstation. They use Windows' own notification
-     classes through Windows PowerShell: no package, nothing sent off the machine.
-   - IKARS registers its own notification name under `HKCU` (user space), so a toast says "IKARS", not
-     "Windows PowerShell", and Windows' own settings (Do Not Disturb, per-app mute) apply to it.
-   - Every alert is also written to an alert log, `alerts.jsonl` in the data folder, which the terminal shows from
-     M1.8, so an alert dismissed or missed is never lost.
-   - `alerts test` shows one test notification. Alerts carry status text only, no account values.
-7. **GPU detection (D15, moved here):** at start, `nvidia-smi` (shipped with the driver) reports the GPU's name,
-   memory, driver and CUDA version into health; without an NVIDIA GPU, health says "CPU only". There is no new
-   package. NVML through `nvidia-ml-py` is the alternative, if more is needed later.
+**Found.**
+- This shell has no admin token, and a logon-triggered scheduled task usually needs one, so auto-start is a per-user
+  Run entry; the watchdog's time-triggered task needs no admin rights (checked live).
+- The editor's shell predates the key variables. Live runs load them into the process, and at sign-in Windows gives
+  them to the Run entry and the task.
+- The engine's lock file can't be read while it's held, so the process ID comes from the snapshot.
+- This replaces D2's first plan (2026-10-26), in which the terminal started and supervised the engine as a child
+  process in v1, with a Windows service as a later option; G5 was pulled forward from M7 for it (PLAN D2 amended).
 
-**Changes on this machine:**
-- A `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value, `IKARS Engine`.
-- A per-user scheduled task, `IKARS Watchdog`, every 5 minutes.
-- The notification name `IKARS` under `HKCU\Software\Classes\AppUserModelId`.
-- Test notifications on the workstation.
-- All of it is user space, no admin rights; the `remove-autostart` command undoes all three.
-
-**Tests:**
-- the watchdog's rules: confirmation, reminders, clearing, restart limits, a failed notification retried;
-- the alert framework: priority, de-duplication, throttling, quiet hours, the digest;
-- the alert log; the toast's text and escaping, with a fake notifier;
-- the lock file, and the stop request;
-- GPU parsing, from captured `nvidia-smi` text;
-- the Run-key, task and notification-name commands, with fakes.
-
-**Live checks:**
-- `serve` starts in the background and `stop` stops it cleanly;
-- a second `serve` is refused;
-- after a killed engine, the watchdog restarts it within one check and shows one "engine down" then one
-  "recovered" notification;
-- auto-start works after you sign out and back in (you do that step);
-- `alerts test` shows a notification named IKARS;
-- GPU detection reports the RTX 5070 Ti.
-
-**Open questions.** (The ntfy topic question was withdrawn: phone pushes are out.)
-1. **How notifications are shown:**
-   - *Recommended:* Windows' own notification classes through Windows PowerShell, with no new package.
-   - *Alternative:* the `windows-toasts` Python package (Apache-2.0), which is tidier code but a new dependency.
-2. **Quiet hours:** *recommended:* **22:00 to 07:00** workstation time, during which only urgent alerts pop up
-   (engine down, ledger chain broken or backup failed). The rest wait for the digest and the alert log. Is that
-   the window you want?
-3. **Keep awake:** *recommended:* keep the **system** awake while the engine runs, and let the display sleep.
-   *Alternative:* no keep-awake, so the PC sleeps as usual and the engine records the gap.
-4. **Watchdog interval:** *recommended:* **every 5 minutes**, with the 2-check confirmation, so an alert comes
-   about 10 minutes after a failure. *Alternative:* every minute, like KAPS, for faster alerts at a little more
-   noise.
-
-**Owner's change (2026-10-27):** phone pushes (item 6, ntfy) removed; notifications stay on the workstation.
-PLAN G6, the M1 and M4 outlines, the M1.6 row and DEPENDENCIES were amended to match.
-
-**Owner's answers (2026-10-27):** all four as recommended:
-1. notifications through Windows' own classes via Windows PowerShell, with no new package;
-2. quiet hours from 22:00 to 07:00, when only urgent alerts pop up;
-3. the system kept awake while the engine runs, the display free to sleep;
-4. the watchdog every 5 minutes, with the 2-check confirmation.
-
-#### 1.6 built (2026-10-27)
-
-**Built** (`ikars-engine`; commits `ad60325`, `532a3f2`, `fd4fd1a`; no new packages):
+**Built** (`ikars-engine`). The alert framework is one module, used by the watchdog now and by recommendations from
+M4; the alert log is shown by the terminal from M1.8.
 
 | Area | What |
 |---|---|
-| Run mode | `serve`, `stop`, `status`.<br>**Lock:** a single-instance lock that Windows releases however the engine ends. `serve` waits up to 3 s for a probe to let go, and the probe writes nothing.<br>**Stop:** a stop request (checked every 2 s), and a stopped-by-owner mark the watchdog respects.<br>**Snapshot:** a "starting" snapshot at once, then a minute health snapshot with counts, ages and booleans only, written whole with `fsync`.<br>**Keep-awake:** the system stays awake while the engine runs.<br>**Failures:** a start-up failure is written to the log, and so is an engine task that ends by itself, which also makes `serve` exit. |
+| Run mode | `serve`, `stop`, `status`.<br>**Lock:** a single-instance lock that Windows releases however the engine ends. `serve` waits up to 3 s for a probe to let go, and the probe writes nothing.<br>**Stop:** a stop request (checked every 2 s), and a stopped-by-owner mark the watchdog respects.<br>**Snapshot:** a "starting" snapshot at once, then a minute health snapshot with counts, ages and booleans only, written whole with `fsync`.<br>**Keep-awake:** the system stays awake while the engine runs (`SetThreadExecutionState`; released at stop).<br>**Failures:** a start-up failure is written to the log, and so is an engine task that ends by itself, which also makes `serve` exit. |
 | Watchdog | KAPS's rules: a problem must show on 2 checks; a reminder every 6 hours; one message when it clears; its own state file; a notification that fails, or is throttled, is tried again.<br>**Restarts:** at most 3 an hour, never an engine you stopped, said at once.<br>**Alerts on:** engine down or silent (with a 10-minute start-up grace), feed stale while trading, the ledger chain broken or not reconciling, backups failing or over 36 hours old, storage near its budget.<br>**Log:** its own `watchdog.jsonl`. |
-| Alerts | Priorities, de-duplication, throttling, quiet hours 22:00 to 07:00 (a bad setting falls back to that, with a warning), an hourly digest, and the alert log `alerts.jsonl` (failed notifications included).<br>**Windows notifications** come from Windows PowerShell's WinRT classes, with the text passed through environment variables and XML-escaped. **No phone pushes** (your decision, 2026-10-27). |
+| Alerts | Priorities, de-duplication, throttling, quiet hours 22:00 to 07:00 (a bad setting falls back to that, with a warning), an hourly digest, and the alert log `alerts.jsonl` (failed notifications included).<br>**Windows notifications** come from Windows PowerShell's WinRT classes, with the text passed through environment variables and XML-escaped; status text only, no account values. **No phone pushes** (owner, 2026-10-27). |
 | Auto-start | Three entries, installed and removed together, all user space, with `--root` resolved: the HKCU Run entry `IKARS Engine`, the scheduled task `IKARS Watchdog` (every 5 minutes), and the notification name `IKARS`. |
 | GPU | `nvidia-smi` gives the name, memory, driver and CUDA version ("CUDA Version" or the newer "CUDA UMD Version"). Detection runs in the background, and with no NVIDIA card health says "CPU only". |
 | Shared | `files.write_text_atomic` (with `fsync`); `threads.in_daemon_thread` (for a NAS or a driver that hangs); `logs.configure(filename=...)`. |
 
-**Verified.**
-- 1,255 tests pass; coverage 93.7%; ruff, mypy, the data guard and gitleaks are clean. Windows is faked in the
-  tests, except for one real round trip on a throwaway HKCU key.
-- **Live**, on this workstation:
+**Verified.** 1,255 tests; coverage 93.7%; ruff, mypy, the data guard and gitleaks clean. Windows is faked in the
+tests, except for one real round trip on a throwaway HKCU key. Live, on the workstation:
 
-  | Check | Result |
-  |---|---|
-  | `install-autostart` | all three entries installed with no admin rights |
-  | `alerts test` | the notification was shown (the owner to confirm they saw it) |
-  | `serve` in the background | running; the snapshot fresh; GPU **NVIDIA GeForce RTX 5070 Ti**; the ledger verified and reconciling exactly; backups configured |
-  | A second `serve` | refused |
-  | Hard kill, then a watchdog pass | the watchdog restarted the engine (a new process reporting within 10 s). The "engine restarted" notice was **held for the morning digest**, as quiet hours require (it was after 22:00). The scheduled task had already restarted the engine once on its own, when a start failed for lack of the key variables in this editor's session. |
-  | `stop` | a clean stop; the watchdog then left the engine alone; no errors in the log |
-  | The fixed code | restarted on it: the "starting" snapshot, then the real one, GPU in the background, `watchdog.jsonl` written, no errors |
-- **Left for the owner:** sign out and back in, to see the engine start from the Run entry. Until then the engine
-  keeps running in the background from this session.
+| Check | Result |
+|---|---|
+| `install-autostart` | all three entries installed with no admin rights |
+| `alerts test` | the notification was shown; the owner saw it (2026-10-27) |
+| `serve` in the background | running; the snapshot fresh; GPU **NVIDIA GeForce RTX 5070 Ti**; the ledger verified and reconciling exactly; backups configured |
+| A second `serve` | refused |
+| Hard kill, then a watchdog pass | the watchdog restarted the engine (a new process reporting within 10 s). The "engine restarted" notice was **held for the morning digest**, as quiet hours require (it was after 22:00). The scheduled task had already restarted the engine once on its own, when a start failed for lack of the key variables in this editor's session. |
+| `stop` | a clean stop; the watchdog then left the engine alone; no errors in the log |
+| The fixed code | restarted on it: the "starting" snapshot, then the real one, GPU in the background, `watchdog.jsonl` written, no errors |
+| Auto-start after sign-out and sign-in (owner) | passed 2026-10-27; the installed IKARS also started at sign-in after a restart (2026-10-28) |
 
-**Review (R14).**
-- **Per commit (`ad60325`), 4 fixed:**
+**Review.**
+- Per commit `ad60325`, 4 fixed:
 
   | # | Finding | Fix |
   |---|---|---|
@@ -1242,8 +707,8 @@ PLAN G6, the M1 and M4 outlines, the M1.6 row and DEPENDENCIES were amended to m
   | 2 | The `shown` count included throttled and held alerts | Counts only notifications shown |
   | 3 | `install-autostart` ignored `--root` | Both the engine and the watchdog get the folder |
   | 4 | A run under a minute printed no summary | A last summary on exit |
-- **Live finding (`532a3f2`):** a background engine that failed to start left no trace. Now it is logged.
-- **Per merge (medium), all 10 fixed in `fd4fd1a`:**
+- Live finding (`532a3f2`): a background engine that failed to start left no trace. Now it is logged.
+- Merge review (medium), all 10 fixed in `fd4fd1a`:
 
   | # | Finding | Fix |
   |---|---|---|
@@ -1257,154 +722,64 @@ PLAN G6, the M1 and M4 outlines, the M1.6 row and DEPENDENCIES were amended to m
   | 8 | The watchdog had no log (and `pythonw` has no stderr) | Its own `watchdog.jsonl` |
   | 9 | Duplicated `pythonw` lookup, and three atomic writes without `fsync` | Shared helpers |
   | 10 | GPU detection could hold up the start by up to 20 s | Runs in the background |
-- **Per commit (`fd4fd1a`):** 1 fixed: an unexpected error in background GPU detection now reads "detection
-  failed" instead of "detecting" forever.
+- Per commit `fd4fd1a`: 1 fixed: an unexpected error in background GPU detection now reads "detection failed" instead
+  of "detecting" forever.
 
-**Kept, changed and why.**
-- *Kept from KAPS's watchdog:* the confirm, remind and clear rules, the state file, and a retry for an alert that
-  wasn't delivered.
-- *Changed:* delivery is Windows notifications (no ntfy); the observations are a lock and a snapshot, not `systemd`
-  and PostgreSQL; the restart, which `systemd` did for KAPS, is now the watchdog's job.
+**Kept, changed and why.** *Kept from KAPS's watchdog:* the confirm, remind and clear rules, the state file, and a
+retry for an alert that wasn't delivered. *Changed:* delivery is Windows notifications (no ntfy); the observations are
+a lock and a snapshot, not `systemd` and PostgreSQL; the restart, which `systemd` did for KAPS, is now the watchdog's
+job.
 
-**Problems and fixes.**
-- This editor's shell predates the key variables. Live runs load them into the process, and at sign-in Windows
-  gives them to the Run entry and the task.
-- The engine's lock file can't be read while it's held, so the process ID comes from the snapshot.
+### 1.7 Loopback API and contracts
 
-**M1.6 done**, subject to your merge and your sign-out check.
+**Status.** Plan approved 2026-10-27 (all four answers as recommended). Built on `m1/7-api`: `07a0775` (API and
+contracts), `9772736` (live fixes), `28e1334` (merge-review fixes). **Done:** PR #10 merged as `0ba5d83`
+(2026-10-27). Packages: `starlette`, `uvicorn` (BSD-3-Clause), with `anyio`, `h11`, `click`, `sniffio`; no NuGet
+packages. Machine changes: `api.json` (port and token, owner-only) in the data folder while the engine runs, and a
+loopback port while it listens; no firewall change.
 
-**Owner (2026-10-27):** saw the test notification. **M1.6 done:** PR #9 merged as `2efc95f`. The sign-out check of
-auto-start is still the owner's to do.
+**Owner's decisions (2026-10-27).** (1) **Server-Sent Events**, with subscriptions over HTTP (D3's "one WebSocket"
+amended; the stream flows one way, and KalTerm3's client already read SSE); (2) a free port at each start, recorded in
+`api.json` (replaced by a fixed port in M1.8a-web, 1.R2 item 1); (3) ledger records over the API, paged,
+token-guarded, loopback only; (4) hand-written C# records checked by golden examples (retired with the WPF terminal,
+1.8w).
 
-### 1.7 Loopback API and contracts (plan APPROVED 2026-10-27, all four answers as recommended; branch `m1/7-api`)
+**Found.**
+1. **uvicorn's own logging set-up crashed the background engine.** Under `pythonw` there is no console, so its
+   formatter failed at start. `serve`'s start-up logging (M1.6) caught it, and the server now sets `log_config=None`.
+   A test runs the server with no stdout or stderr. Fixed in `9772736`.
+2. **The first live p99 was 2,000 ms.** That was a measurement error: the first event after subscribing is a market's
+   current state, which is as old as the market is quiet. Now only updates are timed (`9772736`).
 
-**Builds** (in `ikars-engine`, plus a C# contracts project for the terminal):
-1. **The API server in the engine's own process:** Starlette on uvicorn, started inside the engine's event loop,
-   listening on `127.0.0.1` only.
-2. **Access guard:**
-   - a **per-session token**: random, made at each start, and required on every request
-     (`Authorization: Bearer`);
-   - it is written with the port to `api.json` in the data folder, readable by the owner only (the ACL check from
-     `ikars-core`), and never logged;
-   - the `Host` header must be loopback, which guards against DNS rebinding;
-   - no CORS, and any browser `Origin` is refused.
-3. **Version handshake (G):** `GET /v1/hello` gives the API version, the engine version and a hash of the
-   contracts schema. The terminal refuses a different major version and says why.
-4. **Snapshots over HTTP** (read-only; there are no trading commands before M7):
-   - health, the market index (search and paging), one market (its quote and the book's top levels), a full
-     book;
-   - the portfolio, ledger status and ledger records (paged; your own data, local only);
-   - the alert log, and recommendations (empty until M1.12).
-5. **Deltas on one stream:**
-   - topics: market quotes and books for the markets the terminal subscribes to, portfolio changes, new
-     alerts, and health every 5 seconds;
-   - subscriptions are changed over HTTP;
-   - updates are **coalesced per topic at about 10 Hz** on the engine side, so a burst of 800 deltas a second never
-     floods the terminal (D3, J);
-   - each event carries an id, so a reconnect can resume.
-6. **Contracts:**
-   - every payload is a `msgspec` struct in one `contracts` module, exported as **JSON Schema** to
-     `contracts/ikars-api.schema.json`;
-   - CI fails if the committed schema differs from the generated one;
-   - the engine also writes a **golden example** of each payload, and the C# test deserialises every one into its
-     C# record with unknown fields refused, so the two sides cannot drift silently.
-7. **Latency (J):** the time from a feed frame arriving to its event leaving the stream goes into health, with p50
-   and p99.
-8. **Commands:** `serve` and `run` start the API too; `status` shows its port, never the token.
-
-**Changes on this machine:** an `api.json` file (port and token, owner-only) in the data folder while the engine
-runs, and a loopback port while it listens. Nothing else, and no firewall change: loopback only.
-
-**New packages:**
-- `starlette` (BSD-3-Clause) and `uvicorn` (BSD-3-Clause), with their dependencies `anyio` (MIT), `h11` (MIT),
-  `click` (BSD-3-Clause) and `sniffio` (MIT or Apache-2.0);
-- no new NuGet packages: the C# side uses `System.Text.Json`.
-
-**Tests:**
-- the guard: no token, a wrong token, a foreign `Host`, a browser `Origin`;
-- the handshake;
-- each snapshot route against made-up state;
-- the stream: subscribe, coalescing, resume after a reconnect, a slow reader;
-- the schema-drift check;
-- the C# golden-example test.
-
-**Live checks:**
-- the API answers on loopback only, and is refused from another address;
-- the handshake;
-- snapshots of live markets, and the portfolio;
-- the stream carries live quotes for subscribed markets, at no more than the coalescing rate;
-- feed-to-stream latency against the 250 ms target;
-- the token never appears in a log.
-
-**Open questions.**
-1. **Stream transport:**
-   - *Recommended:* **Server-Sent Events** over HTTP, with subscriptions changed by HTTP calls. KalTerm3's terminal
-     client already reads SSE and has tested reconnect code to reuse in M1.8. The engine side is simpler, and the
-     stream only flows one way.
-   - *Alternative:* one **WebSocket**, as D3 says. It is two-way, so subscriptions would travel on the socket, but
-     it means writing a new client.
-   - Choosing SSE amends D3's "one WebSocket" (its HTTP and JSON part stays).
-2. **Port:**
-   - *Recommended:* a **free port chosen at each start**, written to `api.json` with the token, so it never clashes
-     with KalTerm3 (5280) or anything else.
-   - *Alternative:* a fixed port, for example 5290.
-3. **Ledger records over the API:** *recommended:* yes, paged, token-guarded and loopback only, so the terminal can
-   show your ledger (M1.8). *Alternative:* status and counts only until M5.
-4. **C# contracts:**
-   - *Recommended:* **hand-written C# records, checked by the golden examples**. This needs no new tooling and
-     catches every drift.
-   - *Alternative:* generate them from the JSON Schema, with a code generator such as NJsonSchema (a new NuGet
-     package and build step).
-
-**Owner's answers (2026-10-27):** all four as recommended:
-1. Server-Sent Events, with subscriptions over HTTP (D3 amended);
-2. a free port at each start, recorded in `api.json`;
-3. ledger records over the API, paged;
-4. hand-written C# records, checked by golden examples.
-
-#### 1.7 built (2026-10-27)
-
-**Built** (commits `07a0775`, `9772736`, `28e1334`; new packages `starlette` and `uvicorn`, BSD-3-Clause):
+**Built.**
 
 | Area | What |
 |---|---|
 | Contracts | Every payload is a `msgspec` struct in `contracts.py`, exported as JSON Schema (`contracts/ikars-api.schema.json`) and golden examples (`contracts/examples`, 19 files). A test fails on drift; `python -m ikars_engine contracts export` regenerates them. |
-| Server | Starlette on uvicorn inside the engine's event loop, on `127.0.0.1` and a free port at each start. uvicorn configures no logging (it fails under `pythonw`). `api.json` holds the port and token: written once the server is serving, the owner's alone (ACL-checked), and removed at stop. |
-| Guard | A per-session token compared in constant time; a loopback `Host` only (IPv6 included); any browser `Origin` refused. |
-| Snapshots | hello (the handshake: API version, engine version, schema hash), health, markets (search and paging), a market, a book, the portfolio, ledger status and records (paged, newest first), the alert log (by line), recommendations (empty until M1.12). |
-| Stream | Server-Sent Events (D3 amended); subscriptions over HTTP; quotes and books sent only when changed, coalesced at 100 ms; the portfolio when it changes; new alerts read through an incremental line index; health every 5 s. At most 8 streams, an exact cap. Streams end at stop. |
-| Latency (J) | `api.feed_to_stream_ns` in health, from a frame's arrival to its event leaving. Only updates are timed, and quotes and books keep separate change times. |
-| C# | `Ikars.Contracts`: hand-written records with snake_case names; unknown fields, missing required fields and wrong nulls are refused. `Ikars.Contracts.Tests` round-trips every golden example and checks the schema's names. No new NuGet packages. |
+| Server | Starlette on uvicorn inside the engine's event loop, on `127.0.0.1` and a free port at each start. uvicorn configures no logging (it fails under `pythonw`). `api.json` holds the port and token: written once the server is serving, the owner's alone (ACL-checked), and removed at stop. `serve` and `run` start the API; `status` shows its port, never the token. |
+| Guard | A per-session token compared in constant time; a loopback `Host` only (IPv6 included; guards against DNS rebinding); no CORS, any browser `Origin` refused. |
+| Snapshots | hello (the handshake: API version, engine version, schema hash; a different major version is refused), health, markets (search and paging), a market, a book, the portfolio, ledger status and records (paged, newest first), the alert log (by line), recommendations (empty until M1.12). Read-only: no trading commands before M7. |
+| Stream | Server-Sent Events (D3 amended); subscriptions over HTTP; quotes and books sent only when changed, coalesced at 100 ms (so a burst of 800 deltas a second never floods the terminal); the portfolio when it changes; new alerts read through an incremental line index; health every 5 s; event ids for resume. At most 8 streams, an exact cap. Streams end at stop. |
+| Latency (J) | `api.feed_to_stream_ns` in health, from a frame's arrival to its event leaving, p50 and p99. Only updates are timed, and quotes and books keep separate change times. |
+| C# (retired 1.8w) | `Ikars.Contracts`: hand-written records with snake_case names; unknown fields, missing required fields and wrong nulls refused; `Ikars.Contracts.Tests` round-tripped every golden example and checked the schema's names. |
 
-**Verified.**
-- 1,277 Python tests pass (94% coverage of `api.py`, 93.8% overall), and 24 .NET tests pass (100% of
-  `Ikars.Contracts`). ruff, mypy, pip-audit, dotnet format, the data guard and gitleaks are all clean.
-- **Live**, against the background engine:
+**Verified.** 1,277 Python tests (94% of `api.py`, 93.8% overall) and 24 .NET tests (100% of `Ikars.Contracts`);
+ruff, mypy, pip-audit, dotnet format, the data guard and gitleaks clean. Live, against the background engine:
 
-  | Check | Result |
-  |---|---|
-  | Handshake | API 1.0; a request without the token is refused |
-  | Snapshots | 211,362 markets indexed; a live book ready (33 and 58 levels); portfolio; the ledger verified and **exact**; a ledger page |
-  | Stream (30 s, 5 watched markets) | 1 opened, 38 quote, 565 book, 1 portfolio and 5 health events; **at most 7.8 events a second per market** |
-  | Feed to stream | **p50 ≤ 20 ms, p99 ≤ 200 ms** (target 250 ms; log-bucket bounds) |
-  | Exposure | nothing answers on the machine's network address; **the token is in no log** |
-  | Stop with a stream open | done in 2.4 s; `api.json` removed |
+| Check | Result |
+|---|---|
+| Handshake | API 1.0; a request without the token is refused |
+| Snapshots | 211,362 markets indexed; a live book ready (33 and 58 levels); portfolio; the ledger verified and **exact**; a ledger page |
+| Stream (30 s, 5 watched markets) | 1 opened, 38 quote, 565 book, 1 portfolio and 5 health events; **at most 7.8 events a second per market** |
+| Feed to stream | **p50 ≤ 20 ms, p99 ≤ 200 ms** (target 250 ms; log-bucket bounds) |
+| Exposure | nothing answers on the machine's network address; **the token is in no log** |
+| Stop with a stream open | done in 2.4 s; `api.json` removed |
 
-**Live findings, fixed (`9772736`).**
-1. **uvicorn's own logging set-up crashed the background engine.** Under `pythonw` there is no console, so its
-   formatter failed at start. `serve`'s start-up logging (M1.6) caught it, and the server now sets
-   `log_config=None`. A test runs the server with no stdout or stderr.
-2. **The first live p99 was 2,000 ms.** That was a measurement error: the first event after subscribing is
-   a market's current state, which is as old as the market is quiet. Now only updates are timed.
-
-**Review (R14).**
-- **Per commit (`07a0775`), 3 fixed:**
-  1. A bare IPv6 `Host` was refused.
-  2. A cut-back alert log froze a stream's alerts.
-  3. `api.json` was written before the server was serving.
-- **Per commit (`9772736`):** none. A flaky M1.5a test was also fixed: its secret "777" matched a log timestamp
-  by chance.
-- **Per merge (medium), all 10 fixed in `28e1334`:**
+**Review.**
+- Per commit `07a0775`, 3 fixed: (1) a bare IPv6 `Host` was refused; (2) a cut-back alert log froze a stream's
+  alerts; (3) `api.json` was written before the server was serving.
+- Per commit `9772736`: none. A flaky M1.5a test was also fixed: its secret "777" matched a log timestamp by chance.
+- Merge review (medium), all 10 fixed in `28e1334`:
 
   | # | Finding | Fix |
   |---|---|---|
@@ -1418,159 +793,53 @@ runs, and a loopback port while it listens. Nothing else, and no firewall change
   | 8 | The whole alert log was read per page and per stream start | An incremental line index |
   | 9 | The alert log's name was repeated in two places | `alerts.ALERT_LOG` |
   | 10 | `Ledger.page` built its parameters in a roundabout way | Simplified |
-- **Per commit (`28e1334`):** 1 fixed: the stream cap was not exact when requests arrived together. An
-  `error` stream event was added to the contract.
+- Per commit `28e1334`: 1 fixed: the stream cap was not exact when requests arrived together. An `error` stream event
+  was added to the contract.
 
-**Kept, changed and why.**
-- *Kept from KalTerm3:* Server-Sent Events for the stream, so its client and reconnect code carry over to M1.8.
-- *Changed:* KalTerm3's API was a separate server on a fixed port. IKARS's runs inside the engine, on a free
-  port, behind a session token.
+**Kept, changed and why.** *Kept from KalTerm3:* Server-Sent Events for the stream (its client's rules carry over to
+the terminal). *Changed:* KalTerm3's API was a separate server on a fixed port; IKARS's runs inside the engine, on a
+free port, behind a session token.
 
-**M1.7 done**, subject to the owner's merge.
+*Alternative not chosen (D3, 2026-10-26):* gRPC with Protocol Buffers: strong cross-language typing and streaming,
+but more tooling, and it would have discarded KalTerm3's stream client (no longer used either way since the D1
+amendment).
 
-**M1.7 done:** PR #10 merged as `0ba5d83` (2026-10-27).
+### 1.8 Terminal shell (WPF, retired)
 
-### 1.8 Terminal shell (plan APPROVED 2026-10-27, all five answers as recommended; branch `m1/8-terminal`)
+**Status.** Plan approved 2026-10-27 (all five answers as recommended: split into M1.8a and M1.8b; Overview panels
+whose data comes later drawn now with an "arrives in" note; ScottPlot with the engine's candles route; p99 frame time
+at most 33 ms while 100 markets stream at 10 Hz; thin views left out of the coverage gate, view models, client and
+navigation held to it). The WPF M1.8a was built and merged, then **retired the same day** by the move to a TypeScript
+web terminal (1.8w): its code is kept at the tag `wpf-terminal-final` and was removed by PR #13. M1.8b (hotkeys,
+layouts, themes, settings and the first-run wizard, the support bundle) was replanned for the web terminal (BUILD-LOG
+1.8b). What carries over is the engine routes below, the settled behaviours (1.8w, behaviours 1–7) and D20 J as
+amended.
 
-**Proposed split** (like M1.4 and M1.5): **M1.8a** the shell, the client, navigation and the main screens;
-**M1.8b** hotkeys, layouts, themes, settings with the first-run wizard, and the support bundle. Each is reviewed
-and merged on its own.
+#### 1.8a Shell, client and screens (WPF, retired)
 
-**M1.8a builds** (new `Ikars.Client` and `Ikars.Terminal` .NET projects, on `Ikars.Contracts`):
-1. **The client (`Ikars.Client`):**
-   - reads `api.json`, sends the token, and refuses a different API major version (the handshake);
-   - typed calls for every snapshot route;
-   - the stream from KalTerm3's tested SSE reader and reconnect code (resuming alerts by line), changing
-     subscriptions as screens open and close.
-2. **Connect or start:** the terminal connects to the running engine. If none is running it starts the engine with
-   the command `install-autostart` registered, and shows progress while the engine starts up.
-3. **Navigation (R9):**
-   - one navigation service over a typed reference (kind plus id);
-   - a breadcrumb trail with back and forward;
-   - every view model built from a reference, so a link is just a reference.
-4. **Screens, per the approved mock-ups:**
-   - **Overview:** portfolio and exposure, alerts, and a health strip are live now. Panels whose data comes in
-     later slices (top recommendations and journal from M1.12, movers from M1.12, source items from M2, perp
-     funding and book signals from M3) are drawn in place with a short "arrives in …" note (open question 2).
-   - **Markets:** search and categories (from the engine's index), opening into a market.
-   - **Market drill-down:**
-     - the title and live quote;
-     - the YES price chart for today (from a new engine route, open question 3);
-     - the order book (both sides are bids);
-     - the linked-items panel. For now it holds same-event markets and your ledger records for the market;
-       source items, recommendations and perps join in their slices. Selection stays in sync across panels.
-   - **Health:** engine, feed, ledger, backups, GPU and API, with the gap log.
-   - **Ledger:** status and paged records (your data; local only).
-   - **Alerts:** the alert log by priority.
-5. **Rendering:** stream updates are coalesced and repainted at a fixed rate (about 10 Hz), as D3 says, so WPF stays
-   light under bursts.
-6. **Frame time (J):** measured from WPF's render loop, with p50 and p99 shown in the health view (open
-   question 4).
-7. **Engine addition:** `GET /v1/markets/{ticker}/candles` (Kalshi's candlesticks through the engine's request
-   budget, cached for a minute), with its contract and golden example.
+**Status.** Built on `m1/8-terminal`: `c485d4a`, `3cbf8fc`, `ee06ba5`, `778cda1`, `a4fa061` (live fixes), `db1676f`
+(merge-review fixes), then `144c5c4` and `40e73ae` (frame time). **Done:** PR #11 merged as `77849e3` (2026-10-27).
+Package: `ScottPlot.WPF` (MIT), gone with the prune.
 
-**M1.8b builds:**
-- hotkeys (the mock-up's list, and `?` to show them);
-- saved layouts across monitors (KalTerm3's window placement);
-- light and dark themes (WPF's Windows 11 theme, as KalTerm3);
-- versioned terminal settings with a migration, and the **first-run wizard** (G15): it checks the key variables
-  (never shows them), the engine, the share, the tax zone and quiet hours;
-- the redacted **support bundle** (I): logs, health and versions in one zip, with no keys, tokens, account values
-  or paths.
+**Owner's decisions (2026-10-27).** **D20 J amended:** keep 33 ms, applied to **update to screen** (see Found).
 
-**Kept from KalTerm3, and changed.**
-- *Kept:* the MVVM helpers, the SSE reader and reconnect, markets, market detail, order book, chart and layout
-  code, the toaster and formatting. Each is read critically and adapted.
-- *Removed:* the SQL Server and multi-user parts, trading (recommend-only until M7), and watchlists (to the
-  parking lot unless you want them).
-
-**Changes on this machine:** the terminal's settings under `%LOCALAPPDATA%\IKARS\terminal`. Nothing else in M1.8a.
-The packaged install comes in M1.9.
-
-**New packages:** `ScottPlot.WPF` (MIT, KalTerm3's chart) for the price chart. Nothing else: KalTerm3's own small
-MVVM helpers are reused instead of a toolkit.
-
-**Tests:**
-- view models against a fake API: navigation, breadcrumbs, back and forward, subscriptions following the open
-  screens, coalescing, the handshake refusal, connect-or-start;
-- the client against a local test server: token, SSE parsing, reconnect and resume;
-- the candles route in the engine.
-
-**Live checks:**
-- the terminal connects to the running engine, and starts one when none is running;
-- the Overview shows the real portfolio, alerts and health;
-- drill into a live market: its quote, book and chart update;
-- the linked-items panel opens and selection stays in sync;
-- the ledger view pages your records;
-- frame time is measured while 100 markets stream.
-
-**Open questions.**
-1. **Split into M1.8a and M1.8b?** *Recommended:* yes, as above.
-2. **Overview panels whose data comes later:**
-   - *Recommended:* draw them now, in their mock-up places, with a short "arrives in M1.12" (or M2, M3) note, so
-     the layout is final and nothing moves later.
-   - *Alternative:* hide them until their data exists.
-3. **The price chart:** *recommended:* `ScottPlot.WPF` (MIT, KalTerm3's) with the new candles route on the engine.
-   *Alternative:* no chart until M1.12.
-4. **Frame-time target:** *recommended:* **p99 at most 33 ms** (30 frames a second) while 100 markets stream at
-   10 Hz.
-5. **Coverage gate for the WPF project:**
-   - *Recommended:* the views stay thin (XAML and minimal code-behind) and are left out of the 90% line gate; the
-     view models, client and navigation are held to it.
-   - *Alternative:* UI automation tests to cover the views too, which are slower and more brittle.
-
-**Owner's answers (2026-10-27):** all five as recommended:
-1. split into M1.8a and M1.8b;
-2. later panels drawn now, each with an "arrives in" note;
-3. ScottPlot with the engine's candles route;
-4. p99 frame time at most 33 ms while 100 markets stream;
-5. thin views left out of the coverage gate, with view models, client and navigation held to it.
-
-#### 1.8a built (2026-10-27)
-
-**Built** (commits `c485d4a`, `3cbf8fc`, `ee06ba5`, `778cda1`, `a4fa061`, `db1676f`; new package `ScottPlot.WPF`,
-MIT):
-
-| Area | What |
-|---|---|
-| Engine routes | `GET /v1/markets/{ticker}/candles` (Kalshi's candlesticks through the request budget; successes and failures cached for a minute); ledger records by market (`?ticker=`); `GET /v1/gaps` (the gap log for the Health screen); the markets list puts open markets first. Contracts and golden examples updated (24). |
-| `Ikars.Client` | The engine connection: `api.json`, the version handshake, a typed API client with its own timeout, an SSE reader, and a stream watcher that subscribes, resumes after the last alert, backs off (a refusal keeps backing off) and drops a stream silent for 20 s. The connector starts the engine through its registered command when none runs. |
-| `Ikars.Terminal` | WPF (`ThemeMode=System`). One navigator: drill-down, breadcrumbs, back and forward (R9); a screen left while loading is cancelled and lets go of its subscriptions. An update hub hands the stream's changes to the screens once per 100 ms tick, and sends a subscription change only when the screens' union changed. |
-| Screens | **Overview** (cash, open cost, unrealised, positions, exposure, the newest alerts, a health strip, and the six later panels drawn with "arrives in" notes); **Markets** (search, paging, live bid and ask); **Market** (quote, both book sides, the day's price chart, and the linked panel: same-event markets and your ledger records for it); **Ledger** (status, pages newest first); **Alerts** (by priority); **Health** (every engine part, the week's gap log, frame time). |
-| Frame time (J) | **Update to screen** (D20 J as amended): for each tick that changed the screen, the time until WPF starts the frame after the one that shows it (an upper bound, high by up to one refresh), and the UI work per update (the hand-over and its layout); the last 600 as p50 and p99, on the status bar and the Health screen. The window listens for frames only while a change waits. |
-| Start-up | `--data-folder <path>` points the terminal at another engine's folder (the load test; the portable install later). |
-
-**Verified.**
-- 1,279 Python tests pass (93.8% overall) and 69 .NET tests pass: `Ikars.Terminal` 97.7% of lines (views
-  excluded, as approved), `Ikars.Client` 93.7%, `Ikars.Contracts` 100%. ruff, mypy, dotnet format, the data guard
-  and gitleaks are clean.
-- **Live**, against the background engine (driven through UI Automation; counts only):
-
-  | Check | Result |
-  |---|---|
-  | Start the engine when none runs | the owner-stopped engine was started by the terminal through the registered command; connected in 55 s (start-up includes the market index) |
-  | Overview | portfolio, alerts, health strip and the planned panels with live data |
-  | Markets | 212,020 markets; search finds a market by ticker |
-  | Market drill-down | quote, both book sides (10 levels each), the linked panel with the same-event market; ledger records by market correct once the engine ran the new routes |
-  | Ledger paging | 223 records: 223 to 124, 123 to 24, 23 to 1 (Older then disabled), Newest back to the top; chain verified |
-  | Health | 87 health rows and the gap log; the API token appears nowhere (only the request budget's `tokens_*` rates) |
-
-**Frame time (J): how the target was settled.** The load for these checks was the engine's real API server over a
-made-up context: 100 watched markets whose quotes and books all change every 100 ms.
-1. **Over Remote Desktop** the first meter (gaps between rendered frames) read p50 31 ms, p99 63 ms. The remote
-   display runs at about 32 Hz with software rendering (render tier 0), so nothing could be judged there.
-2. **At the console** (59 Hz, the RTX 5070 Ti, hardware rendering) the owner read p99 34 ms idle and 48 to 49 ms
-   under load. Clearing and refilling lists every second was replaced by in-place updates (`144c5c4`); the readings
-   did not move.
-3. **A trace at the console** showed the terminal's UI work per update at p99 1.3 ms on Markets and 15 ms on a
-   market, so the gaps were not IKARS's work. A 1 ms Windows timer resolution changed nothing.
-4. **A bare WPF window** (no IKARS code) settled it: p99 46 ms when nothing changes, and p50 and p99 both
-   **16.7 ms** (2 gaps over 20 ms in 1,791 frames) when its text changes every frame. **WPF draws only when
-   something changed**, so frame gaps measure idling, not slowness. My earlier reading, that WPF's timing on this
-   machine was irregular, was wrong. Forcing the high-performance GPU changed nothing (every monitor is on the
-   5070 Ti, and WPF already rendered there); the two preference values were removed afterwards.
-5. **The owner amended D20 J** (2026-10-27): keep 33 ms, applied to **update to screen**. Measured at the console
-   with the new meter (`40e73ae`):
+**Found: how the frame-time target was settled.** The load was the engine's real API server over a made-up context:
+100 watched markets whose quotes and books all change every 100 ms.
+1. **Over Remote Desktop** the first meter (gaps between rendered frames) read p50 31 ms, p99 63 ms. The remote display
+   runs at about 32 Hz with software rendering (render tier 0), so nothing could be judged there.
+2. **At the console** (59 Hz, the RTX 5070 Ti, hardware rendering) the owner read p99 34 ms idle and 48 to 49 ms under
+   load. Clearing and refilling lists every second was replaced by in-place updates (`144c5c4`); the readings did not
+   move.
+3. **A trace at the console** showed the terminal's UI work per update at p99 1.3 ms on Markets and 15 ms on a market,
+   so the gaps were not IKARS's work. A 1 ms Windows timer resolution changed nothing.
+4. **A bare WPF window** (no IKARS code) settled it: p99 46 ms when nothing changes, and p50 and p99 both **16.7 ms**
+   (2 gaps over 20 ms in 1,791 frames) when its text changes every frame. **WPF draws only when something changed**,
+   so frame gaps measure idling, not slowness. The earlier reading, that WPF's timing on this machine was irregular,
+   was wrong. Forcing the high-performance GPU changed nothing (every monitor is on the 5070 Ti, and WPF already
+   rendered there); the two preference values were removed afterwards.
+5. **The owner amended D20 J** (2026-10-27): keep 33 ms, applied to **update to screen**: for each tick that changed
+   the screen, the time until the frame after the one that shows it (an upper bound, high by up to one refresh), plus
+   the UI work per update. Measured at the console with the new meter (`40e73ae`):
 
    | Screen | To screen p50 / p99 | UI work p99 |
    |---|---|---|
@@ -1581,23 +850,34 @@ made-up context: 100 watched markets whose quotes and books all change every 100
 
    **Within the target** on every screen, with an upper-bound measure.
 
-**Live findings, fixed (`a4fa061`).**
-1. **17 of the top 50 markets were closed.** A closed 15-minute market keeps its day's volume and sorted first.
-   Open markets now come first (`OPEN_STATUSES`, shared with discovery).
-2. **An empty chart drew bare axes.** It now says why it is empty: no trades today, no price history, or Kalshi
-   did not answer.
-3. **"Your ledger records" showed the same records for every market.** The background engine had started before
-   the new routes were committed, so it ignored `?ticker=`. Restarting it fixed this; no code change.
-4. **Three "engine restarted" alerts from the evening** were the M1.7 live checks' own stops and the uvicorn
-   logging crash fixed in M1.7; nothing new.
+Live findings, fixed in `a4fa061`: (1) **17 of the top 50 markets were closed**: a closed 15-minute market keeps its
+day's volume and sorted first; open markets now come first (`OPEN_STATUSES`, shared with discovery). (2) **An empty
+chart drew bare axes**; it now says why (no trades today, no price history, or Kalshi did not answer). (3) "Your
+ledger records" showed the same records for every market: the background engine predated the new routes and ignored
+`?ticker=`; a restart fixed it, no code change. (4) Three "engine restarted" alerts from the evening were the M1.7
+live checks' own stops and the uvicorn logging crash fixed in M1.7; nothing new.
+
+**Built.** Engine routes (still current): `GET /v1/markets/{ticker}/candles` (Kalshi's candlesticks through the
+request budget; successes and failures cached for a minute); ledger records by market (`?ticker=`); `GET /v1/gaps`
+(the gap log); the markets list puts open markets first; contracts and golden examples updated (24). Retired with the
+prune: `Ikars.Client` (connection, handshake, SSE watcher, connect-or-start), `Ikars.Terminal` (WPF; one navigator;
+an update hub at 100 ms ticks; Overview, Markets, Market, Ledger, Alerts, Health; the update-to-screen meter;
+`--data-folder`).
+
+**Verified.** 1,279 Python tests (93.8%) and 69 .NET tests (`Ikars.Terminal` 97.7% of lines, views excluded;
+`Ikars.Client` 93.7%; `Ikars.Contracts` 100%); ruff, mypy, dotnet format, the data guard and gitleaks clean. Live,
+through UI Automation (counts only): the terminal started the owner-stopped engine through the registered command and
+connected in 55 s (start-up includes the market index); Overview with live data; Markets 212,020, search by ticker;
+a market's quote, both book sides (10 levels each) and the linked panel; ledger paging over 223 records (223 to 124,
+123 to 24, 23 to 1, Newest back to the top; chain verified); Health 87 rows and the gap log; the API token appears
+nowhere.
 
 **Review.**
-- **Per commit (`778cda1`):** 3 fixed:
-  1. a screen left while loading kept its subscriptions (the navigator now cancels the load and closes it again);
-  2. a failed flush in the timer tick would end the terminal (shown as a problem instead);
-  3. a failed subscription change was not retried (it stays pending).
-- **Per commit (`a4fa061`):** none.
-- **Merge review (medium), 10 findings:**
+- Per commit `778cda1`: 3 fixed: (1) a screen left while loading kept its subscriptions (the navigator now cancels the
+  load and closes it again); (2) a failed flush in the timer tick would end the terminal (shown as a problem
+  instead); (3) a failed subscription change was not retried (it stays pending).
+- Per commit `a4fa061`: none.
+- Merge review (medium), 10 findings:
 
   | # | Finding | Done |
   |---|---|---|
@@ -1611,40 +891,37 @@ made-up context: 100 watched markets whose quotes and books all change every 100
   | 8 | A request timeout was taken for an engine restart: reconnect and a repeated Kalshi-backed request | A timeout is not retried (`TimedOut`); tested |
   | 9 | An alert arriving during a screen's snapshot appeared twice; the Alerts lists grew without a bound | Once each, newest first by line, at most 200 per priority; tested |
   | 10 | The ledger's ticker filter has no index | **Parked** (PLAN §9): it needs a ledger migration, and the scan is trivial at today's size |
+- Per commit `db1676f`: 1 fixed: disposing the old client on a reconnect would cancel calls still running on it; it is
+  no longer disposed (it owns no sockets; one shared handler). `144c5c4`: none. `40e73ae`: 1 fixed (a duplicated doc
+  comment on `TickAsync`).
 
-- **Per commit (`db1676f`):** 1 fixed: disposing the old client on a reconnect would cancel calls still running on
-  it. It is no longer disposed; it owns no sockets (one shared handler).
-- **Per commit (`144c5c4`):** none.
-- **Per commit (`40e73ae`):** 1 fixed: a duplicated doc comment on `TickAsync`.
+**Kept, changed and why.** *Kept from KalTerm3:* WPF with the Windows 11 theme, ScottPlot, the SSE stream client's
+shape. *Changed:* one navigator owns every screen (KalTerm3 opened windows per view), so drill-down, breadcrumbs and
+back/forward work the same everywhere (R9); updates are coalesced twice, in the engine (100 ms per market) and in the
+terminal (one hand-over per tick), so a burst never reaches the UI thread as a burst. *Removed from KalTerm3:* SQL
+Server and multi-user parts, trading, watchlists.
 
-**Kept, changed and why.**
-- *Kept from KalTerm3:* WPF with the Windows 11 theme, ScottPlot for charts, the SSE stream client's shape.
-- *Changed:* one navigator owns every screen (KalTerm3 opened windows per view), so drill-down, breadcrumbs and
-  back/forward work the same everywhere (R9). Updates are coalesced twice: in the engine (100 ms per market) and in
-  the terminal (one hand-over per tick), so a burst never reaches the UI thread as a burst.
+### 1.8w Direction change: a TypeScript web terminal
 
-**M1.8a built**, subject to the owner's merge.
+**Status.** Decided by the owner 2026-10-27, after M1.8a. **Done:** the decision record PR #12 merged as `d73921b`
+(tag `wpf-terminal-final` on it keeps the WPF terminal); the WPF prune PR #13 merged as `1b92d49`.
 
-**M1.8a done:** PR #11 merged as `77849e3` (2026-10-27).
-
-### 1.8w Direction change: a TypeScript web terminal (owner, 2026-10-27)
-
-**Decision.** After M1.8a, the owner compared the WPF terminal with Avalonia, WinUI 3, Blazor Hybrid and a
-TypeScript web app, and chose **TypeScript** for flexibility and future expansion and customisation. All the
+**Owner's decisions (2026-10-27).** The owner compared the WPF terminal with Avalonia, WinUI 3, Blazor Hybrid, a .NET or Tauri host around
+WebView2, and a TypeScript web app, and chose **TypeScript** for flexibility and future expansion and customisation. All the
 recommended answers were approved:
 1. **Window:** the engine serves the app on its loopback address; it opens as a **Microsoft Edge app window**
    (`msedge --app`) with its own IKARS profile (none of the owner's extensions or cookies). No host program.
-2. **Sign-in:** a **one-time code** in the launch link, exchanged by the engine for an `HttpOnly`,
-   `SameSite=Strict` cookie for this port only; the session token is never readable by page scripts. The guard
-   accepts only the engine's own loopback origin.
+2. **Sign-in:** a **one-time code** in the launch link, exchanged by the engine for an `HttpOnly`, `SameSite=Strict`
+   cookie for this port only; the session token is never readable by page scripts. The guard accepts only the
+   engine's own loopback origin.
 3. **Framework:** **React**, with Vite, strict TypeScript, pnpm, Vitest (90%), Playwright, ESLint and `pnpm audit`.
-4. **Money:** the web terminal does no money arithmetic. The engine's integers (10^-6 dollars, 10^-2 contracts)
-   are exact as JavaScript numbers up to 2^53; a distinct money type and integer-only formatting, with tests,
-   keep them that way.
+4. **Money:** the web terminal does no money arithmetic. The engine's integers (10^-6 dollars, 10^-2 contracts) are
+   exact as JavaScript numbers up to 2^53; a distinct money type and integer-only formatting, with tests, keep them
+   that way.
 
-Decisions amended: D1 (the terminal), D3 (static files, sign-in, fetch-based stream reading), D11 (the web gates),
-D12 (no .NET runtime shipped); M1.8 replanned as **M1.8a-web** and **M1.8b**. R9 (Overview, drill-down,
-cross-reference) and D20 J (update to screen, p99 at most 33 ms) are unchanged.
+Decisions amended: D1 (the terminal), D3 (static files, sign-in, fetch-based stream reading), D11 (the web gates), D12
+(no .NET runtime shipped); M1.8 replanned as **M1.8a-web** and **M1.8b**. R9 (Overview, drill-down, cross-reference)
+and D20 J (update to screen, p99 at most 33 ms) are unchanged.
 
 **What was reusable.**
 
@@ -1657,8 +934,8 @@ cross-reference) and D20 J (update to screen, p99 at most 33 ms) are unchanged.
 | CI's `dotnet` job, Dependabot's `nuget` entry, `tools/ci/check-coverage.ps1` | Removed; the web job and `npm` entry come with M1.8a-web. |
 
 **Behaviour that carries over** (settled and tested in M1.8a; re-implemented and re-tested in TypeScript):
-1. One navigator: drill-down, breadcrumbs, back and forward; in the browser, real URLs, so every screen can be
-   linked to.
+1. One navigator: drill-down, breadcrumbs, back and forward; in the browser, real URLs, so every screen can be linked
+   to.
 2. A screen left while loading cancels its requests and lets go of its subscriptions.
 3. Updates handed to the screens about ten times a second; a subscription change sent only when the union changed;
    one flush at a time; a failed change retried.
@@ -1669,20 +946,19 @@ cross-reference) and D20 J (update to screen, p99 at most 33 ms) are unchanged.
    per update; and the console load test (100 made-up markets at 10 Hz through the engine's real API server).
 7. Open markets first; an empty chart says why; the book note for unwatched markets.
 
-#### 1.8w prune (2026-10-27)
+#### 1.8w prune The WPF terminal removed
 
-**Done** on branch `m1/8-prune-wpf`: `2ce5d1e` (the decision record: PLAN D1, D3, D11, D12, M1.8 and §5; this
-entry; DEPENDENCIES; README; the mock-ups README; CLAUDE.md), `371d646` (the prune), and the merge-review fixes. The
-tag `wpf-terminal-final` (on `d73921b`) keeps the WPF terminal.
+**Status.** Built on `m1/8-prune-wpf`: `2ce5d1e` (the decision record: PLAN D1, D3, D11, D12, M1.8 and §5; this
+entry; DEPENDENCIES; README; the mock-ups README; CLAUDE.md), `371d646` (the prune), and the merge-review fixes.
+**Done:** PR #13 merged as `1b92d49`. Nothing changed on the machine: the background engine, watchdog and auto-start
+are untouched; the local build folders went with the projects.
 
-**Verified:** 1,279 Python tests pass (93.8%); ruff, mypy, pip-audit, the data guard (168 tracked files) and
-gitleaks are clean; CI's jobs are now `python` and `hygiene`. Nothing changed on the machine: the background engine,
-watchdog and auto-start are untouched; the local build folders went with the projects.
+**Verified.** 1,279 Python tests (93.8%); ruff, mypy, pip-audit, the data guard (168 tracked files) and gitleaks
+clean; CI's jobs are now `python` and `hygiene`.
 
 **Review.**
-- **Per commit (`2ce5d1e`):** none (run after the commit; docs only).
-- **Per commit (`371d646`):** none.
-- **Merge review (medium), 9 findings:**
+- Per commit `2ce5d1e`: none (run after the commit; docs only). `371d646`: none.
+- Merge review (medium), 9 findings:
 
   | # | Finding | Done |
   |---|---|---|
@@ -1696,253 +972,74 @@ watchdog and auto-start are untouched; the local build folders went with the pro
   | 8 | The resume point still said the prune was to do and kept stale M1.8a text | Rewritten to the current state |
   | 9 | No terminal gate exists between the prune and M1.8a-web | No change: there is no terminal code in that gap; M1.8a-web adds the `web` job and makes it a required check (recorded in D11) |
 
-### 1.R Base hardening (plan APPROVED 2026-10-27: items 1 to 26; branch `m1/r-hardening`)
+### 1.8w-sec Review and security posture for the web terminal
 
-Before the web terminal, the owner asked for a review of the whole code base "to have a solid base". `/code-review`
-at high effort over all 10,900 source lines gave 31 candidate findings; each was checked against the code (one
-disproved by a test: `append_all` does skip a duplicate within one batch). The owner approved fixing items 1 to 26,
-each with a test:
+**Status.** Decided by the owner 2026-10-27 ("fold the relevant ones into M1.8a-web and add CodeQL"; PLAN D3, D11,
+G12, the M1.8 row). **Done:** CodeQL added by PR #15, merged as `179dd8c`; at the owner's request the aggregate
+`CodeQL` check (GitHub's code-scanning app) is **required** on `main` beside `python` and `hygiene`, so a new language
+needs no ruleset change.
 
-- **A. Data loss, a stuck engine, a silent wrong state:** (1) a refused resubscribe keeps a stale sid; (2) a gap on a
-  command reply is dropped; (3) one damaged hour file stops every start; (4) shutdown can hang; (5) a failed fold-in
-  truncates the hour; (6) a dead pump goes unnoticed; (7) the engine's queue is unbounded; (8) reconciliation
-  ignores money held by resting orders; (9) a fill listed late is costed against today's position.
-- **B. What the screens show:** (10) a dropped book is never announced; (11) a book with no snapshot never asks for
-  one; (12) a gap from before a reconnect is resolved through the new link; (13) unchanged books are re-sent;
-  (14) the guard lets WebSocket scopes through.
-- **C. Long runs:** (15) the import replays the whole ledger every minute; (16) per-market state and the index are
-  never pruned, and every markets request sorts the index; (17) long backfills hold every trade id and restart from
-  zero; (18) an unconfirmed archived market is re-read every minute; (19) the plugin gap list grows without bound;
-  (20) the governor fails on a file renamed under it.
-- **D. Smaller:** (21) a failed start is recorded as a clean shutdown; (22) the restore drill crashes on a damaged
-  copy; (23) `ledger annotate` prints tracebacks; (24) the public REST client is never closed; (25) duplicated
-  helpers (`series_of`, the nested lookup, the atomic write, backup naming); (26) the ACL check raises off Windows.
+**Found (why).** In WPF a hostile market title was only text; in a browser, text that runs as script holds the page's
+API session (and, from M7, could reach orders), and the engine becomes a web server any open site can try to reach.
+The key, GET-only rule and Python checks are unchanged: the engine alone talks to Kalshi and the page never sees the
+key.
 
-Not changed (owner): (27) production as the default environment (D21; a comment added); (28) the data guard's
-strict suffix rule; (29) the disproved `append_all` claim.
-
-#### 1.R built (2026-10-27)
-
-**Built** (commits `dd9f8d0`, `4735650`, `edae257`, `595a9b0`, `66fcec0` and the merge-review fixes). No new
-packages. One security-relevant change: **`GET /portfolio/orders` joins the account key's allowed reads** (item 8,
-approved as "read with GET only"); the key still signs GETs only, and other order paths (`/portfolio/orders/<id>`,
-`/historical/orders`, order groups) stay refused, with tests.
-
-| # | Fixed | How |
-|---|---|---|
-| 1 | A refused resubscribe kept a stale sid | The sid is cleared; the rebalance waits for the retry; a resubscribe of a restored channel sends nothing |
-| 2 | A gap on a command reply was dropped | Reported like any other |
-| 3 | One damaged hour stopped every start | Any compaction failure is logged and left; an unreadable Parquet hour is set aside as `.damaged` (never deleted); Parquet is fsynced before it replaces anything |
-| 4 | Shutdown could hang | The source's output always ends; the engine is waited for 10 s, then cancelled |
-| 5 | A failed fold-in truncated the hour | New rows go to a part file (`HH.1.arrow`); readers take every part |
-| 6 | A dead pump went unnoticed | The run loop stops the engine on it, so the watchdog restarts it |
-| 7 | The engine's input was unbounded | 50,000 items; then the feed's own overflow handling runs |
-| 8 | Resting orders were a difference | When the balance falls short, resting buys' cost is read; either reading is exact; both numbers are recorded |
-| 9 | A late-listed fill was costed silently | Flagged `out_of_order` with a note for the owner to label |
-| 10 | A dropped book was never announced | Sent once as not ready |
-| 11 | A book with no snapshot never asked for one | A delta without a book asks (watched markets) and makes no empty book |
-| 12 | A gap from a lost link was read through the new one | Gaps from an older link are counted and dropped |
-| 13 | Unchanged books were re-sent | The version moves only on a real change |
-| 14 | The guard let WebSocket scopes through | Refused (code 1008) |
-| 15 | The import replayed the ledger every minute | The importer keeps its book and applies only new records (others' included) |
-| 16 | Per-market state and the index grew for ever; every markets request sorted the index | Markets settled more than three days ago leave the index and their state; combo quotes are kept nowhere; markets still unlisted after a cycle are forgotten; the list is sorted once per index change |
-| 17 | Long backfills held every trade id and restarted from zero | Each finished slice is remembered; a failure resumes at its slice; one slice's ids at a time; the bookmarks go when the gap closes |
-| 18 | An unconfirmed archived market was re-read every minute | Hourly |
-| 19 | The plugin gap list grew for ever | The latest 100 and a total |
-| 20 | The governor failed on a renamed file | Skipped; a held file is pruned next time |
-| 21 | A failed start counted as a clean shutdown | Only a finished start can end cleanly |
-| 22 | The restore drill crashed on a damaged copy | A failed drill naming the problem |
-| 23 | `ledger annotate` printed tracebacks | A JSON refusal |
-| 24 | The public REST client was never closed | Closed at shutdown |
-| 25 | Duplicated helpers | One copy each: series and combo rules (`ikars_core.markets`), the nested lookup (`runmode.at`), the atomic write, backup and free names (`files`) |
-| 26 | The ACL check raised off Windows | A warning, never a failed start |
-| 27 | (no change) Production as the default | A comment says why (D21) |
-
-**Verified.**
-- 1,303 Python tests pass (94% coverage; money and fee code 100%); ruff, mypy, pip-audit, the data guard and
-  gitleaks are clean.
-- **Live**, against the background engine:
-
-  | Check | Result |
-  |---|---|
-  | Restart on the new code | started, feed connected, no open gaps |
-  | Ledger | chain verified, **reconciles exactly**, no import errors |
-  | Stop | **3.5 s**; recorded as a clean stop (the next start's gaps say "stopped") |
-  | A torn real recording hour (a scratch copy, deleted after) | the start went on; the hour set aside as `07.parquet.damaged`; the open file's rows kept |
-  | Resting orders (item 8) | **Checked (2026-10-27).** Both resting orders are read correctly: a **sell** closing part of a held YES position (Kalshi labels it `side` yes, `action` sell, `outcome_side` no, as the model maps it) and a **buy** of YES. **Kalshi's `balance` does not hold back a resting buy's cost:** with the buy open, the balance equals the ledger's cash exactly, so every reconciliation stayed exact with a zero difference, and the resting-cost allowance was not needed. It is kept (it is read only when the balance falls short) |
-
-**Live finding, fixed (`66fcec0`).** The minute import re-reads a day of fills; each already-recorded fill older
-than a later one was flagged and warned about before being skipped as already recorded (4 warnings). The real
-ledger holds no flagged fill; the warning now comes only for a fill actually added, with a test.
-
-**Review.**
-- **Per commit:** `dd9f8d0` none; `4735650` none; `edae257` none (a question on `seq` in record bodies checked: it
-  is there); `595a9b0` 1 fixed (a comment moved to the wrong constant); `66fcec0` none.
-- **Merge review (medium), 10 findings:**
-
-  | # | Finding | Done |
-  |---|---|---|
-  | 1 | A fold-in stopped between its steps (its Parquet held) was overwritten by the next fold-in of the hour: rows lost | Compaction finishes a pending fold-in first; tested |
-  | 2 | The kept book skipped a record another process appended during an import | The importer remembers the records it appended and applies every other; tested |
-  | 3 | A failed resting-orders read aborted the whole import | Treated as unknown (not exact); an order without `outcome_side` takes it from `side` and `action`; tested |
-  | 4 | A new market's quotes were dropped until the next discovery | Only combos are dropped at once; a market still unlisted after a cycle is forgotten then |
-  | 5 | Pruning removed closed markets that may still be held, and they churned back | Only markets settled more than three days ago; `put` never re-adds them; tested |
-  | 6 | A resubscribe retry could open a second order-book subscription after a reconnect restored it | A resubscribe of a restored channel sends nothing; tested |
-  | 7 | A schema change would have set good hours aside; damaged files escaped the budget | Only an unreadable file is set aside; the governor counts and prunes `.damaged` files; tested |
-  | 8 | Backfill bookmarks were never deleted; the live hour was re-read every slice | Deleted when the gap closes; the recent hours are read only when resuming a slice; tested |
-  | 9 | `_free_name` repeated the name loop item 25 consolidated | One `files.first_free`, used by both |
-  | 10 | The resume point did not mention M1.R | Updated |
-
-**M1.R done:** PR #14 merged as `fca7941` (2026-10-27), CI green on `main`. The resting-order check stays pending.
-
-#### 1.8w-sec Review and security posture for the web terminal (owner, 2026-10-27)
-
-**Why.** In WPF a hostile market title was only text; in a browser, text that runs as script holds the page's API
-session (and, from M7, could reach orders), and the engine becomes a web server any open site can try to reach. The
-key, GET-only rule and Python checks are unchanged: the engine alone talks to Kalshi and the page never sees the key.
-
-**Decided** (owner: "fold the relevant ones into M1.8a-web and add CodeQL"; PLAN D3, D11, G12, the M1.8 row):
+**Owner's decisions (2026-10-27).**
 - Browser hardening (D3): a strict CSP and protective headers; a single-use sign-in code that expires in seconds;
   `Origin` and `Sec-Fetch-Site` checks on changing requests; extensions off in the IKARS Edge profile; outside links
   through the engine, `https:` only.
 - Checks (D11): ESLint bans on markup injection and `eval`; npm supply-chain rules (Dependabot for npm, install
   scripts allow-listed, a 7-day waiting period, also for CI actions); no money arithmetic in TypeScript; Playwright
   output and `.env*` kept out of the repository.
-- Review: two per-commit checklist items (outside text drawn only as text; a new dependency's licence, age and
-  install scripts) and the render path as the terminal's hot path; a `/security-review` before the M1.8a-web merge
-  and before M7.
-- **CodeQL added now** (`.github/workflows/codeql.yml`): `security-extended` queries for Python and the CI workflows
-  on every pull request, on `main` and weekly; TypeScript joins with the first terminal code (CodeQL fails a
-  language with no source). Pinned to v4.39.0 (12 days old) rather than v4.39.1 (6 days), by the new waiting rule.
-  It is not a required check; whether to require it is the owner's ruleset decision. *Later the same day:*
-  merged as PR #15 (`179dd8c`); at the owner's request the aggregate `CodeQL` check (GitHub's code-scanning app)
-  is now **required** on `main` beside `python` and `hygiene`, so a new language needs no ruleset change.
+- Review: two per-commit checklist items (outside text drawn only as text; a new dependency's licence, age and install
+  scripts) and the render path as the terminal's hot path; a `/security-review` before the M1.8a-web merge and before
+  M7.
 
-#### 1.R2 Platform review for the new direction (owner, 2026-10-27)
+**Built.** `.github/workflows/codeql.yml`: `security-extended` queries for Python and the CI workflows on every pull
+request, on `main` and weekly; TypeScript joins with the first terminal code (CodeQL fails a language with no
+source). Pinned to v4.39.0 (12 days old) rather than v4.39.1 (6 days), by the new waiting rule.
 
-**Asked:** "one more full milestone review, keeping in mind the new direction, with an eye towards reusability and
-overall platform stability". M1.R had just reviewed every module for correctness, so this pass read the API,
-contracts, engine core, plugins, sources, runner, recorder and services for three questions: is the engine ready for
-the web terminal, can M1.12 and M2 plug in, and does it stay up for weeks. **Placement approved by the owner.**
+### 1.8a-web The TypeScript terminal, first part
 
-| # | Finding | Placed |
-|---|---|---|
-| 1 | High: every engine start picks a new port and token; a browser page cannot rediscover them, so each watchdog restart, update or reboot leaves a dead terminal window | M1.8a-web: a stable port in settings (fallback when taken, `ikars open` relaunches) and a session secret that survives restarts (DPAPI, D8) |
-| 2 | `HealthView.parts` is `dict[str, Any]`: the generated TypeScript type would be `any`, unchecked at runtime | M1.8a-web: a typed health contract |
-| 3 | Nanosecond integers (`received_ns`, health times) exceed 2^53 and are rounded by JavaScript (by about 0.25 µs); no test guards the rule | M1.8a-web: a contract test; `_ns` documented as approximate in the browser |
-| 4 | Mixed time formats on the wire (seconds and nanoseconds; `AlertView.at` is local time) | M1.8a-web: one format, settled before a client exists |
-| 5 | Market search filters and lowercases the whole index per request on the event loop; type-ahead could stall the feed | M1.8a-web: a precomputed search key, a debounced search, measured at the real index size |
-| 6 | High for back-tests: the recorder writes Kalshi channel schemas, but `ReplaySource` reads only the generic item schema (only the synthetic demo uses it), so G3 does not hold for real data | New slice **M1.13**, before M3's back-tests; G3 marked partly done |
-| 7 | `ReplaySource` loads every recording into memory (about 2.1 GB a day) | M1.13: a streaming merge |
-| 8 | The live runner never loads plugins (`discover`) or registers listeners: a signal or source plugin has no path in, its items are not recorded (D20 A) and never reach the API | M1.12 |
-| 9 | A plugin's emitted item keeps the `received_ns` the plugin chose; a buggy source could let a replay see the future | M1.12: the host stamps it |
-| 10 | Duplicated time helpers (`api.utc_text`/`ledger.iso_utc`, `alerts._ns`/`ledger_import.ns_of`) | PLAN §9: with the next slice touching them |
+**Status.** Plan approved 2026-10-27, as four slices. **Done:** 1a PR #16 `d70cb83`, 1b PR #17 `0fe5415`, 2a PR #19
+`94dbcaa`, 2b PR #20 `1aeb2bf`. Packages (each at least 7 days old; versions in DEPENDENCIES.md): shipped react,
+react-dom, ag-grid-community, ag-grid-react, lightweight-charts; build and test only vite, @vitejs/plugin-react,
+typescript **6.0.3** (typescript-eslint does not support 7 yet), vitest, @vitest/coverage-v8, @playwright/test,
+eslint, typescript-eslint, eslint-plugin-react-hooks, json-schema-to-typescript, ajv, pnpm. Machine: Node.js 24 and
+pnpm (1b); the IKARS Edge profile; the DPAPI session key; settings v4 (port).
 
-**Checked, no change needed.** Off the event loop: hourly compaction, the storage governor, share backups, ledger
-checks, GPU detection. Bounded: metric names (per channel and plugin, never per market), the plugin gap list. Slow
-growth only: the alert log and the gap and exchange-status tables (a few rows a day). Shutdown, restart, damaged
-files and the feed were covered by M1.R.
-
-### 1.8a-web The TypeScript terminal, first part (plan APPROVED 2026-10-27; four slices)
-
-**Builds.**
-- **Engine (Python):**
-  1. Serves the built terminal at `/` (one loopback origin) with a strict Content Security Policy (scripts only from
-     the engine, no inline script or `eval`, no frames; AG Grid's inline styles, if needed, by a per-page nonce),
-     `nosniff`, no referrer and `no-store` on API replies; a plain page when the terminal is not built.
-  2. Sign-in that survives restarts (review 1.R2 item 1): a **fixed port** in settings (owner-changeable; when taken,
-     a random port and a Windows alert); an `HttpOnly`, `SameSite=Strict` cookie for **30 days, sliding**, signed with
-     a DPAPI-protected key in the data folder (D8); a **one-time code** (single use, 30 s) in the launch link's `#`
-     fragment, exchanged by the page and removed from the address bar; changing requests need the engine's own
-     `Origin` and `Sec-Fetch-Site: same-origin`. The per-start bearer token in `api.json` stays for the CLI.
-  3. `ikars open`: a code from the running engine, then Edge as an app window with its own profile under
-     `%LOCALAPPDATA%\IKARS\browser`, extensions off.
-  4. Contracts (review items 2 to 5; API 2.0): typed health fields (plus a free-form detail part); one time format
-     (`*_utc`, `*_local`; `AlertView.at` becomes `at_local`); a test that wire money, counts and ids fit 2^53 (`_ns`
-     documented as approximate in the browser); a lowercase search key per market; a made-up-data API mode for
-     Playwright and the load test.
-- **Web (`web/`, React, strict TypeScript):**
-  5. Types generated from `contracts/` (CI checks the committed copy); every reply and stream event validated with
-     unknown fields refused, by validators compiled at build time (no `eval`, so the CSP holds).
-  6. The client: request timeouts, the `fetch` stream reader, the four stream rules (behaviour 4), and the update
-     hub (10 Hz, subscription changes only on a change of the union; behaviour 3).
-  7. Money: a distinct type for money and counts, integer-only formatting, no arithmetic; 100% tested.
-  8. A small own URL navigator (`/overview`, `/markets?q=`, `/market/<ticker>`, `/health`, `/ledger`, `/alerts`),
-     breadcrumbs, the browser's back and forward; a screen left cancels its requests and subscriptions (behaviours
-     1 and 2).
-  9. Screens from the approved mock-ups (their CSS reused): Overview (later panels with "arrives in" notes),
-     Markets (AG Grid, debounced search, open first), Market (live quote, Lightweight Charts from the candles route,
-     the book, linked items), Health with the gap log, Ledger (paged), Alerts by priority.
-  10. The update-to-screen meter (D20 J; behaviour 6) in Health, and the load test (100 made-up markets at 10 Hz).
-- **CI and repository:**
-  11. A `web` job on Windows: frozen install, ESLint (with the injection bans), type checks, the generated-types
-      check, Vitest at 90% (thin screen components left to Playwright, as decided for WPF), build, Playwright on the
-      installed Edge, `pnpm audit`.
-  12. pnpm's `minimumReleaseAge` (7 days) and install-script allow-list; Dependabot's `npm` entry with a 7-day
-      cooldown; CodeQL adds `javascript-typescript`.
-  13. Playwright output and `.env*` ignored and refused by the data guard.
-  14. Docs: DEPENDENCIES, README, PLAN, this log, CLAUDE.md's dev commands.
-  15. A `/security-review` before the merges that carry the sign-in and the page.
-
-**Changes on this machine:** Node.js 24 LTS (`winget install OpenJS.NodeJS.LTS`, per user) and pnpm through
-Corepack (development only); no Playwright browser download (the installed Edge); the IKARS Edge profile folder; the
-DPAPI-protected session key; a settings migration adding the port (backup first); the engine restarted on new code.
-
-**New packages** (each at least 7 days old): react and react-dom 19.3.1, ag-grid-community and ag-grid-react 36.2.0,
-lightweight-charts 5.2.1 (TradingView's attribution logo kept) (MIT, MIT, Apache-2.0; these ship); vite 8.3.4,
-@vitejs/plugin-react 6.1.2, typescript **6.0.3** (typescript-eslint does not support 7 yet), vitest and
-@vitest/coverage-v8 5.0.5, @playwright/test 1.64.1, eslint 10.13.0, typescript-eslint 8.72.0,
-eslint-plugin-react-hooks 7.1.1, json-schema-to-typescript 16.0.0, ajv 8.20.0, pnpm 12.14.0 (build and test only).
-
-**Live checks:** `ikars open` shows the real Overview; a live market's quote, book and chart update; after a watchdog
-restart the window reconnects with no new sign-in; the ledger pages; a request from another origin is refused and an
-ordinary browser tab cannot read the API; no CSP violations; update to screen p99 <= 33 ms with 100 markets (the
-owner, at the console).
-
-**Owner's answers (2026-10-27):**
-1. **Split: four slices**, each merged on its own (the owner split each proposed half again):
-   | Slice | Builds | Gate |
-   |---|---|---|
-   | **M1.8a-web-1a** engine side | items 1 to 4, the made-up-data mode, a placeholder page | Python tests; `/security-review` |
-   | **M1.8a-web-1b** web foundation | items 5 to 8 and 11 to 13; Overview and Health | the `web` job (the owner adds it to the ruleset); `/security-review` |
-   | **M1.8a-web-2a** markets | Markets and Market | merge review |
-   | **M1.8a-web-2b** the rest | Ledger, Alerts, the meter and the load test | merge review; the console check |
-2. Port: a fixed default in settings, the owner can change it; a random fallback with an alert.
-3. Session: 30 days, sliding.
+**Owner's decisions (2026-10-27).**
+1. **Four slices** (the owner split each proposed half again): **1a** engine side (gate: Python tests,
+   `/security-review`); **1b** web foundation, Overview and Health (the `web` job, added to the ruleset;
+   `/security-review`); **2a** Markets and Market (merge review); **2b** Ledger, Alerts, meter, load test (merge
+   review; the console check).
+2. A fixed port in settings, owner-changeable; a random fallback with an alert.
+3. Session 30 days, sliding. The one-time code (single use, 30 s) travels in the launch link's `#` fragment, removed
+   from the address bar; the per-start bearer token in `api.json` stays for the CLI.
 4. Development: `vite build --watch`, served by the engine (one origin, production's CSP).
 5. Every reply and stream event validated in production.
 
-#### 1.8a-web-1a built (2026-10-27)
+Supply chain: pnpm `minimumReleaseAge` 7 days and an install-script allow-list; Dependabot `npm` with a 7-day
+cooldown; CodeQL `javascript-typescript`.
 
-**Built** on `m1/8a-web-1a`: `5ce96fb` (DPAPI helper, sessions, settings v4), `c08f9af` (two pre-existing fixes
-from the per-commit review), `8ce2538` (serving, hardening, sign-in, fixed port), `6f9b82f` (contracts 2.0),
-`22547ce` (`ikars open`, `demo-api`, the watchdog's port rule), `ab83c07` (the security-review fix), `efc8824` (the
-merge-review fixes). **No new packages.**
+#### 1.8a-web-1a Engine side
 
-- **`ikars_core.dpapi`**: DPAPI for the current user through `ctypes` (D8).
-- **`session`**: one-time codes (single use, 30 s, at most 16 waiting) and HMAC-SHA256-signed cookies, 30 days and
-  renewed once a day old; the signing key in `data\session.key`, DPAPI-protected, so a restart keeps the terminal
-  signed in. Without DPAPI the key lives in memory; an undecryptable key is set aside under a free name and
-  replaced; a key that cannot be read right now fails the start (the watchdog retries) rather than signing every
-  terminal out.
-- **`webserve`** and the guard: the terminal's files (the placeholder page until `web/dist` exists), a fixed
-  content-type table, screen addresses answered by `index.html`; on every response a strict CSP, `nosniff`, no
-  referrer, `DENY` framing, same-origin opener and resource policies, `no-store` on the API and `no-cache` on
-  files. The API takes the bearer token or the cookie; any `Origin` but the engine's own is refused; a change on a
-  cookie needs the engine's own page (`Origin` and `Sec-Fetch-Site: same-origin`). `POST /v1/session/code` (bearer
-  only) and `POST /v1/session`.
-- **The port**: `[terminal] port = 47821` (settings version 4, migrated with a backup), bound exclusively, retried
-  for 5 s, then a free one reported as `port_fallback` (the watchdog alerts).
-- **Contracts 2.0** (review 1.R2 items 2 to 5): typed health (`FeedHealth`, `LedgerHealth`, `BackupHealth`, the
-  clock, GPU, API and plugins; the whole report in `detail`); `AlertView.at_local`; the time rule written down; a
-  test holding every wire integer to `_ns`, `_e6`, `_e2` or `SMALL_INTEGERS`; `SessionCode`, `SessionCodeIssued`;
-  a lowercase search key made once per market.
-- **`ikars open`** (`python -m ikars_engine open`): starts the engine if needed, gets a code with the bearer token,
-  opens Edge as an app window with `<data root>\browser` as its profile and extensions off.
-- **`demo-api`**: the real API server on made-up markets, books, ledger and alerts in a temporary folder.
+**Status.** Built on `m1/8a-web-1a`: `5ce96fb`, `c08f9af`, `8ce2538`, `6f9b82f`, `22547ce`, `ab83c07` (security fix),
+`efc8824` (merge-review fixes). **Done:** PR #16 merged as `d70cb83`. No new packages.
 
-**Verified.** 1,377 Python tests pass (94%); ruff, mypy, the data guard and gitleaks are clean. **Live**, on the
-background engine:
+**Built.**
+- `ikars_core.dpapi`; `session`: one-time codes (at most 16 waiting), HMAC-SHA256 cookies renewed once a day old, key
+  in `data\session.key` (DPAPI) so restarts keep the sign-in. An undecryptable key is set aside under a free name and
+  replaced; an unreadable one fails the start (the watchdog retries) rather than signing every terminal out.
+- `webserve`: the terminal's files (a placeholder until `web/dist`), strict CSP and hardening headers on every
+  response; bearer token or cookie; a foreign `Origin` refused; a cookie change needs `Origin` and
+  `Sec-Fetch-Site: same-origin`. `POST /v1/session/code` (bearer only), `POST /v1/session`.
+- `[terminal] port = 47821`, bound exclusively, retried 5 s, else a free port reported as `port_fallback`.
+- Contracts 2.0 (1.R2 items 2 to 5): typed health (whole report in `detail`), `AlertView.at_local`, `*_utc`/`*_local`,
+  a test holding every wire integer to `_ns`, `_e6`, `_e2` or `SMALL_INTEGERS` (2^53), a lowercase search key.
+- `ikars open` (Edge app window, profile `<data root>\browser`, extensions off); `demo-api` (made-up data).
+
+**Verified.** Python 1,377 (94%); ruff, mypy, data guard, gitleaks clean. Live, on the background engine:
 
 | Check | Result |
 |---|---|
@@ -1977,39 +1074,27 @@ background engine:
   | 7 | `ikars open` crashed on an `api.json` with a null port | Fixed in `efc8824`: waited past, then a plain refusal; tested |
   | 8 | `demo-api --hz 0` crashed after starting | Fixed in `efc8824`: refused by the command line; tested |
 
-**M1.8a-web-1a built**, subject to the owner's merge.
+#### 1.8a-web-1b Web foundation
 
-#### 1.8a-web-1b built (2026-10-27)
+**Status.** Built on `m1/8a-web-1b`: `cea9ffd`, `7869da7` (CI), `d26af73` (merge-review fixes). **Done:** PR #17
+merged as `0fe5415`; the owner then made `web` a required check. Machine: Node.js 24.22.1 per user from the official
+zip checked against `SHASUMS256.txt` (as built, against the plan's winget: its package is a machine-wide MSI needing
+admin); pnpm 12.14.0 through Corepack.
 
-**Built** on `m1/8a-web-1b`: `cea9ffd` (the web terminal), `7869da7` (CI and repository settings), `d26af73` (the
-merge-review fixes). After 1a merged as PR #16 (`d70cb83`).
+**Found.** `demo-api`'s books went below 1 cent near the price limits (fixed); uv's child survives `kill()` on
+Windows, so the Playwright setup stops the demo server's whole tree.
 
-- **On this machine:** Node.js 24.22.1 per user, from the official zip checked against `SHASUMS256.txt`, in
-  `%LOCALAPPDATA%\Programs\nodejs` on the user `PATH` (winget's package is a machine-wide MSI needing admin; the
-  plan said per user); pnpm 12.14.0 through Corepack. No Playwright browser download: the installed Edge.
-- **`web/`** (React 19, strict TypeScript 6.0, Vite 8, pnpm 12): `scripts/gen-contracts.mjs` makes `src/api/contracts.ts`
-  and ajv's standalone validators from `contracts/` (unknown fields refused; no code compiled in the page, so the CSP
-  holds; `gen:check` in CI). The client (the cookie; timeouts; signed-out, refused, timeout, unreachable and contract
-  failures kept apart). The stream reader over `fetch` (resume after the last alert; the backoff grows and only an
-  opened stream resets it; 20 s of silence drops it; signed-out apart). The update hub (10 Hz flushes; subscriptions
-  by the union of every screen's markets, one change in flight, retried, re-sent to a new stream). Money: a distinct
-  type, integer-only formatting with BigInt, no arithmetic (100% tested). The navigator over real addresses with
-  breadcrumbs. The Overview (portfolio and exposure, alerts; later panels drawn with "arrives in" notes) and Health
-  (the cards, the gap log, the engine's whole report) from the mock-ups' tokens, dark or light with Windows.
-- **Checks:** ESLint with the injection bans; Vitest 131 tests (98% lines, 91% functions; thin screens left to
-  Playwright as decided); Playwright 6 screen tests in Edge against `demo-api`, watching for CSP refusals; `pnpm
-  audit` clean. CI's `web` job runs all of it on Windows; CodeQL adds `javascript-typescript`; Dependabot watches
-  `web/` with a 7-day cooldown (actions too); the data guard and `.gitignore` refuse Playwright output, coverage,
-  builds, `node_modules`, `.har` and `.env` files.
-- **Found on the way:** `demo-api`'s made-up books went below 1 cent near the price limits and its snapshot failed
-  (found by the screen tests; fixed, tested); the Playwright setup left the demo server running (uv's child survives
-  `kill()` on Windows; the tree is stopped now).
+**Built.** `web/` (React 19, strict TypeScript, Vite 8): `scripts/gen-contracts.mjs` makes types and ajv standalone
+validators from `contracts/` (unknown fields refused; nothing compiled in the page, so the CSP holds; `gen:check` in
+CI). Client with distinct failure kinds; a `fetch` stream reader (only an opened stream resets the backoff; 20 s of
+silence drops it); the 10 Hz hub (subscriptions by the union of screens' markets, one change in flight); a money type
+with BigInt formatting and no arithmetic (100% tested); the navigator. Overview and Health as the mock-ups. CI `web`
+job on Windows; Dependabot on `web/`; data guard and `.gitignore` refuse Playwright output, coverage, builds,
+`node_modules`, `.har`, `.env`.
 
-**Verified.** All of the above green locally and in CI on PR #17 (`python`, `web`, `hygiene`, CodeQL for Python,
-actions and TypeScript). **Live:** the engine restarted on the same port with the old cookie still valid, and serves
-the built terminal; **the owner opened it with `ikars open` and saw the real Overview** (portfolio, live feed, the
-latest alerts); the status strip was cut off at the bottom of a short window, so header and strip now stay in view
-(a screen test checks it).
+**Verified.** Vitest 131 (98% lines, 91% functions); Playwright 6 in Edge (CSP refusals watched); CI green on PR #17.
+Live: same port and cookie after a restart; **the owner opened `ikars open` and saw the real Overview**; a cut-off
+status strip in a short window fixed (a screen test checks it).
 
 **Review.**
 - **Per commit:** `cea9ffd` 1 fixed before committing (a stream that opened while a subscription change was in
@@ -2034,41 +1119,25 @@ latest alerts); the status strip was cut off at the bottom of a short window, so
   | 9 | A failed refresh blanked the gap table; failed subscription changes stacked retry timers that stop never cleared | Fixed: the last value stays, marked stale; one retry timer, cancelled at stop; tested |
   | 10 | DEPENDENCIES.md still listed the web packages as to be chosen | Fixed: in use, with versions and licences |
 
-**M1.8a-web-1b built**, subject to the owner's merge (and then `web` added to the required checks).
+#### 1.8a-web-2a Markets and Market
 
-#### 1.8a-web-2a built (2026-10-27)
+**Status.** Built on `m1/8a-web-2a`: `ec841bb`, `3d8d432` (merge-review fixes). **Done:** PR #19 merged as `94dbcaa`.
 
-**Built** on `m1/8a-web-2a`: `ec841bb` (the screens), `3d8d432` (the merge-review fixes). After 1b merged as PR #17
-(`0fe5415`); the owner then made `web` a required check.
+**Found** (checked in Edge first).
+- AG Grid's default theme injects about a dozen `<style>` blocks, all refused by `style-src 'self'`; its **CSS-file
+  theme** (`theme: "legacy"`, `ag-grid.css`, `ag-theme-quartz.css`) needs none. Its icon font is a `data:` URI, so
+  the CSP's **one exception** is `font-src 'self' data:` (a font runs no code; a test pins the whole policy).
+- Lightweight Charts' attribution logo injects an inline style, so it is **off**; the TradingView credit its licence
+  (Apache-2.0) asks for is drawn under the chart.
+- AG Grid's modular build: a missing feature module only logs to the console and stopped updates; hence the screen
+  tests fail on **any** console error.
+- The grid needs a definite height (`min-height` alone collapses it to 2 px).
 
-- **Markets** (`/markets?q=&category=`): AG Grid with the markets the engine finds (open first, up to 200, the
-  count shown), a search that waits for a pause in typing and keeps the address current, a category filter kept in
-  the address, live bid, ask and last prices from the stream (rows reused per market and quote, so only changed rows
-  redraw), and a row that opens the market.
-- **Market** (`/market/<ticker>`): the live quote, the YES price for the last 24 hours (Lightweight Charts from the
-  candles route; an empty chart says why), the order book (both sides' bids) or the note that the engine does not
-  watch the market, and the linked items: same-event markets and your ledger records (source items,
-  recommendations and perps arrive in M1.12, M2 and M3).
-- Both screens load their libraries only when first opened (the start bundle stays about 365 kB; AG Grid about
-  700 kB and the chart about 170 kB come on demand).
-- **Engine:** `demo-api` serves made-up candles in Kalshi's own shape (through the real `Candlestick` model) and a
-  favicon; the screen tests now fail on **any** console error, not only on CSP refusals.
+**Built.** Markets (`/markets?q=&category=`, up to 200, rows reused per market and quote) and Market
+(`/market/<ticker>`, chart from the candles route) as the mock-ups; libraries loaded on first use (start bundle about
+365 kB; AG Grid about 700 kB, the chart about 170 kB). `demo-api` candles through the real `Candlestick` model.
 
-**The CSP and the libraries** (checked in Edge before building on them):
-- AG Grid's default theme injects about a dozen `<style>` blocks, all refused by `style-src 'self'`. Its **CSS-file
-  theme** (`theme: "legacy"` with `ag-grid.css` and `ag-theme-quartz.css`, coloured from the terminal's tokens) needs
-  none. Its icon font is embedded in that CSS as a `data:` URI, so the CSP's **one exception** is `font-src 'self'
-  data:` (a font runs no code; scripts and styles stay `'self'`; a test pins the whole policy).
-- Lightweight Charts' attribution logo injects an inline style, so it is **off**; the credit and link to TradingView
-  that its licence (Apache-2.0) asks for are drawn under the chart instead, opening outside the terminal.
-- AG Grid's modular build needs each feature's module registered: a missing one (row and cell classes) only logs to
-  the console and stopped the grid updating; caught by the screen tests, fixed, and why they now fail on any console
-  error.
-- The grid needs a definite height (`min-height` alone collapses it to 2 px and the rows hang outside it); found by
-  the screen tests.
-
-**Verified.** Vitest 144 tests (98% lines, 93% functions); Playwright 8 screen tests in Edge with no console error
-or CSP refusal; lint, types and audit clean; Python 1,383 tests.
+**Verified.** Vitest 144 (98% lines, 93% functions); Playwright 8, no console error; Python 1,383.
 
 **Review.**
 - **Per commit:** `ec841bb` none; `3d8d432` none.
@@ -2087,41 +1156,39 @@ or CSP refusal; lint, types and audit clean; Python 1,383 tests.
   | 9 | Ledger times used a second format beside the closing times | The one time format; tested |
   | 10 | Duplicated CSS; the chart kept its colours after a theme change | Removed; the chart follows the theme |
 
-**M1.8a-web-2a built**, subject to the owner's merge.
+#### 1.8a-web-2b Ledger, Alerts, the meter and the load test
 
-#### 1.8a-web-2b built (2026-10-27)
+**Status.** Built on `m1/8a-web-2b`: `5c16da6`, `6667308` (merge-review fixes), `ca59b71` (faster Markets).
+**Done:** PR #20 merged as `1aeb2bf`.
 
-**Built** on `m1/8a-web-2b`: `5c16da6` (the screens, the meter, the load test), `6667308` (the merge-review fixes).
-After 2a merged as PR #19 (`94dbcaa`).
+**Owner's decisions (2026-10-27).** After the first console run failed narrowly: make Markets faster first.
 
-- **Ledger** (`/ledger`): its state (chain, reconciliation, records by kind, tax zone) and your records, 100 a page
-  with Older and Newer, a ticker filter, each market linked; times in the ledger's tax zone; refreshed each minute.
-- **Alerts** (`/alerts`): the alert log by priority (urgent, then high, then the rest), newest first, live from
-  the stream; a heading says when a priority shows only its latest 200.
-- **The update-to-screen meter** (D20 J, behaviour 6), on Health: **from the hub applying a change to the frame after
-  the one that shows it** (two animation frames), with the page's own work per update, over the last 1,000 screen
-  updates; one measurement at a time, only for quotes a screen shows, and none while the window is hidden or across
-  a hide. For information, the time from the engine receiving the change (its `received_ns`, the same machine's
-  clock) is shown too: it adds the engine's and the hub's 10 Hz batching (up to 100 ms each, by design, D3), so it
-  is not held to the target.
-- **`pnpm load`** (`playwright.load.config.ts`): `demo-api` with 100 made-up markets moving at 10 Hz, the Markets
-  screen in a **visible** Edge window for 40 s, then the meter's level read from Health; it passes only when the
-  card says OK (exact p99 <= 33 ms). Kept out of CI and the normal screen tests: it is a console check.
-- Dependabot skips major `@types/node` updates (they follow the Node we run); its PR #18 (to 26) is closed.
+**Found.** The meter first measured from the engine receiving each change: p50 132 ms, p99 188 ms headless, page work
+1.5 ms, i.e. the two 10 Hz batching steps, not drawing. D20 J as amended measures **from the terminal applying a
+change**; engine-to-screen is kept beside it for information.
 
-**A correction on the way.** The meter first measured from the engine receiving each change, and read p50 132 ms
-and p99 188 ms headless with the page's own work at 1.5 ms: the time was the two 10 Hz batching steps, not drawing.
-D20 J as the owner amended it measures **from the terminal applying a change**; the meter was corrected to that and
-the engine-to-screen time kept beside it for information.
+**Built.** Ledger and Alerts as the mock-ups (ledger times in the tax zone). The meter on Health: hub apply to the
+frame after the one that shows it (two animation frames), over 1,000 screen updates; one measurement at a time, only
+shown quotes, none while hidden or across a hide. `pnpm load`: 100 made-up markets at 10 Hz, Markets in a **visible**
+Edge window for 40 s, pass only when the card says OK (exact p99 <= 33 ms); a console check, out of CI. `ca59b71`:
+`useQuoteChanges` hands each flush's changed tickers to the grid as one transaction, and React re-renders the grid
+only when the market list changes. Dependabot skips major `@types/node` (its PR #18 closed).
 
-**Verified.** Vitest 154 tests (98% lines, 90% functions); Playwright 10 screen tests in Edge, no console error or
-CSP refusal; lint, types, audit clean. **Headless sanity run** of `pnpm load` (not the measurement; no real
-drawing): update to screen p50 9 ms, p99 19 ms; the page's own work p99 1.4 ms; engine to screen p50 69 ms, p99
-126 ms. **Pending: the owner's run at the console** (`pnpm load`, a visible window; not over Remote Desktop).
+**Verified.** Vitest 154 (98% lines, 90% functions); Playwright 10. Headless sanity run (no real drawing): update to
+screen p50 9 ms, p99 19 ms; page work p99 1.4 ms; engine to screen p50 69 ms, p99 126 ms. **The owner's console
+check** (a visible window, 59 Hz 4K displays):
+
+| Run | Result |
+|---|---|
+| First | **Failed narrowly.** p50 11 ms, p99 33 ms (just over: the card read WATCH), the page's own work p99 17.5 ms, and only 101 screen updates (the window was likely covered part of the time; the meter skips frames Edge does not draw). At 59 Hz two frames are about 34 ms, so any update whose work spilled past one frame landed near the target |
+| Second, after `ca59b71` | **Passed.** Update to screen **p50 10 ms, p99 19 ms** (target <= 33 ms), the page's own work p99 **2.8 ms** (from 17.5), over 372 screen updates; engine to screen p50 159 ms, p99 216 ms (information: the 10 Hz batching on both sides) |
 
 **Review.**
 - **Per commit:** `5c16da6` none; `6667308` 1 fixed before committing (a window hidden and shown again between a
-  measurement's start and its first frame still recorded the hidden time: any visibility change now drops it).
+  measurement's start and its first frame still recorded the hidden time: any visibility change now drops it);
+  `ca59b71` 2 fixed before committing (a quote before the grid was ready was dropped until that market's next
+  change: the grid takes every current value when ready; a batch still queued when the list changed or the screen
+  closed was delivered: dropped).
 - **Merge review (medium), 10 findings, all fixed in `6667308`:**
 
   | # | Finding | Done |
@@ -2137,85 +1204,35 @@ drawing): update to screen p50 9 ms, p99 19 ms; the page's own work p99 1.4 ms; 
   | 9 | The load test repeated the sign-in helper and did not check the answer | One shared helper (`e2e/demo.ts`) that checks it |
   | 10 | An alert heading showed the kept 200 as if it were the total | It says "the latest 200" |
 
-**The owner's console check** (`pnpm load`, a visible window, 59 Hz 4K displays).
-- **First run: failed narrowly.** p50 11 ms, p99 33 ms (just over: the card read WATCH), the page's own work p99
-  17.5 ms, and only 101 screen updates (the window was likely covered part of the time; the meter skips frames Edge
-  does not draw). At 59 Hz two frames are about 34 ms, so any update whose work spilled past one frame landed near
-  the target. The owner chose to make the Markets screen faster before moving on.
-- **The fix (`ca59b71`):** each quote update re-rendered the screen through React and AG Grid compared every row.
-  Now `useQuoteChanges` hands each flush's changed tickers to the grid as one transaction (only those rows' cells
-  redraw), and React renders the grid only when the list of markets changes. Per-commit review: 2 fixed before
-  committing (a quote before the grid was ready was dropped until that market's next change: the grid takes every
-  current value when ready; a batch still queued when the list changed or the screen closed was delivered: dropped).
-  A screen test checks rows change live in the grid.
-- **Second run: passed.** Update to screen **p50 10 ms, p99 19 ms** (target <= 33 ms), the page's own work p99
-  **2.8 ms** (from 17.5), over 372 screen updates; engine to screen p50 159 ms, p99 216 ms (information: the 10 Hz
-  batching on both sides).
+**Found (1.8a-web-1a, 2026-10-27).** Browsers scope cookies by host, not port, so another server on 127.0.0.1 visited in the same
+browser profile would receive the session cookie; the terminal's own Edge profile, which visits nothing else, is
+what confines it. PLAN D3's "for this port only" was corrected accordingly.
 
-**M1.8a-web-2b built and its console check passed**, subject to the owner's merge.
+### 1.8b Hotkeys, layouts, themes, settings and wizard, support bundle
 
-### 1.8b Hotkeys, layouts, themes, settings and wizard, support bundle (plan APPROVED 2026-10-27; two slices)
+**Status.** Plan approved 2026-10-27 (all as recommended), as **1.8b-1** (mock-ups first, hotkeys, themes, Settings,
+wizard) and **1.8b-2** (layouts, support bundle). **Done:** PR #21 `db0bf9a` (race fix PR #22 `e6a29f3`); PR #23
+`47984db`. No new packages.
 
-The M1.8 plan's second part (G15, G16, D20 G, I), redrafted for the web terminal (WPF themes and KalTerm3's window
-placement no longer apply). **Owner's answers (2026-10-27): all as recommended.**
+**Owner's decisions (2026-10-27).** **Skins** (after the plan): built-in palettes only (Dark, Light, High contrast,
+Midnight, Paper, or Follow Windows), saved with the engine's settings; colours only, so the CSP is unchanged; own
+skins offered and not chosen. Mock-ups `Settings.html` and `Wizard.html` approved as shown. Layouts are sets of
+windows; docked panes parked (PLAN §9).
 
-| Slice | Builds |
-|---|---|
-| **M1.8b-1** | mock-ups of the Settings screen and the first-run wizard (approved before they are built); the hotkeys; the themes; the Settings screen and the first-run wizard, writing the engine's settings |
-| **M1.8b-2** | layouts (several IKARS windows, saved and restored); the redacted support bundle |
+#### 1.8b-1 Hotkeys, skins, Settings and the wizard
 
-- **Hotkeys** (the mock-up's list): `Ctrl+K` search; `Ctrl+1`..`5` the screens; `Alt+Left/Right` back and forward
-  (Edge's own); `Enter` the newest urgent alert; `B` the order book; `X` the Linked panel; `Ctrl+Shift+L` the theme;
-  `?` the list. `T`/`I`/`D` and `C` are listed as arriving with the recommendations (M1.12).
-- **Themes:** dark, light or Windows', remembered. **Skins (owner, 2026-10-27, after the plan):** built-in palettes
-  only, chosen from Settings: Dark, Light, High contrast, Midnight and Paper, or "Follow Windows" (Dark or Light);
-  `Ctrl+Shift+L` switches between Dark and Light; saved with the engine's settings. Colours only, so the CSP is
-  unchanged. Own skins (editing colours) were offered and not chosen.
-- **Mock-ups approved as shown** (owner, 2026-10-27): `Settings.html` and `Wizard.html`; the Appearance section's
-  theme switch becomes the skin picker.
-- **Layouts:** a layout is a set of IKARS windows (each a screen, a position and a size, on any monitor); "Save
-  layout as..."; `ikars open --layout NAME`; the last one restored at start. Panes docked within a window are parked
-  (PLAN section 9).
-- **Settings and the wizard:** terminal preferences and the engine settings the owner would change (share, tax zone,
-  quiet hours, port, session length), each written through the engine (versioned, migrated, backed up first), with a
-  note when a restart is needed; the wizard opens when there is no settings file and checks the key variables (present
-  or not, never shown), the engine and feed, the share, the tax zone and quiet hours.
-- **Support bundle:** saved to `%LOCALAPPDATA%\IKARS\support\` (logs, health, versions, settings without the share
-  path, the gap log; never keys, tokens, key paths or account amounts, checked before it is kept); never sent.
-- **Machine:** a settings migration (backup first) and the `support\` folder. **Packages:** none.
-- **Live checks:** each hotkey; the theme across a restart; two windows on two monitors saved and restored; the
-  wizard on a scratch data folder; a bundle searched for the key id, token, share path and amounts.
+**Status.** Built on `m1/8b`: `fd8e4b8` (mock-ups), `8e97baa`, `74fe784`, `8581d27`, `95b9412` (merge-review fixes).
+**Done:** PR #21 merged as `db0bf9a`; race fix PR #22 as `e6a29f3`.
 
-#### 1.8b-1 built (2026-10-27)
+**Built.** Hotkeys (`src/app/keys.ts`) as the mock-up; single keys left to a text box, `Enter` to a focused control.
+One `Skin` Literal in `settings.py`, the TypeScript type generated. `settings_api.py` (`/v1/settings`,
+`share-check`, `share-init`, `/v1/engine/autostart`, `restart`): the key shown as yes or no only (also from Windows'
+current user variables); changes backed up first (not a skin; latest 20); the share written only inside `ikars\`; a
+restart starts the fresh engine before the old releases its lock. Settings and the wizard (`/welcome`) as the
+mock-ups.
 
-**Built** on `m1/8b`: `fd8e4b8` (the mock-ups), `8e97baa` (hotkeys and themes), `74fe784` (the engine's settings
-for the terminal), `8581d27` (Settings, the wizard and skins), `95b9412` (the merge-review fixes). After M1.8a-web
-completed (PR #20, `1aeb2bf`). **No new packages.**
-
-- **Hotkeys** (`src/app/keys.ts`, `screens/Keys.tsx`): `Ctrl+K`, `Ctrl+1`..`5`, `Enter` (the Alerts screen), `B`,
-  `X`, `Ctrl+Shift+L`, `?` (the list; `T`/`I`/`D` and `C` shown as arriving in M1.12); single keys are left to a text
-  box, `Enter` to a focused control, `Esc` to the box unless the list is open.
-- **Skins** (owner: built-in palettes only): Dark, Light, High contrast, Midnight, Paper, or follow Windows; one
-  `Skin` type in `settings.py`, used by the settings, the contracts and the generated terminal type; `data-theme`
-  on the page; the chart repaints; loaded at start; `Ctrl+Shift+L` and the picker save it at once. CSP unchanged.
-- **Engine** (`settings_api.py`; routes `GET`/`PUT /v1/settings`, `POST /v1/settings/share-check` and
-  `share-init`, `POST /v1/engine/autostart` and `restart`): the view (the key as yes or no only, also from Windows'
-  current user variables with a restart note; which saved settings wait for a restart; start at sign-in), a change
-  checked and saved with a backup first (a skin makes none; the latest 20 kept), the share tested and set up in a
-  thread with a time limit and written only inside its `ikars\` folder, start at sign-in, and a restart (a marker
-  and a stop; `serve` starts the fresh engine before releasing its lock; a start spends a stale marker; a foreground
-  engine refuses). Off the event loop: the view, a change and start at sign-in. `demo-api` gets a config with an
-  in-memory registry and `--first-run`.
-- **Settings and the wizard** (the approved mock-ups): Settings with the skin picker, the key, alerts, ledger and
-  backups (a share test), feed and storage, terminal, and Save / Discard / Restart the engine; the wizard at
-  `/welcome` when there are no settings (key, engine and feed, backups: test, set up or skip, tax zone and quiet
-  hours, done with start at sign-in).
-
-**Verified.** Python 1,407 tests; Vitest 184 (98% lines, 92% functions); Playwright 14 screen tests in Edge (a skin
-kept across a reload; a change and its restart note; the whole wizard on a first-run demo server; hotkeys); lint,
-types, audit, data guard clean. **Live:** the engine restarted on the new code (the same port, the old cookie valid);
-its settings view: not a first run, skin system, nothing waiting for a restart, the key set (file found, readable by
-the owner only), the share set, start at sign-in installed, the tax zone America/Denver.
+**Verified.** Python 1,407; Vitest 184; Playwright 14. Live: settings view correct (key set, readable by the owner
+only; share set; start at sign-in installed; tax zone America/Denver).
 
 **Review.**
 - **Per commit:** `8e97baa` 2 fixed before committing (Enter on a focused link or button, and Esc in a box, were
@@ -2236,42 +1253,26 @@ the owner only), the share set, start at sign-in installed, the tax zone America
   | 9 | Three copies of the in-memory registry fake | One, `autostart.MemoryRegistry` |
   | 10 | The skin's values were listed by hand in Python and TypeScript | One `Skin` Literal; the TypeScript type is generated from it |
 
-**M1.8b-1 built**, subject to the owner's merge.
+#### 1.8b-2 Layouts and the support bundle
 
-#### 1.8b-2 built (2026-10-27)
+**Status.** Built on `m1/8b-2`: `a7a6f58`, `8109c7e`, `24a19cd` (merge-review fixes), `9ba176a`. **Done:** PR #23
+merged as `47984db`. Machine: settings v5.
 
-**Built** on `m1/8b-2`: `a7a6f58` (the engine: layouts and the bundle), `8109c7e` (the terminal: Settings' layouts
-and Health's bundle), `24a19cd` (the merge-review fixes), `9ba176a` (the bundle closes its database connections).
-After M1.8b-1 (PR #21, `db0bf9a`) and the settings race fix (PR #22, `e6a29f3`). **No new packages.**
+**Built.**
+- Layouts in settings **v5** (v4 kept as a backup), at most 20 of 8 windows; `/v1/layouts` routes, each screen
+  checked as a path of the terminal's own characters (nothing that could reach Edge's command line). Windows answer
+  on a `BroadcastChannel`. Edge applies window switches to its first process only, so `ikars open --layout` gives
+  each window its own code and its place (`#...&at=x,y,w,h`) to move itself; saving asks once for Edge's
+  window-management permission.
+- Support bundle: `ikars support` and a Health button; one zip in `<data root>\support\` (latest 10), one at a
+  time, settings read and never rewritten. It holds the newest logs (up to 50 MB), the health report, the versions,
+  the settings with the share's path left out, the gap log (the newest 1,000) and a README. Redacted as
+  written (key id and path in every spelling, API token, share path, PEM blocks, bearer tokens, balance and position
+  amounts with cents from $1,000; user folder and computer name as placeholders), then read back and searched: a hit
+  deletes it, naming the file, never the value. Never sent.
 
-- **Layouts** (G16): a layout is a named set of IKARS windows, each a screen (an address in the terminal) and a place
-  and size in Windows' screen coordinates, so any monitor. They live in the engine's settings (**version 5**; the
-  version 4 file is kept as a backup on first load), at most 20 of 8 windows each. `GET`/`PUT /v1/layouts`,
-  `PUT /v1/layouts/start`, `DELETE /v1/layouts/{name}`, each checked (a screen is a path of the terminal's own
-  characters: no host, no `#`, nothing that could reach Edge's command line) and backed up first. In the terminal,
-  every window answers "where are you?" on a `BroadcastChannel` (the engine's own pages only); Settings' Terminal
-  section saves the open windows (the saving window counted once), chooses the one `ikars open` restores (or one
-  window) and deletes one. `ikars open --layout NAME` opens each window with a sign-in code of its own; since Edge
-  applies its window switches to its first process only, each window also carries its place (`#...&at=x,y,w,h`) and
-  moves itself there when it loads; saving asks Edge once for its window-management permission so a window may sit
-  on another monitor. Panes docked within a window stay parked (PLAN section 9).
-- **Support bundle** (D20 I): `ikars support` (through the running engine, else made by the command) and **Make a
-  support bundle** on Health. One zip in `<data root>\support\` (the latest 10 kept): the newest logs (up to 50 MB),
-  the health report, the versions, the settings with the share's path left out, the gap log (the newest 1,000), and
-  a README. Redacted as it is written: the key's id and path (either slash, the file's name alone, and as JSON spells
-  them), the API token (even when the engine is stopped), the share's path, PEM blocks and bearer tokens, and the
-  account's balance and position amounts (from the engine's portfolio, else the cash the ledger file explains: as
-  dollars, millionths, and cents from $1,000); the user's folder and the computer's name become placeholders. Then
-  the zip is read back and searched for the same: anything found and it is deleted, the answer naming the file, never
-  the value. One bundle at a time; settings read, never rewritten; never sent anywhere.
-
-**Verified.** Python 1,441 tests (94% coverage); Vitest 200 (98% lines, 91% functions); Playwright 16 screen tests in
-Edge (two windows saved as a layout, the start choice kept across a reload, deleted; a bundle made from Health); lint,
-types, audit, data guard and gitleaks clean. **Live:** the engine restarted on the new code and answers; the settings
-are version 5 with the version 4 file kept; the layouts route answers (none saved, one window at start); a real bundle
-was kept (7 files, 2 logs, with health, versions, settings and gaps; no part file left) and searched: **no file** held
-the key id, the key path, the API token, the share's path, the profile folder, the computer's name, an account amount
-or a private key block. **Pending (the owner):** two windows on two monitors saved and reopened with `ikars open`.
+**Verified.** Python 1,441 (94%); Vitest 200; Playwright 16. Live: settings v5; a real bundle (7 files) held **no**
+key id, key path, API token, share path, profile folder, computer name, account amount or private key block.
 
 **Review.**
 - **Per commit:** `a7a6f58` none from the review; my own pass compiled the placeholders into one pattern; a test
@@ -2294,29 +1295,21 @@ or a private key block. **Pending (the owner):** two windows on two monitors sav
   | 9 | The final check held whole members in memory and searched once per secret | Line by line with one pattern; `24a19cd` |
   | 10 | No BUILD-LOG entry or resume point for this slice yet | This entry, PLAN section 5 and the resume point |
 
-**M1.8b-2 built**, subject to the owner's merge and two-monitor check.
+**Open.** The owner's two-monitor check: two windows saved and reopened with `ikars open`.
 
-### 1.8c New window (approved 2026-10-27; its own slice after PR #23)
+### 1.8c New window
 
-The owner asked for a "New window" menu item (opening a second window by command line was awkward:
-PowerShell drops an empty `--layout ""`). A scope addition, approved: **a browser popup** (the page opens it with
-`window.open`; same Edge profile, so already signed in; terminal only, no engine change), on the same screen as the
-window it came from, slightly offset; at the foot of the side navigation. Edge shows a thin read-only address strip on
-a popup, unlike `ikars open`'s app windows (accepted). Offered and not chosen: the engine starting a bare app window
-on request from the page. Built after PR #23 merges, as its own slice.
+**Status.** Approved 2026-10-27 as a scope addition. Built on `m1/8c`: `aaa768c`, then the merge-review fixes.
+**Done:** PR #24 merged as `b336930`. Terminal only; no new packages.
 
-#### 1.8c built (2026-10-27)
+**Owner's decisions (2026-10-27).** "New window" (PowerShell drops an empty `--layout ""`) as **a browser popup**
+(`window.open`, same Edge profile, so signed in), offset on the same screen; its thin address strip accepted. Not
+chosen: the engine opening a bare app window.
 
-**Built** on `m1/8c`: `aaa768c` (New window), then the merge-review fixes. After M1.8b-2 (PR #23, `47984db`).
-**No new packages; terminal only.**
+**Built.** At the foot of the side navigation, hidden on the wizard; 30 px offset, at most the screen less twice the
+offset; opener cut once open; it can be saved in a layout.
 
-- **New window** at the foot of the side navigation (hidden on the first-run wizard): a browser popup on the same
-  screen as the window it came from, 30 px right and down, the same size (smaller than a window that fills the
-  screen, so it never hides it whole). Edge's shared profile signs it in; the link back to its opener is cut once it
-  is open; it answers layout asks like any other window, so it can be saved in a layout.
-
-**Verified.** Vitest 202 (98% lines, 91% functions); Playwright 17 screen tests in Edge (New window opens the Ledger
-in a popup, signed in, with no toolbar and no opener); lint, types, audit, data guard and gitleaks clean.
+**Verified.** Vitest 202; Playwright 17 (a popup, signed in, no toolbar, no opener).
 
 **Review.**
 - **Per commit:** `aaa768c` none.
@@ -2335,64 +1328,46 @@ in a popup, signed in, with no toolbar and no opener); lint, types, audit, data 
   | 9 | The unit test's stub was cast to `Window`, hiding a missing field | Cast to the opener's own type (`Opener`), with the screen's size |
   | 10 | `Math.round` on values the browser gives as whole numbers | Removed |
 
-**M1.8c built**, subject to the owner's merge.
+### 1.9 Packaging
 
-### 1.9 Packaging (plan APPROVED 2026-10-27; two slices)
+**Status.** Plan approved 2026-10-27 (all as recommended), as **1.9a** (build, install, uninstall) and **1.9b**
+(releases, updates, rollback, signing). **Done:** PR #25 `31a992a`; PR #26 `d11165d`. Packages: `velopack`
+(PyPI) and `vpk` (builds only), MIT, added in 1.9a. Machine: Windows Sandbox enabled once by the owner.
 
-PLAN M1.9, D12, G, G12. **Owner's answers (2026-10-27): all as recommended.**
+**Owner's decisions (2026-10-27).** Program in `%LOCALAPPDATA%\IKARS-App`, data in `%LOCALAPPDATA%\IKARS`, never
+touched by install, update or uninstall. Uninstall removes start at sign-in, the watchdog task and the notification
+name, **never data**. Unsigned pre-releases for now; a SignPath Foundation application in parallel (publisher shown:
+SignPath Foundation; a published policy required); final before the M6 release. Azure Artifact Signing (paid, the
+owner's name) was offered.
 
-| Slice | Builds |
-|---|---|
-| **M1.9a** | the `ikars` command (and window-less `ikarsw`); a launcher that answers Velopack's install and uninstall steps first (a Start-menu entry "IKARS"; on uninstall, start at sign-in, the watchdog task and the notification name removed, **never data**), else opens the terminal; a build script: a standalone relocatable Python with the locked packages (no development tools) and the built web terminal, packed by Velopack into `Setup.exe` and a portable zip (with `portable.marker`); install, first-run wizard, portable run and uninstall checked in **Windows Sandbox**; download sizes measured |
-| **M1.9b** | a CI release workflow (a `vX.Y.Z` tag builds both and publishes a GitHub pre-release; pinned, release write permission only); update checks at start and daily, shown on Health and Settings, **installed only when the owner clicks Restart to update** (the engine stops cleanly, Velopack swaps the program, migrations back up first); the rollback drill (N, then N+1 with a real migration, then N again with the pre-migration copies restored; the ledger verifies and reconciles exactly); the signing decision recorded |
+#### 1.9a Build, install, uninstall
 
-- **Folders:** the program installs to `%LOCALAPPDATA%\IKARS-App` (Velopack deletes its own folder on uninstall);
-  the data stays in `%LOCALAPPDATA%\IKARS`, which install, update and uninstall never touch (tested).
-- **Signing:** unsigned pre-releases for now (the owner is the only user); an application to SignPath Foundation's
-  free open-source signing in parallel (the publisher shown would be SignPath Foundation; a published signing policy
-  is required); decided for good before the M6 release. Azure Artifact Signing (paid, the owner's name) was offered.
-- **Packages:** `velopack` (PyPI, the launcher) and `vpk` (Velopack's .NET packing tool, builds only); both MIT, to
-  be confirmed in the slice.
-- **Machine:** Windows Sandbox enabled once (the owner; admin, one restart); test installs go into the Sandbox only.
+**Status.** Built on `m1/9a`: `401dad6`, `7e98d2a` (setup mode), `6e17772`, `d4f3aba` (Sandbox checks), `e4ec0cc`
+(merge-review fixes). **Done:** PR #25 merged as `31a992a`.
 
-#### 1.9a built (2026-10-27)
+**Owner's decisions (2026-10-27).** A tiny C# launcher (not a PyInstaller freeze, which D12 rules out); setup mode
+for a machine without a usable key.
 
-**Built** on `m1/9a`: `401dad6` (the `ikars` command, `IKARS.exe`, the build), `7e98d2a` (setup mode), `6e17772`
-and `d4f3aba` (the Sandbox checks), `e4ec0cc` (the merge-review fixes). After M1.8c (PR #24, `b336930`).
+**Found.** NativeAOT, first planned, needs Visual C++'s linker, which this workstation lacks. The first Sandbox run
+never reached the wizard without a key (the engine raised at start), hence setup mode. A silent install starts
+nothing; `Expand-Archive` on the portable zip crashed the Sandbox (`tar` now, with 4 GB).
 
-**Owner's answers during the slice (2026-10-27):** the launcher is a tiny C# program (not a PyInstaller freeze, which
-D12 rules out); setup mode for a machine without a usable key.
+**Built.**
+- `IKARS.exe` (`tools/launcher`): about 40 lines of C# for **.NET Framework 4.8** (in every Windows 11: 7 KB, no
+  runtime, no C++ tools), starting the bundled `pythonw.exe -I -m ikars_engine.launcher`, which answers Velopack's
+  steps (stopping the engine first) or opens the terminal. `ikars` console script.
+- `tools/release/build.py`: uv's standalone CPython 3.13.16 (never the `.venv`; its own `site-packages` never
+  copied), locked packages with hashes, `web/dist`, `vpk pack --skipVeloAppCheck`. **`Setup.exe` 69 MB, portable zip
+  65 MB** (installed about 190 MB, mostly pyarrow). The portable zip's data sits in `<its folder>\IKARS-data`, beside
+  `current\`.
+- Setup mode: no usable key and no ledger records: API and terminal only, no Kalshi call;
+  `HealthView.setup_reason`; the watchdog tells the owner and does not restart it. With ledger records a failing key
+  stops the engine (restarted urgently).
 
-- **`ikars`**: the engine's command line as a console script (`.venv\Scripts\ikars` in development).
-- **`IKARS.exe`** (`tools/launcher`): about 40 lines of C# for **.NET Framework 4.8**, part of every Windows 11, so
-  7 KB, no runtime shipped and no C++ tools to build it (NativeAOT, first planned, needs Visual C++'s linker, which
-  this workstation lacks). It starts the bundled `pythonw.exe -I -m ikars_engine.launcher` with its arguments.
-- **`ikars_engine.launcher`**: answers Velopack's steps first (updates wait for the owner's click; before an update,
-  the engine stops; before uninstalling, the engine stops and start at sign-in, the watchdog's task and the
-  notification name are removed, never the data), else opens the terminal; a failure shows a message box.
-- **The build** (`tools/release/build.py`): uv's standalone CPython 3.13.16 (never the project's `.venv`, which uv
-  otherwise prefers; its own `site-packages` never copied), the locked packages with hashes and IKARS's two wheels,
-  compiled; `web/dist`; `IKARS.exe`; `vpk pack` (program id `IKARS-App`, the Start menu only,
-  `--skipVeloAppCheck` since Python answers the steps). **`Setup.exe` 69 MB, portable zip 65 MB** (installed:
-  about 190 MB, most of it pyarrow). It also writes `build/IKARS-test.wsb` (this machine's folders: never committed).
-- **Folders:** installed, the program is `%LOCALAPPDATA%\IKARS-App` and the data `%LOCALAPPDATA%\IKARS`; the portable
-  zip keeps its data in `<its folder>\IKARS-data`, beside Velopack's `current\` (which an update replaces).
-- **Setup mode** (owner): found by the first Sandbox run, where a machine without a key never reached the wizard
-  (the engine raised at start). With no usable key on a fresh install (no ledger records), the engine serves the API
-  and the terminal only (no feed, no ledger import, no call to Kalshi); `HealthView.setup_reason` and the Health
-  feed card and strip say why and what to do; the watchdog tells the owner and does not restart it. A fresh engine
-  gets the key's variables as Windows has them now, so Restart the engine after setting the key starts it in full.
-  With ledger records, a failing key stops the engine as before (the watchdog restarts it, urgently).
-
-**Verified.** Python 1,456 tests; Vitest 203; Playwright 17 in Edge; lint, types, audit, data guard and gitleaks
-clean; CI builds the launcher. **Bundle:** its Python uses only its own packages and the bundled terminal, and starts
-the bundled engine isolated; the bundled engine without a key starts in setup mode (a scratch folder). **Clean machine
-(Windows Sandbox, the owner, three runs):** no Python there; installed to `%LOCALAPPDATA%\IKARS-App`; the Start-menu
-entry, no desktop shortcut; started from the Start menu in setup mode with the wizard in Edge; uninstalled: the
-program and the Start-menu entry gone, **the data and the settings kept**, start at sign-in and the watchdog task
-removed; the portable zip ran from its own folder with its data beside it, nothing written inside `current\`.
-Found on the way: a silent install starts nothing (the check now starts IKARS from the Start menu); `Expand-Archive`
-on the portable zip crashed the Sandbox (`tar` now, with 4 GB).
+**Verified.** Python 1,456; Vitest 203; Playwright 17; CI builds the launcher. **Windows Sandbox, three runs (the
+owner):** no Python; installed per user; Start-menu entry, no desktop shortcut; setup mode with the wizard; uninstall
+removed program, entry, start at sign-in and watchdog task, **data and settings kept**; the portable zip wrote nothing
+inside `current\`.
 
 **Review.**
 - **Per commit:** `401dad6`, `7e98d2a` none.
@@ -2411,65 +1386,40 @@ on the portable zip crashed the Sandbox (`tar` now, with 4 GB).
   | 9 | Setup mode was visible only in Health's untyped details | `HealthView.setup_reason`, shown on the feed card and the strip; tested |
   | 10 | The Sandbox config did not escape its folder paths | Escaped as XML |
 
-**M1.9a built**, subject to the owner's merge.
+#### 1.9b Releases, updates, rollback, signing
 
-#### 1.9b built (2026-10-27)
+**Status.** Built on `m1/9b`: `a41b0f8`, `b72701d` (snapshot, rollback), `1431125` (state migration), `a6e53fc`,
+`800c80d`, `7c14960` (update progress, from the owner's notes), `6098a74`, `e5b9acc` (signing policy), `e42b07c`
+(merge-review fixes). **Done:** PR #26 merged as `d11165d`. Releases: pre-releases v0.1.0 to v0.1.6, each built on
+its first run. No new packages.
 
-**Built** on `m1/9b`: `a41b0f8` (updates and the release workflow), `b72701d` (the pre-upgrade snapshot and
-`ikars rollback`), `1431125` (the state migration v0.1.1 carried), `a6e53fc`, `800c80d` and `7c14960` (the update's
-progress, from the owner's three rounds of notes), `6098a74` (what a rollback leaves aside), `e5b9acc` (the code
-signing policy), `e42b07c` (the merge-review fixes). After M1.9a (PR #25, `31a992a`). **No new packages.**
+**Owner's decisions (2026-10-27).** A pre-upgrade snapshot for the rollback (not forward-fix only); the drill on the
+installed workstation; the **IKARS Update window** from its mock-up (not Velopack's); v0.1.4 to v0.1.6 published at
+the owner's word; **unsigned pre-releases now**, the SignPath application the owner's to file.
 
-**Owner's answers during the slice (2026-10-27):** a pre-upgrade snapshot for the rollback (not forward-fix only);
-the drill on the workstation, installed (not the Sandbox); the **IKARS Update window** (approved from its mock-up,
-not Velopack's own window); publishing each test pre-release (v0.1.4, v0.1.5, v0.1.6 at the owner's word).
+**Built.**
+- `release.yml`: a `vX.Y.Z` tag builds both packages (previous release fetched, so updates are deltas) and publishes a
+  GitHub **pre-release**; `contents: write` only there; the tag read from the environment, never pasted into a script.
+- `updates.py`: checks a minute after start and daily; installs only on **Restart to update** (`IKARS.exe
+  --after-update` restarts without a second window). Velopack's manager allows one thread at a time, so every use
+  holds the updater's lock and the version is read from its manifest. The Update window (`/update`) as the mock-up; it ends on **Update complete** and closes after a 5-second
+  countdown.
+- `upgrades.py`: each start of the installed program, before settings are read, snapshots settings, state, ledger
+  and checkpoints to `backups\pre-upgrade\<old version>\` on a version change (latest 5); a failure never stops the
+  start.
+- `ikars rollback VERSION`: snapshot and release checked first; refuses if the engine does not stop; current data set
+  aside in `backups\rolled-back\` (never deleted; a failed swap undoes exactly what it did).
+- `docs/CODE-SIGNING.md`: the policy SignPath asks for.
 
-- **Releases** (`.github/workflows/release.yml`): a `vX.Y.Z` tag builds `Setup.exe` and the portable zip (the
-  previous release fetched first, so an update is a small delta) and publishes a GitHub **pre-release**;
-  `contents: write` only there; the tag read from the environment, never pasted into a script. Seven releases,
-  v0.1.0 to v0.1.6, each built on its first run.
-- **Updates** (`updates.py`; `GET /v1/update`, `POST /v1/update/check` and `/apply`): the installed program checks a
-  minute after the start and then daily, downloads in the background (Velopack's progress, a delta's own size,
-  a short step log), and installs only on **Restart to update**: Velopack waits for the engine to stop, swaps the
-  program folder (never the data), and restarts `IKARS.exe --after-update`, which starts the engine without a
-  second window. Velopack's manager allows one thread at a time: every use holds the updater's lock and the
-  version is read from its manifest. Health (Program) and Settings (Version) show the version, Check now with a
-  download bar, and Restart to update.
-- **The IKARS Update window** (`/update`, the owner's design): opened by Restart to update, centred over the
-  terminal; the download with its bar, then each step ticked as it is seen (the engine stops, Velopack installs,
-  the engine starts, the terminal reloads) with the elapsed time, and Details; once the new version answers every
-  IKARS window reloads (a message on the windows' channel, which the Update window itself ignores) and it says
-  **Update complete** and closes after a 5-second countdown.
-- **Safe upgrades** (`upgrades.py`): every start of the installed program (`serve`, `run`, `IKARS.exe`), before the
-  settings are first read, compares its version with `data\program.version`; on a change it copies the settings,
-  the state, the ledger and its checkpoints to `backups\pre-upgrade\<old version>\` with a manifest (the ledger to
-  the share too; a development engine's data as `unversioned`; the latest 5 kept). A failed snapshot is logged and
-  never stops the start.
-- **`ikars rollback VERSION`**: checks the snapshot and downloads that release first (Velopack, allowed to go back),
-  refuses if the engine does not stop, sets the current data aside in `backups\rolled-back\` (never deleted; a
-  failed swap undoes exactly what it did), restores the snapshot, and has Velopack install the release; it reports
-  the owner's annotations and IKARS's own records left in the copy set aside.
-- **Code signing** ([docs/CODE-SIGNING.md](CODE-SIGNING.md), linked from the README): the policy SignPath asks for
-  (the release workflow the only build; the owner approves; what IKARS connects to). **Decision (owner): unsigned
-  pre-releases now**; the SignPath Foundation application is the owner's to file; decided for good before M6.
+**Verified.** Python 1,483; Vitest 212; Playwright 18; CodeQL (C# included) clean. Live, on the workstation:
 
-**Verified.** Python 1,483 tests; Vitest 212; Playwright 18 in Edge; lint, types, audit, data guard, gitleaks and
-CodeQL (C# included) clean. **Live, on the workstation:**
-- **Installed:** v0.1.0 from its GitHub release, silently, started from the Start menu; it took the `unversioned`
-  snapshot of the development engine's data and ran on the owner's key: the feed live, the ledger **verified and
-  reconciled exactly**.
-- **Update with a migration:** 0.1.0 to 0.1.1 on the owner's click: the 0.1.0 snapshot first, then the state
-  migration (schema 2, the new index); the ledger verified and reconciled exactly.
-- **Rollback drill:** `ikars rollback 0.1.0`: 0.1.0 downloaded, the engine stopped, the data set aside, the
-  snapshot restored (schema 1), Velopack installed 0.1.0; the engine ran on the owner's key, the ledger **verified
-  and reconciled exactly**. Records after the snapshot were only IKARS's own `app` events (now reported, kept
-  aside; their place in M5's tax package parked).
-- **The update experience**, three rounds of the owner's notes: 0.1.2 (little feedback, a second window, the
-  layout), 0.1.4 (the window stayed open, a cut-off button, a 500 from Velopack's one-thread rule), and **0.1.5 to
-  0.1.6 approved** ("looks good").
-
-**Pending (the owner):** start at sign-in and the watchdog task still point at the development Python
-(`install-autostart` from the installed program, which the classifier left to the owner); the SignPath application.
+| Check | Result |
+|---|---|
+| Installed | v0.1.0 from its GitHub release, silently, started from the Start menu; it took the `unversioned` snapshot of the development engine's data and ran on the owner's key: the feed live, the ledger **verified and reconciled exactly** |
+| Update with a migration | 0.1.0 to 0.1.1 on the owner's click: the 0.1.0 snapshot first, then the state migration (schema 2, the new index); the ledger verified and reconciled exactly |
+| Rollback drill | `ikars rollback 0.1.0`: 0.1.0 downloaded, the engine stopped, the data set aside, the snapshot restored (schema 1), Velopack installed 0.1.0; the engine ran on the owner's key, the ledger **verified and reconciled exactly**. Records after the snapshot were only IKARS's own `app` events (now reported, kept aside; their place in M5's tax package parked) |
+| The update experience | three rounds of the owner's notes: 0.1.2 (little feedback, a second window, the layout), 0.1.4 (the window stayed open, a cut-off button, a 500 from Velopack's one-thread rule), and **0.1.5 to 0.1.6 approved** ("looks good") |
+| Start at sign-in and the watchdog task on the installed program | `install-autostart` run from the installed program by the owner |
 
 **Review.**
 - **Per commit:** `b72701d` 3 found and fixed before committing (snapshot lookup by version, the settings file's
@@ -2489,447 +1439,52 @@ CodeQL (C# included) clean. **Live, on the workstation:**
   | 9 | A whole update manager was built only to read the version | Read from Velopack's manifest; tested |
   | 10 | No BUILD-LOG entry for the slice | This entry, PLAN section 5 and the resume point |
 
-**M1.9b built**, subject to the owner's merge. **M1.9 is then complete.**
+**Open.** The owner's SignPath application.
 
-### 1.12 End-to-end momentum (plan APPROVED 2026-10-27; three slices)
+### 1.11 Close-out
 
-PLAN M1.12 (D21-2; platform review 1.R2 items 8 and 9). **Owner's answers (2026-10-27): all as recommended.**
+**Status.** Plan approved 2026-10-28. Built on `m1/11`: `5032883`, `85f2ec7`, `311b91f` (milestone-review fixes),
+`c5a60db`, `05b0842` (Back up now), `6811c47` (merge-review fixes). **Done:** PR #31 merged as `14fb25d`; **it closes
+M1.** Contracts 2.2. Releases: v0.1.10 (from `87f5a4b`). No new packages.
 
-| Slice | Builds |
-|---|---|
-| **M1.12a** | the live runner loads the plugins (`discover`), records what they emit (the generic recording schema, D20 A) and hands recommendations to the API and the stream through a listener; the host, not the plugin, stamps `received_ns`; the **journal** (`journal.sqlite` in the data folder, apart from the tax ledger): each recommendation with its provenance (F) and lifecycle (G9: active, expired, superseded), scored after a fixed time |
-| **M1.12b** | the momentum plugin, its rule and parameters **registered by hash** (G4); P&L after fees on entry and exit (D7, `ikars-core` fees); tradability filters (D20 E) |
-| **M1.12c** | the Overview's recommendation list, the Recommendation drill-down (the approved M1.3 mock-up, to the parts that exist now), the alert tier (H) |
+**Owner's decisions (2026-10-28).** M1.10 perp research to M2 (not in M1's gate). M1 closes without M1.13; replay
+before M3's back-tests. Build `ikars restore`, not manual steps. Fix the network wait at start now (after the reboot
+outage the engine stopped on its first account request). Added: **Back up now** on Health (mock-up: Health board,
+version 11).
 
-- **The rule (pre-registered):** continuation on watched markets: the YES mid moves 4c or more within 5 minutes on at
-  least 50 contracts traded, the spread 3c or less, the price from 10c to 90c: recommend the same direction, valid 30
-  minutes; scored at 30 and 60 minutes after fees. A change makes a new version with its own record.
-- **Size:** a fixed 10 contracts (paper only; no orders; recommend-only until M7, D6).
-- **Alerts:** a normal-priority Windows notification, throttled, quiet hours and the digest applying; the Overview and
-  Alerts screens too.
-- **Guard:** no recommendations on SPARQ's forward-test events closing before 2026-11-23 (their list read from SPARQ,
-  read only) until SPARQ's S1.1b verdict.
-- **Machine:** `journal.sqlite` in the data folder, backed up with the state. **Packages:** none expected.
-- **Live checks:** the engine runs the plugin on the owner's key; recommendations reach the Overview; the journal
-  scores them; no order is ever sent.
+**Found.** With v0.1.9 the Sandbox died about 3 minutes after IKARS opened (`0x80370106`). A recorder inside showed
+about 5.8 GB free and no IKARS error; the host's `ContainerCrashDump` showed the Sandbox kernel bugchecked (`0x3B`,
+access violation), pointing to its virtual GPU path (Edge to the host's NVIDIA driver). `<vGPU>Disable</vGPU>`: clean.
 
-#### 1.12a built (2026-10-27)
+**Built.**
+- `ikars backup restore --share <share>`: the newest share backup into an **empty** root; the ledger proved by
+  `proved_newest` (shared with the drill); checkpoints, state, journal and settings of the ledger copy's day or
+  before; staged, then moved all or nothing. Refusals in words; the share only read. `docs/RUNBOOK.md`.
+- Network wait: the first Kalshi request retries (5 s up to a minute) through a dropped network, 5xx, a lingering 429
+  or a captive portal; a key or API refusal still stops; after 5 minutes the watchdog says "Kalshi unreachable".
+- Back up now: `POST /v1/backup` (restarts the 24-hour clock; `BackupHealth.running`, `next_in_h`); `ikars backup
+  run` via the engine, else by itself; one helper `api.engine_post`.
+- Test Sandbox 8 GB, vGPU off; `open_store` closes a non-database file.
 
-**Built** on `m1/12a`: `c4d26ab` (plugins, recording, the journal), `e6977ab` (the merge-review fixes). After M1.9b
-(PR #26, `d11165d`). **No new packages.**
-
-- **Plugins in the live engine** (review 1.R2 item 8): the runner loads every registered plugin (`discover`) with the
-  settings' host options; one that cannot load, or that the host refuses (two of one name), is listed in health and
-  never stops the engine. Every item a plugin emits is recorded in the recorder's generic **`item`** channel (D20 A:
-  times, kind, id, source, hops, the payload as JSON); what plugins emit while the engine drains is recorded too.
-- **Received time** (review 1.R2 item 9): the host stamps `received_ns` on every emit (live the wall clock, replayed
-  the replay's), never the plugin's word.
-- **The journal** (`journal.py`, `journal.sqlite` in the data folder, apart from the tax ledger): a `recommendation`
-  item's payload is a `Recommendation` (unknown fields refused; price, count, P&L, horizons and expiry bounded). Each
-  is kept with its provenance and registered version; a newer one of the same rule on the same market supersedes it;
-  it expires at its time; at each horizon the market's YES bid and ask are marked (waiting up to ten minutes for a
-  quote; a mark the engine was down for is still made, its time showing how late). Fed by an engine listener that
-  only queues; written once a second on the event loop; what is queued at shutdown is written. Health: recorded,
-  rejected, dropped, failed passes. In the pre-upgrade snapshot and the share's daily state folder.
-- **`GET /v1/recommendations`**: the journal's newest 200, with their marks (`RecommendationView`, `MarkView`).
-- A flaky privacy test fixed: a log record's creation time could hold an amount's digits by chance.
-
-**Verified.** Python 1,502 tests; Vitest 214; lint, types, audit and the data guard clean. **Live:** folded into
-M1.12b's live check (no plugin exists before it, so the journal stays empty).
-
-**Review.**
-- **Per commit:** `c4d26ab` 1 found and fixed before committing (the journal's counts and a lost batch).
-- **Merge review (medium), 10 findings, all fixed in `e6977ab`:**
-
-  | # | Finding | Done |
-  |---|---|---|
-  | 1 | The same recommendation id again superseded the newer one and was counted | It changes nothing; tested |
-  | 2 | Two plugins of one name stopped the engine from starting | The second is left out and said in health |
-  | 3 | A horizon that fell due with no quote yet was marked empty for ever | It waits up to ten minutes for one; tested |
-  | 4 | What plugins emitted while the engine drained reached a closed recorder | The recorder closes once more, last |
-  | 5 | What was queued at shutdown never reached the journal | Written before it closes; tested |
-  | 6 | `ikars ledger backup` replaced the share's state folder without the journal | It sends the journal too |
-  | 7 | One out-of-range value from a plugin could break the route for every reader | Bounded and refused; tested |
-  | 8 | The mark check scanned every mark and decoded a day of payloads each second | A table of pending marks, indexed by when they fall due |
-  | 9 | A horizon over a day was never marked; a long outage lost marks silently | No window: still due; tested |
-  | 10 | Recommendations made in the same instant listed in a changing order | A stable tie-break |
-
-**M1.12a built**, subject to the owner's merge.
-
-#### 1.12b built (2026-10-28)
-
-**Built** on `m1/12b`: `4a0e180` (the signal, P&L after fees, tradability), `e463699` (the merge-review fixes),
-`f810687` (settlement scoring, after the live check). After M1.12a (PR #27, `099b94b`). **No new packages.**
-
-**Owner's answers during the slice:** SPARQ's guard lapsed with S1.1b (2026-10-27; CLAUDE.md, PLAN); momentum may use
-any market the ticker feed covers, with a depth check; after the live hour (2026-10-28): **v1 keeps running a week
-unchanged**, then its record decides (pre-registration: no tuning after one evening), and a check on a closed market
-is **scored at its settlement**.
-
-- **The signal** (`signals/momentum.py`, registered under `ikars.plugins`): continuation, as registered (4c in 5
-  minutes on 50 contracts traded; buy the side it moved toward; valid 30 minutes; marked at 30 and 60; 10
-  contracts). Its parameters hashed into its version (G4): **v1 `0d648804a13a`**. The window keeps the price at its
-  start (Kalshi sends a ticker only on a change). One recommendation per market at a time, across restarts (the
-  journal says what is still active).
-- **Tradability (D20 E):** trading ("active" or "open") and closing after the validity; spread 3c or less; mid 10c
-  to 90c; the side's best ask holds the 10 contracts; the series' fee modelled.
-- **P&L after fees (D7, `pnl.py`):** the one place for the fee rule (both legs' taker fees, a cent per order; the
-  portfolio uses it too) and a side's buy and sell prices (no bid is no price, never a price of nothing). A
-  recommendation carries its P&L at the rule's target; each journal mark is scored after fees, or **at the
-  market's settlement** ($1 or $0, the entry fee only) when it had stopped trading then and has since settled
-  (journal migration 2: settlements, learned once a minute from the market index, and whether each mark's market
-  was closed).
-- **Plugins get read-only services** from the host (a mapping proxy): a ticker's details, a series' fees, and
-  whether a strategy's recommendation is still active.
-
-**Verified.** Python 1,525 tests (the P&L checked by hand: $0.04 on 10 contracts bought at 46c, sold at 50c; $5.22
-held to a winning settlement); Vitest 214; lint, types, audit and the data guard clean. **Live, on the owner's
-workstation (v0.1.7, 2026-10-28 05:31 to 06:32 UTC; counts and states only):**
-- the engine ran the plugin on the owner's key; nothing failed to load, nothing rejected or dropped; one version
-  (v1); one recommendation per market;
-- **374 recommendations in the first hour** (about 20 a minute at first, mostly in-play NBA spreads and points and
-  tennis); 228 expired on time; every mark within 1 second of its due time;
-- **30-minute marks: 237; 131 (55%) found no bid** (the games had ended and the markets closed): the settlement
-  scoring above follows from it; of 106 scored, 47 above zero, median -$0.28 and mean -$0.42 per 10 contracts
-  after fees (the standard fee; one evening, far too few to judge the rule). **60-minute marks:** 32, 6 scored;
-- 9 recommendations shown superseded by one made the second they expired: fixed (only a still-valid one is
-  superseded);
-- no order was ever sent (IKARS has no order code; its key reads only).
-- **The M1.6 auto-start check passed:** after the owner's restart the installed IKARS started at sign-in.
-
-**Review.**
-- **Per commit:** `4a0e180` none; `f810687` 1 found and fixed before committing (an empty book while the market
-  still traded would have been scored at the later settlement: each mark now records whether it was closed).
-- **Merge review (medium), 9 findings, all fixed in `e463699`:**
-
-  | # | Finding | Done |
-  |---|---|---|
-  | 1 | A fractional contract count could make the recommendations route fail (scoring raised) | Exact arithmetic in `pnl`; the journal takes whole contracts; tested |
-  | 2 | A side with no bid was scored as a sale at nothing (a full loss) | No bid is no price: unscored (and later, at settlement); tested |
-  | 3 | Markets in the "open" status were never recommended | Both trading statuses count |
-  | 4 | After a quiet spell a real move was measured from the newest price | The window keeps the price at its start; tested both ways |
-  | 5 | After a restart a second recommendation could come while the first was valid | The journal's "still active", as a host service; tested |
-  | 6 | A new market record on every feed item; markets never forgotten | Made only when new; idle for an hour, dropped |
-  | 7 | The fee rule in two places | `pnl.taker_fee_e6`, used by the portfolio |
-  | 8 | `pnl` depended on the ledger importer and the portfolio | It depends on neither |
-  | 9 | The services could be changed by a plugin | A read-only mapping; tested |
-
-**M1.12b done:** PR #28 merged as `3f0f8bd` (2026-10-28), CI and CodeQL green on `main`. Momentum v1 keeps
-running on the installed IKARS.
-
-### 1.12c The terminal side of momentum (plan APPROVED 2026-10-28)
-
-The third slice of M1.12 (approved in 1.12): the Overview's recommendation list, the Recommendation drill-down
-and the alert tier (D20 H). **Owner (2026-10-28): proceed as recommended**: momentum v1 makes about 7 to 20
-recommendations a minute, so a notification for each is out; a ranked list instead, and notifications for only
-the strongest few. Branch `m1/12c`, after M1.12b (PR #28, `3f0f8bd`).
-
-**Engine**
-- **Views:** `/v1/recommendations` takes `state=active` and returns the active ones ranked;
-  `/v1/recommendations/{id}` returns one of any age (the list stops at the newest 200). Each view gains the market's
-  title, the return on capital at the rule's target and per day, the worst case (the side ends at $0: the cost and
-  the entry fee) and the owner's response.
-- **Ranking:** by return per day of capital tied up, at the rule's target and after fees (D20 D; the mock-up's
-  order). Momentum's validity is fixed at 30 minutes, so this orders as return on capital does. Its per-day
-  figures look large (a 4c move on 46c over half an hour).
-- **Live list:** a `recommendations` stream event carries the active list (ranked, up to 50) when it changes.
-  The engine checks once a second, so the Overview needs no polling.
-- **The owner's response (G9):** taken, ignored or dismissed, written to the journal (migration 3: the latest
-  answer per recommendation) through `PUT /v1/recommendations/{id}/response`. "Taken" is only the owner's word:
-  IKARS places nothing (D6).
-- **Scorecard:** for each strategy and version over the last 30 days: how many were scored, the share above
-  zero, and the mean and median after costs at each check. The journal service works it out once a minute and
-  the API serves that copy. At about 10,000 recommendations a day it is never computed per request.
-- **Alerts (H):** for the first time, the engine raises alerts of its own.
-  - `normal` alerts now show outside quiet hours, throttled, and wait for the digest in quiet hours. Nothing
-    raised `normal` before: the watchdog uses high and urgent.
-  - A recommendation alerts only if it ranks first among the active ones when it is made, and the hourly budget
-    (3) is not spent. The rest appear only on the Overview, never in the alert log.
-  - The text is the market, the side, the price and the move. As before, no amounts.
-  - The engine's alert desk keeps its own state file, because each watchdog pass rewrites the watchdog's. It
-    appends to the same alert log under a lock, and shows notifications on a worker thread, never on the event
-    loop.
-
-**Terminal**
-- **Overview, "Top recommendations"** (replacing the placeholder):
-  - columns: market (its title and the why), action, size, P&L at the target after costs, return per day,
-    strategy and version, and expiry (counting down);
-  - active ones only, ranked, up to 50 (scrolling), with the active count;
-  - a row opens the drill-down.
-- **Overview, "Journal scorecard (30 days)"** (replacing the placeholder): one line per strategy version.
-- **Recommendation drill-down** (`/recommendations/:id`), from the approved M1.3 mock-up, limited to what exists:
-  - the headline (Buy YES 10 @ $0.46), with the strategy, version, state and expiry;
-  - P&L at the target, return per day, and the worst case;
-  - **Mark taken / Ignore / Dismiss** (`T`/`I`/`D`), and **Copy order** (`C`: ticker, side, size and price to
-    the clipboard); both hotkeys were promised for M1.12 in 1.8b-1;
-  - **Why:** the summary and the inputs, with received times;
-  - the **checks** at 30 and 60 minutes: bid and ask, and the score after fees or at settlement;
-  - **provenance:** the engine version, the rule and its registered version, the number of inputs, and "LLM not
-    used".
-- **Left out, because nothing yet feeds them:**
-  - on the drill-down: fill chance (D20 C), size and limits (the risk layer), the bracket (watch orders), the
-    settings hash, and Replay (M1.13);
-  - on the Overview: the Fill column. Its "EV after costs" column becomes "P&L at target" (momentum has no
-    probability estimate);
-  - "Live movers" stays a placeholder: it needs a scan of every market, not the journal. It is relabelled for M2.
-- **demo-api:** made-up recommendations and a scorecard, for the screen tests and `pnpm load`.
-
-**Machine:** journal migration 3 (backed up first, as before), and the engine's alert state file
-(`alert-desk-engine.json` in the data folder). **Packages:** none.
-
-**Tests:** ranking, worst case and return per day by hand; the response round trip and the migration; the
-scorecard against a hand-built journal; the hourly budget, quiet hours and the throttle; the lock on the shared
-log; the screens in Vitest and Playwright (the list live, the drill-down, `T`/`I`/`D`/`C`).
-
-**Live checks** (on a test pre-release, published on the owner's word):
-- the Overview's list updates live and ranked, and a row opens the drill-down;
-- `T`/`I`/`D` are kept across a restart, and `C` copies the order;
-- at most 3 recommendation notifications an hour, and none in quiet hours;
-- the scorecard matches the journal read directly;
-- no order is ever sent.
-
-**Owner's answers (2026-10-28): all as recommended.** Notifications: top-ranked only, at most 3 an hour; the
-response and Copy order come now; the scorecard comes now; no mock-up redraw (the relabel and omissions as
-listed).
-
-#### 1.12c built (2026-10-28)
-
-**Built** on `m1/12c`: `cd72d8f` (the engine side), `c1fb678` (the terminal side), `7a4592a` (the merge-review
-fixes). After M1.12b (PR #28, `3f0f8bd`). **No new packages.** API 2.1 (contracts and the web types regenerated).
-
-- **Figures and ranking** (`recommendations.py`): the outlay (the contracts and the entry fee; also the worst case),
-  the return at the rule's target after fees, and that per day of validity (D20 D), all integers (millionths). The
-  **board** keeps the active ones ranked as they come and go; the API serves the top 50
-  (`/v1/recommendations?state=active`) and the stream sends them as a `recommendations` event when they change.
-  `/v1/recommendations/{id}` returns one of any age.
-- **The owner's response (G9):** `PUT /v1/recommendations/{id}/response` (taken, ignored, dismissed; the same
-  again takes it back); a dismissed one leaves the list. Journal migration 3.
-- **Kept scores:** each check's score is kept with it once known (at once, at the market's settlement, or, when the
-  fees stay unknown for an hour, kept unscored), so an old check keeps its score after its market leaves the index,
-  and the **scorecard** (`/v1/scorecard`: each strategy version over 30 days: checks, scored, above zero, mean,
-  median) is a query on a worker thread once a minute.
-- **Notifications (H):** only a recommendation that ranks first when it is made, at most 3 an hour, none in quiet
-  hours; the engine's own alert desk state (`alert-desk-engine.json`); the alert log written under a lock shared
-  with the watchdog; `normal` alerts now show by day (nothing raised them before).
-- **Terminal:** the Overview's "Top recommendations" (live, ranked, countdowns) and "Journal scorecard (30 days)";
-  "Live movers" relabelled for M2. The **Recommendation screen** (`/recommendation/<id>`), from the approved
-  mock-up to what exists: the headline, P&L at the target, return per day, the outlay and worst case; Mark taken,
-  Ignore, Dismiss (`T`/`I`/`D`) and Copy order (`C`); why, the checks made and to come, the provenance. Left out
-  as planned: fill chance, size and limits, the bracket, the settings hash, Replay; the Overview's Fill column.
-- **demo-api:** six made-up active recommendations and one with its check, for the screen tests and `pnpm load`.
-
-**Verified.** Python 1,537 tests (the figures by hand: 10 at 46c lay out $4.78; +$0.04 is 0.8368%, 40.17% a day
-over half an hour; held to a win, +$5.22; the scorecard's mean and median by hand); Vitest 228 (functions 91.6%);
-Playwright 19 in Edge against demo-api (the list ranked, the drill-down, `T` and back, `C`); lint, types, audit,
-the generated-types check and the data guard clean.
-
-**Live checks on v0.1.8** (test pre-release from `bac418d`, published on the owner's word; the owner's
-workstation, 2026-10-28 19:00 to 20:05 MDT; counts and states only):
-- the list: about 1,000 active, the top 50 served, ranked by return per day, every row titled; one by id returns
-  the same one with its 30- and 60-minute checks;
-- `I` (by the API) kept across a clean stop and start of the installed engine; `D` takes one off the list and
-  undoing it puts it back; both answers cleared afterwards;
-- the scorecard, read just after its minute's refresh, equal to the journal read directly (checks, scored, above
-  zero, mean, median) at both horizons;
-- notifications: 2 shown in the first hour (cap 3), none in quiet hours (overnight not yet seen); no errors in the
-  engine log;
-- no order: the signer and the REST transport refuse any method but GET.
-- **The owner found the list hard to use:** the market name opened the Market screen and only the action text the
-  Recommendation screen, where Copy order and `T`/`I`/`D`/`C` live, so `C` "did not work". Taken up as **M1.12d**
-  (below); merged as is at the owner's word.
-
-**Review.**
-- **Per commit:** `cd72d8f` 1 found and fixed before committing (a check whose fees were not known yet was kept
-  unscored for good: it now waits, up to an hour); `c1fb678` 2 found and fixed before committing (the rule label
-  and the headline duplicated their formatting: one helper each).
-- **Merge review (medium), 10 findings: 9 fixed in `7a4592a`, 1 no change:**
-
-  | # | Finding | Done |
-  |---|---|---|
-  | 1 | At stop the notices closed before the journal's last flush; an offer then raised and lost the batch | Closed after the flush; an offer after closing is refused; tested |
-  | 2 | A page built before the board loaded stayed empty until the next change | The load counts as a change; tested |
-  | 3 | Checks waiting for fees could fill every scoring batch and hold back the rest | Paged in order of made time; tested |
-  | 4 | The scorecard query was awaited inside the journal loop | Its own task beside the loop |
-  | 5 | The desk's per-market throttle could spend the hourly budget on nothing | Keyed by the recommendation; tested |
-  | 6 | The ranked page's cache missed marks, scores and index changes | They count as changes; the index version is in the key; tested |
-  | 7 | "Ranks first" compared with ones expired but not yet pruned | Only those still valid when it was made; tested |
-  | 8 | Dismissals of replaced or expired recommendations stayed in memory for good | Only one on the board stays hidden; tested |
-  | 9 | Normal alerts now pop up for every caller, not only recommendations | No change: approved in this slice's plan (normal shows by day, nothing else raises it) |
-  | 10 | demo-api called the journal service's private `_write` | It uses `listen` and `flush` |
-
-**Added at the owner's request (2026-10-28, after a network outage):** a watchdog "recovered" notification
-repeated the problem ("recovered: the engine is not running"), which read as if it still were. Each problem now has
-its own all-clear text ("the engine is running again", "Kalshi's feed is live again", ...), and a test holds every
-problem the watchdog can raise to one. Per-commit review: none.
-
-**M1.12c done**: merged at the owner's word (2026-10-28).
-
-### 1.12d Navigation: rows, Back and named crumbs (approved 2026-10-28)
-
-**Owner, 2026-10-28** ("let's rethink that part of the GUI"; then "okay"): approved as recommended:
-- **Overview list:** a click anywhere on a row opens the Recommendation screen (one target; the market link stays
-  on that screen); a highlighted row, `Up`/`Down` to move it, `Enter` to open; `C`/`T`/`I`/`D` on the highlighted
-  row on the Overview too, with a short "Copied" line; a hint line names the keys. Mock-up: the canvas's Main
-  board (revised, versions 9 and 10).
-- **Back (R9):** a Back button left of the breadcrumbs, the same as `Alt+Left`, greyed when there is nowhere to
-  go back to (the Edge app window hides the browser's own).
-- **Named last crumb:** e.g. `Overview › Recommendation: <market>`, not just "Recommendation".
-- Not now: a trail of the exact path taken (Back covers it).
-
-No engine change, no new packages.
-
-#### 1.12d built (2026-10-28)
-
-**Built** on `m1/12d`: `c6a424f` (the slice), `3b11a27` (the merge-review fixes). After M1.12c (PR #29, `d39f623`).
-
-- **The Overview's list:** a click anywhere on a row opens its Recommendation screen (the market name is the row's
-  one link, for the keyboard; a modified click or a text selection is left alone). `Up`/`Down` highlight a row and
-  focus its link; `Enter` opens the highlighted row even when the focus has moved; `T`/`I`/`D`/`C` act on it, with
-  a note under the list ("<market>: Marked taken.", "Copied: ..."). The highlight follows the recommendation's
-  id, never its place, so a re-ranked list cannot move it onto another. The arrows are the list's from inside it,
-  the top bar or nowhere; from another Overview card and on every other screen they stay the browser's.
-- **Back:** a button left of the breadcrumbs (`Alt+Left`), greyed on the screen the window opened on: the navigator
-  counts its moves in the history entry's state.
-- **Named crumb:** the Recommendation screen names its market for the last crumb and the window title
-  ("Recommendation: <market>").
-- **Reuse:** the answer and Copy order are one helper (`app/answers.ts`), `T`/`I`/`D`/`C` one hook
-  (`useAnswerKeys`), a plain click one test (`plainClick`). The approved mock-up is in `docs/design/mockups/`.
-
-**Verified.** Vitest 232 (the navigator's Back and depth, the screen's name, the arrows, the answer and Copy order
-helpers); Playwright 19 in Edge against demo-api (a click on an empty cell opens the row, the named crumb, Back
-and its greyed state, `Down`, `C` with the clipboard read back, `T` and back, `Enter` after the focus moved); lint,
-types and the data guard clean.
-
-**Live check passed** on v0.1.9 (test pre-release from `66d8699`, published on the owner's word, 2026-10-28): the
-owner used the list, the keys, Back and the named crumb on the workstation: "everything looks good".
-
-**Review.**
-- **Per commit:** `c6a424f` 1 found and fixed before committing (a move clears the screen's name and it was only
-  given again when the name changed: now after every move).
-- **Merge review (medium), 8 findings: 7 fixed in `3b11a27`, 1 no change:**
-
-  | # | Finding | Done |
-  |---|---|---|
-  | 1 | An answer on the Overview dropped the engine's copy, so the same key again saved it again | The copy is kept until the next list; tested end to end |
-  | 2 | `Enter` went to the alerts when a row was highlighted but the focus had moved | `Enter` opens the highlighted row first; tested end to end |
-  | 3 | The arrows were taken over the whole Overview | Only from the list, the top bar or nowhere |
-  | 4 | The row's link to the Market screen is gone | No change: the approved design (one target per row; the market is linked on the Recommendation screen) |
-  | 5 | A key's note was not shown with an empty list | The note is always there |
-  | 6 | The `T`/`I`/`D`/`C` event wiring was copied from the Recommendation screen | One hook, `useAnswerKeys` |
-  | 7 | The row repeated the link's modified-click test | One helper, `plainClick` |
-  | 8 | A row's element id held the raw recommendation id | Encoded |
-
-**M1.12d built and checked live**, subject to the owner's merge.
-
-## 1.11 Close-out (plan APPROVED 2026-10-28)
-
-**Owner, 2026-10-28:** the plan as proposed, with these answers:
-- **M1.10 perp research moves to M2** (not done in M1; not in M1's gate).
-- **M1 closes without M1.13**; the replay of real recordings comes before M3's back-tests, as planned.
-- **Build `ikars restore`** rather than manual copy steps.
-- **Fix the network wait at start** in this slice (after the reboot outage the engine stopped on its first account
-  request and the watchdog restarted it within 5 minutes).
-
-**Builds:**
-1. **Gate evidence** (§4.2), re-checked fresh where stale: v0.1.9 in Windows Sandbox on a clean account; live
-   markets; `ledger verify` and an exact reconcile; `ledger restore-drill`; the latency and frame-time measurements;
-   M1.12 end to end.
-2. **`ikars restore`**: the newest share backup of the ledger, the journal, the settings and the engine state into
-   an **empty** data root; checksums and the hash chain checked; a root with data refused. **`docs/RUNBOOK.md`**
-   (workstation lost: install, key variables, restore, verify, start; no real paths). Tested end to end on the
-   workstation into a scratch root (the share read only, Kalshi GET only, the live data untouched): the ledger
-   verifies and reconciles exactly, the journal's counts match, the settings load.
-3. **The network wait at start:** the engine retries its first Kalshi requests with backoff instead of stopping.
-4. **Docs current;** **the milestone review** (`/code-review medium` over M1's code, itemized); leftovers parked.
-
-**Machine:** a scratch data root on the workstation (removed afterwards); a Windows Sandbox run. **No new packages.**
-
-**Added during the slice (owner, 2026-10-28):** **Back up now**. The owner asked for a way to start a backup
-by hand. The Health screen's Backups card gets a button, from the mock-up the owner approved (the canvas's
-Health board, version 11). It is built in this slice, as recommended.
-
-#### 1.11 built (2026-10-28)
-
-**Built** on `m1/11`:
-
-| Commit | What |
-|---|---|
-| `5032883` | docs |
-| `85f2ec7` | restore, runbook, network wait |
-| `311b91f` | milestone-review fixes |
-| `c5a60db` | the test Sandbox |
-| `05b0842` | Back up now |
-| `6811c47` | merge-review fixes |
-
-After M1.12d (PR #30, `40283b4`). **No new packages.** Contracts 2.2.
-
-- **`ikars backup restore --share <share>`** puts the newest share backup into an **empty** data root:
-  - **the ledger:** SHA256SUMS, hash chain, and a head equal to the day's checkpoint, using one proof shared with
-    the drill (`proved_newest`);
-  - **its checkpoints, the state, the journal and the settings**, all of the ledger copy's day or before;
-  - **staging:** everything is checked in a staging folder, then moved in all or nothing.
-
-  It refuses a root that holds data, a running engine, and a damaged backup; a refusal says why, never a
-  traceback. The share is only read.
-
-  **`docs/RUNBOOK.md`**, for a lost workstation: install, stop the setup-mode engine and set its folder aside,
-  a new read-only key, restore, verify and reconcile, start.
-- **The network wait at start:**
-  - **What waits:** the first Kalshi request retries with backoff (5 s up to a minute each time) instead of
-    stopping, through a dropped network, a 5xx outage, a lingering 429 or a captive portal. A key or API refusal
-    still stops the engine.
-  - **Stopping:** a stop, `run --minutes`, or the end of a try in flight ends the wait cleanly.
-  - **What you see:** the starting snapshot says how long it has waited, and after 5 minutes the watchdog
-    reports "Kalshi unreachable" (not urgent), with its own all-clear text.
-- **Back up now:**
-  - **On the Health screen:** the button runs the engine's own backup at once (`POST /v1/backup`), one at a
-    time, and the 24-hour clock restarts from it. The card says BACKING UP while one runs, and when the next
-    automatic copy is due (`BackupHealth.running`, `next_in_h`).
-  - **From the command line:** `ikars backup run` goes through the running engine. When the engine cannot take
-    it (setup mode, or waiting for the network) the command makes the backup itself.
-  - **Shared helper:** the command line's calls to the engine are one helper (`api.engine_post`).
-- **The test Sandbox:** 8 GB, and its virtual GPU off (below).
-- **`open_store`** closes its connection when a file is not a database (it stayed held open on Windows).
+**Verified.** Python 1,554 (93.3%); Vitest 232; Playwright 19.
 
 **M1 gate evidence (PLAN §4.2), 2026-10-28:**
 
 | Gate | Evidence |
 |---|---|
-| Installed with Velopack on a clean account | Windows Sandbox, two runs (below). **First run:** M1.9a's local build `0.1.0-dev.3`, upgraded in place by v0.1.9 (the owner). **Second run:** v0.1.9 alone, 7 of 7 checks yes (no Python on the machine, per-user install, the Start-menu entry, no desktop shortcut, the engine in setup mode, Edge open on the wizard, data apart from the program), stable for 7½ min. |
+| Installed with Velopack on a clean account | Windows Sandbox, two runs. **First run:** M1.9a's local build `0.1.0-dev.3`, upgraded in place by v0.1.9 (the owner). **Second run:** v0.1.9 alone, 7 of 7 checks yes (no Python on the machine, per-user install, the Start-menu entry, no desktop shortcut, the engine in setup mode, Edge open on the wizard, data apart from the program), stable for 7½ min. |
 | Live markets in the terminal through the engine | Live on v0.1.7 to v0.1.9; the feed live in health |
 | The ledger reconciles exactly with Kalshi | Live: chain verified, reconciled exactly. **Restored:** see the runbook row. |
 | The restore drill and the workstation-lost runbook pass | **Drill:** passes on the live ledger, 299 records. **Runbook, end to end on the workstation** (a scratch root; share read only; GET only; the live data untouched): **ledger:** 315 records, 3 checkpoints, verify ok, **an exact reconcile with Kalshi** (cash matches, no position differences); **journal:** 16,692 recommendations, all in the live journal (7 newer there); **settings:** equal to the live ones; **staging:** nothing left. The scratch roots were deleted. |
 | Latency and frame-time targets measured | **Feed to alert:** measured live in M1.4b. **Update to screen:** p99 19 ms against the 33 ms target (the owner's console run, M1.8a-web-2b). |
 | M1.12's recommendations end to end, journalled | Live on v0.1.7, v0.1.8 and v0.1.9; the scorecard equals the journal read directly (BUILD-LOG 1.12c) |
 
-**The Sandbox crash, found and solved:**
-- **What happened:** with v0.1.9, the Sandbox died about 3 minutes after IKARS opened ("the virtual machine
-  exited unexpectedly", `0x80370106`).
-- **What the evidence showed:** a recorder inside the Sandbox, copying logs and memory figures to the host every
-  10 s, showed about 5.8 GB free and no IKARS error. The host's Windows Error Reporting held a
-  `ContainerCrashDump`: the Sandbox's own kernel bugchecked, `0x3B` with an access violation. That points to the
-  Sandbox's virtual GPU path (Edge draws through it to the host's NVIDIA driver).
-- **The fix:** with `<vGPU>Disable</vGPU>`, the next run was clean.
-
-**Data restored by the restore test** stayed on the workstation in a scratch folder, now deleted. Nothing was
-written to the share.
-
-**Verified.**
-- **Python:** 1,554 tests, coverage 93.3%.
-- **Vitest:** 232.
-- **Playwright:** 19 in Edge against demo-api (Back up now clicked, the note, the card's new time).
-- **Checks:** lint, types, the generated contracts and the data guard are clean.
-
-**Live check of Back up now passed** on v0.1.10 (test pre-release from `87f5a4b`, published on the owner's
-word, 2026-10-28): the owner pressed it at 23:07. The engine logged "backup done" at 23:07:46. The share's
-ledger and state copies for the day (the state copy with the journal) were rewritten at 23:07:45 and check
-against their SHA256SUMS. The engine's last good backup, from which its 24-hour clock runs, is now 23:07:45.
+**Back up now passed live** on v0.1.10 (2026-10-28): pressed 23:07; "backup done" 23:07:46; the day's ledger and state
+copies rewritten at 23:07:45, matching their SHA256SUMS; the clock now runs from 23:07:45.
 
 **Review.**
-- **Per commit:**
-  - `85f2ec7`: 2 found and fixed before committing (an empty checkpoints folder made the move fail on Windows; a
-    part-way move left files behind).
-  - `05b0842`: none.
+- **Per commit:** `85f2ec7` 2 found and fixed before committing (an empty checkpoints folder made the move fail on
+  Windows; a part-way move left files behind); `05b0842` none.
 - **Milestone review (medium, over M1's code), 8 findings, all fixed in `311b91f`**, plus one found on the way:
 
   | # | Finding | Done |
@@ -2959,259 +1514,877 @@ against their SHA256SUMS. The engine's last good backup, from which its 24-hour 
   | 9 | "Backed up at" used the browser's time format | The terminal's one format, `local()` |
   | 10 | The web copied the engine's 24 hours | The engine reports `next_in_h`; tested |
 
-**Leftovers:**
-- **Moved:** M1.10 perp research moves to M2; M1.13 comes before M3.
-- **With the owner:** the two-monitor layout check; the SignPath application.
-- **Parked:** nothing new.
+**Open.** With the owner: the two-monitor layout check (1.8b-2); the SignPath application.
 
-**M1.11 built and checked live.** It waits for the owner's merge. **The merge closes M1.**
+### 1.12 End-to-end momentum
 
-## M2 proposal (APPROVED 2026-10-28)
+**Status.** Plan approved 2026-10-27 (all as recommended), as **1.12a** (plugins live, the journal), **1.12b** (the
+momentum plugin) and **1.12c** (below). **Done:** PR #27 `099b94b`; PR #28 `3f0f8bd`. Machine: `journal.sqlite`. No
+new packages.
 
-The owner approved the M2 proposal: PLAN §4.3, with decisions D22 to D30 and slices M2.1 to M2.10. The answers:
-- **The local LLM:** the Strata server on the home network, beside Claude.
+**Owner's decisions (2026-10-27).** **Pre-registered rule:** the YES mid moves 4c or more within 5 minutes on at
+least 50 contracts, spread 3c or less, price 10c to 90c: recommend the same direction, valid 30 minutes, scored at 30
+and 60 minutes after fees; a change makes a new version. 10 contracts, paper only. The planned SPARQ guard lapsed with
+S1.1b (owner, 2026-10-27).
+
+#### 1.12a Plugins, recording and the journal
+
+**Status.** Built on `m1/12a`: `c4d26ab`, `e6977ab` (merge-review fixes). **Done:** PR #27 merged as `099b94b`.
+
+**Built.** The runner loads every plugin (`discover`); a failed or refused one is listed in health, never stops the
+engine. Emitted items go to the recorder's generic **`item`** channel; the host stamps `received_ns`, never the
+plugin. `journal.py` (`journal.sqlite`, apart from the tax ledger): recommendations with provenance and version;
+superseded, expired, and marked at each horizon (waiting up to ten minutes for a quote; a mark missed while down still
+made); a queue-only listener, written once a second. `GET /v1/recommendations` (newest 200).
+
+**Verified.** Python 1,502; Vitest 214 (a flaky privacy test fixed: a log record's creation time could hold an
+amount's digits). Live: folded into 1.12b's.
+
+**Review.**
+- **Per commit:** `c4d26ab` 1 found and fixed before committing (the journal's counts and a lost batch).
+- **Merge review (medium), 10 findings, all fixed in `e6977ab`:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | The same recommendation id again superseded the newer one and was counted | It changes nothing; tested |
+  | 2 | Two plugins of one name stopped the engine from starting | The second is left out and said in health |
+  | 3 | A horizon that fell due with no quote yet was marked empty for ever | It waits up to ten minutes for one; tested |
+  | 4 | What plugins emitted while the engine drained reached a closed recorder | The recorder closes once more, last |
+  | 5 | What was queued at shutdown never reached the journal | Written before it closes; tested |
+  | 6 | `ikars ledger backup` replaced the share's state folder without the journal | It sends the journal too |
+  | 7 | One out-of-range value from a plugin could break the route for every reader | Bounded and refused; tested |
+  | 8 | The mark check scanned every mark and decoded a day of payloads each second | A table of pending marks, indexed by when they fall due |
+  | 9 | A horizon over a day was never marked; a long outage lost marks silently | No window: still due; tested |
+  | 10 | Recommendations made in the same instant listed in a changing order | A stable tie-break |
+
+#### 1.12b The momentum signal, P&L after fees, tradability
+
+**Status.** Built on `m1/12b`: `4a0e180`, `e463699` (merge-review fixes), `f810687` (settlement scoring). **Done:**
+PR #28 merged as `3f0f8bd` (2026-10-28). Releases: v0.1.7.
+
+**Owner's decisions.** Any market the ticker feed covers, with a depth check. After the live hour (2026-10-28): **v1
+runs a week unchanged**, then its record decides (no tuning after one evening); a check on a closed market is
+**scored at its settlement**.
+
+**Built.** `signals/momentum.py`, parameters hashed into the version: **v1 `0d648804a13a`**. The window keeps the
+price at its start (Kalshi sends a ticker only on a change); one recommendation per market at a time, across
+restarts. Tradability: trading, closing after the validity, spread, mid, the best ask holding 10 contracts. `pnl.py`:
+the one fee rule (both legs' taker fees; the portfolio uses it); no bid is no price; marks scored at settlement ($1 or
+$0, entry fee only) when the market had closed (journal migration 2). Plugins get read-only host services.
+
+**Verified.** Python 1,525 (by hand: $0.04 on 10 bought at 46c, sold at 50c; $5.22 held to a winning settlement).
+**Live (v0.1.7, 2026-10-28 05:31 to 06:32 UTC; counts and states only):**
+- nothing failed to load, rejected or dropped; one version; one recommendation per market;
+- **374 recommendations in the first hour** (about 20 a minute at first, mostly in-play NBA and tennis); 228 expired
+  on time; every mark within 1 second of its due time;
+- **30-minute marks: 237; 131 (55%) found no bid** (the markets had closed), hence settlement scoring; of 106 scored,
+  47 above zero, median -$0.28, mean -$0.42 per 10 contracts after fees (one evening, far too few to judge).
+  **60-minute marks:** 32, 6 scored;
+- 9 shown superseded by one made the second they expired: fixed (only a still-valid one is superseded);
+- no order was ever sent (no order code; the key reads only);
+- **the M1.6 auto-start check passed** after the owner's restart.
+
+**Review.**
+- **Per commit:** `4a0e180` none; `f810687` 1 found and fixed before committing (an empty book while the market
+  still traded would have been scored at the later settlement: each mark now records whether it was closed).
+- **Merge review (medium), 9 findings, all fixed in `e463699`:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | A fractional contract count could make the recommendations route fail (scoring raised) | Exact arithmetic in `pnl`; the journal takes whole contracts; tested |
+  | 2 | A side with no bid was scored as a sale at nothing (a full loss) | No bid is no price: unscored (and later, at settlement); tested |
+  | 3 | Markets in the "open" status were never recommended | Both trading statuses count |
+  | 4 | After a quiet spell a real move was measured from the newest price | The window keeps the price at its start; tested both ways |
+  | 5 | After a restart a second recommendation could come while the first was valid | The journal's "still active", as a host service; tested |
+  | 6 | A new market record on every feed item; markets never forgotten | Made only when new; idle for an hour, dropped |
+  | 7 | The fee rule in two places | `pnl.taker_fee_e6`, used by the portfolio |
+  | 8 | `pnl` depended on the ledger importer and the portfolio | It depends on neither |
+  | 9 | The services could be changed by a plugin | A read-only mapping; tested |
+
+**Open.** Momentum v1's week ends about 2026-11-04; then the Strategy review.
+
+### 1.12c The terminal side of momentum
+
+**Status.** Plan approved 2026-10-28 (all as recommended). Built on `m1/12c`: `cd72d8f`, `c1fb678`, `7a4592a`
+(merge-review fixes), then the all-clear texts. **Done:** PR #29 merged as `d39f623` (at the owner's word). API 2.1.
+Releases: v0.1.8 (from `bac418d`). Machine: journal migration 3, `alert-desk-engine.json`. No new packages.
+
+**Owner's decisions (2026-10-28).** At 7 to 20 recommendations a minute, a ranked list; notifications for the
+top-ranked only, at most 3 an hour; the response, Copy order and scorecard now; no mock-up redraw. Ranked by return
+per day of capital at target after fees (with a fixed 30-minute validity this orders as return on capital). Not shown
+until fed: fill chance, size and limits, the bracket, the settings hash, Replay, Fill; "EV after costs" becomes "P&L
+at target"; "Live movers" relabelled for M2. Added after a network outage: each watchdog problem gets its own
+all-clear text ("recovered: the engine is not running" read as if it still were).
+
+**Built.**
+- `recommendations.py`: outlay (also the worst case), return at target and per day, in millionths; a ranked **board**;
+  `?state=active` (top 50), a `recommendations` stream event on change, one by id of any age.
+- `PUT /v1/recommendations/{id}/response` (taken is only the owner's word; dismissed leaves the list).
+- Scores kept once known (so they survive the market leaving the index); `/v1/scorecard` computed on a worker thread
+  once a minute, never per request (about 10,000 recommendations a day).
+- Notifications: first-ranked when made, 3 an hour, none in quiet hours; no amounts; the engine's own desk state file
+  (each watchdog pass rewrites the watchdog's) and the alert log under a shared lock; `normal` alerts now show by day.
+- Overview list and scorecard, and the Recommendation screen (`/recommendation/<id>`, `T`/`I`/`D`, `C`), as the
+  mock-up less the omissions.
+
+**Verified.** Python 1,537 (by hand: 10 at 46c lay out $4.78; +$0.04 is 0.8368%, 40.17% a day over half an hour;
+held to a win, +$5.22; the scorecard's mean and median by hand); Vitest 228 (functions 91.6%); Playwright 19. **Live on v0.1.8** (2026-10-28 19:00 to 20:05 MDT):
+- about 1,000 active, top 50 served, ranked, titled; one by id with its checks;
+- `I` kept across a stop and start; `D` off the list and back on undo;
+- the scorecard equal to the journal read directly at both horizons;
+- notifications: 2 in the first hour (cap 3), none in quiet hours (overnight too: four nights, none shown, checked with 2.2);
+- no order: the signer and the REST transport refuse any method but GET;
+- **the owner found the list hard to use** (only the action text opened the Recommendation screen, so `C` "did not
+  work"): taken up as **1.12d**; merged as is at the owner's word.
+
+**Review.**
+- **Per commit:** `cd72d8f` 1 found and fixed before committing (a check whose fees were not known yet was kept
+  unscored for good: it now waits, up to an hour); `c1fb678` 2 found and fixed before committing (the rule label
+  and the headline duplicated their formatting: one helper each); the all-clear texts none.
+- **Merge review (medium), 10 findings: 9 fixed in `7a4592a`, 1 no change:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | At stop the notices closed before the journal's last flush; an offer then raised and lost the batch | Closed after the flush; an offer after closing is refused; tested |
+  | 2 | A page built before the board loaded stayed empty until the next change | The load counts as a change; tested |
+  | 3 | Checks waiting for fees could fill every scoring batch and hold back the rest | Paged in order of made time; tested |
+  | 4 | The scorecard query was awaited inside the journal loop | Its own task beside the loop |
+  | 5 | The desk's per-market throttle could spend the hourly budget on nothing | Keyed by the recommendation; tested |
+  | 6 | The ranked page's cache missed marks, scores and index changes | They count as changes; the index version is in the key; tested |
+  | 7 | "Ranks first" compared with ones expired but not yet pruned | Only those still valid when it was made; tested |
+  | 8 | Dismissals of replaced or expired recommendations stayed in memory for good | Only one on the board stays hidden; tested |
+  | 9 | Normal alerts now pop up for every caller, not only recommendations | No change: approved in this slice's plan (normal shows by day, nothing else raises it) |
+  | 10 | demo-api called the journal service's private `_write` | It uses `listen` and `flush` |
+
+### 1.12d Navigation: rows, Back and named crumbs
+
+**Status.** Approved 2026-10-28 as recommended. Built on `m1/12d`: `c6a424f`, `3b11a27` (merge-review fixes).
+**Done:** PR #30 merged as `40283b4`. Releases: v0.1.9 (from `66d8699`). Terminal only.
+
+**Owner's decisions (2026-10-28)** ("let's rethink that part of the GUI"; then "okay"). A click anywhere on a row
+opens the Recommendation screen; a highlighted row (`Up`/`Down`, `Enter`) and `C`/`T`/`I`/`D` on it; a Back button
+left of the breadcrumbs, greyed when there is nowhere to go (R9; the app window hides the browser's own); a named last
+crumb (`Overview › Recommendation: <market>`). Mock-up: the Main board, versions 9 and 10. Not now: a trail of the
+path.
+
+**Built.** The highlight follows the recommendation's id, never its place, so re-ranking cannot move it; the arrows
+belong to the list only from inside it, the top bar or nowhere. Back counts moves in the history entry's state. One
+helper (`app/answers.ts`), one hook (`useAnswerKeys`), one click test (`plainClick`).
+
+**Verified.** Vitest 232; Playwright 19. **Live on v0.1.9** (2026-10-28): the owner: "everything looks good".
+
+**Review.**
+- **Per commit:** `c6a424f` 1 found and fixed before committing (a move clears the screen's name and it was only
+  given again when the name changed: now after every move).
+- **Merge review (medium), 8 findings: 7 fixed in `3b11a27`, 1 no change:**
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | An answer on the Overview dropped the engine's copy, so the same key again saved it again | The copy is kept until the next list; tested end to end |
+  | 2 | `Enter` went to the alerts when a row was highlighted but the focus had moved | `Enter` opens the highlighted row first; tested end to end |
+  | 3 | The arrows were taken over the whole Overview | Only from the list, the top bar or nowhere |
+  | 4 | The row's link to the Market screen is gone | No change: the approved design (one target per row; the market is linked on the Recommendation screen) |
+  | 5 | A key's note was not shown with an empty list | The note is always there |
+  | 6 | The `T`/`I`/`D`/`C` event wiring was copied from the Recommendation screen | One hook, `useAnswerKeys` |
+  | 7 | The row repeated the link's modified-click test | One helper, `plainClick` |
+  | 8 | A row's element id held the raw recommendation id | Encoded |
+
+### 1.13 Replay of real recordings
+
+**Status.** Plan approved 2026-11-01 (every market's ticker; a `market` channel; one row, one item; the rest as
+shown). After M2.3, as the M2 proposal placed it. Built on `m1/13`, stacked on `m2/3` so a test release keeps M2.3's
+recording: `d3f26fa` (the slice), `3d2d972` (merge-review fixes), `cff4f24` (the chart fix), `06557b2` (replaying a
+restart). **Open:** PR #36 (base `m2/3`; onto `main` once #35 merges). Releases: v0.1.13 (from `25e2bee`, with M2.3,
+installed 2026-11-01 about 21:45 MST), v0.1.14 (running from 22:03). No new packages.
+
+**Owner's decisions.**
+- 2026-11-01: **ticker:** record every market's frames (about +1.7 GB a day, to about 3.8 GB a day; the 200 GB budget
+  then holds about 50 days); **market details:** record a `market` channel; **live items:** one row, one item.
+- 2026-11-02: fix the replay of a restart now, in M1.13.
+
+**Found while planning.**
+- **The replay could not read a real recording.** `ReplaySource` read one generic schema (`RECORDING_SCHEMA`). The
+  recorder writes six typed channel files plus an `item` file whose layout differs from that schema (the payload as
+  text, and a `hops` column).
+- **It loaded every file into memory,** about 2.1 GB a day (review 1.R2 items 6 and 7).
+- **The recordings lacked some of what the live code used:** live items carried the whole Kalshi message, but the
+  recorder keeps a subset of its fields; ticker rows were kept for the 100 watched markets only (about 11 a second
+  out of about 690 a second for all markets, measured 2026-11-01); discovery's market details (status, close time,
+  series fees), which momentum checks, were not recorded.
+- **Ticker volume:** about 96% of ticker frames change the quote or its sizes, and 21% change the bid or ask, so
+  "quote changes only" would not replay momentum's size check faithfully.
+- **SPARQ and KAPS** (a read-only survey by a sub-agent, PLAN R16): neither has a streaming replay, a book rebuild
+  from deltas or a simulated clock. Lessons taken: order ties must be broken stably (SPARQ's runs once differed); a
+  gap must never read as "no data"; Kalshi marks an empty side with a 0-cent bid or a 100-cent ask; a rebuilt book
+  should be checked against the ticker feed (SPARQ planned 99% and never built it).
+
+**Found by the live check (2026-11-02): the replay did not reproduce a restart.** Every momentum mismatch on the real
+hour traced to the restart at 22:03: the replay's plugins started at the hour's start (22:00), so momentum carried
+three minutes of memory across the restart (its "last mid before the window", a quiet market's price, lasts until a
+market is idle for an hour); the live journal held recommendations from before the restart, still valid (30
+minutes) and holding repeats back, which the replay's scratch journal did not; and one recommendation made at a
+different time moves every later one on that market (one at a time, 30 minutes).
+
+**Found during the live check (owner, 2026-11-01): the price chart grew without bound** on a settled market's
+screen. With nothing taller beside it (an empty book), the chart's box took its height from the chart, which sizes
+itself to its box, so each resize grew the next. Seen beside it: after a restart a settled market is not in the
+index, so its Market screen answered 404 (a full discovery read only unopened and open markets); this became 1.14.
+
+**Built.**
+- **One row, one item.** `kalshi/rows.py` builds each feed message's recorded row, then the engine's item from that
+  row, for the live source and the replay alike, so live and replay items are identical by construction (tested).
+  Live items now carry the recorded fields; momentum reads only those. Kalshi item payloads were slimmed (only
+  momentum read them).
+- **One path for the kept state.** `KalshiState` holds quotes, last prices, books and the watched set, and is changed
+  only from rows and recorded **feed events**: `start` (before the first subscription); `reconnect` (clears every
+  book); `sequence_gap` (now breaks every book until its snapshot); `watch` and `unwatch`; `forget`. A broken book
+  never reads as empty. Each event is stamped just after the newest frame the pump handled, strictly increasing, so a
+  replay puts it exactly where it fell among the frames.
+- **Recording changes:** every market's ticker frames (owner); a `market` channel (details on change, a dump after
+  each full discovery, removals, and the series' fee terms); the `feed` channel; an hourly checkpoint of each sound
+  book, with the watched set restated; empty snapshots; the books' `clock`. Columns are only ever added: a file
+  written before a column existed reads with it null (`conform`), so the hour spanning the upgrade still compacts.
+- **The streaming reader** (`replay.py`): a k-way merge of every channel's hour files (Parquet, open IPC hours, part
+  files) in received-time order, ties by channel and then file and row order. A compacted hour is streamed in
+  batches; an open or split hour is read whole and sorted. Memory is bounded by about one batch per channel; a window
+  reads only its own hours, plus one hour past it for late rows. It re-reads an hour that a compaction renamed
+  mid-read.
+- **`ikars replay --from --to [--plugins] [--compare] [--check-books] [--out] [--warmup-min]`.** Recordings are read
+  only, even while the engine runs.
+  - Only signal plugins run, with a scratch journal (`JournalService.step` each virtual second). Recorded items of
+    the plugins being run again are left out.
+  - The market details come as they were (25 hours looked back), with a 40-minute warm-up that is not reported.
+  - It reports a digest of the items and their payloads, the logged gaps, the comparison with the live journal, and
+    the book check.
+  - It never writes inside IKARS's folder, never reuses a journal, and reads the settings without migrating them.
+- **Replaying a restart** (`06557b2`): a recorded `start` restarts the signal plugins, each as a new instance
+  (`PluginHost.restart`), as the new process's did. Plugins get items only from the warm-up's start; the state is
+  still read from that hour's start (its checkpoint); the report gives both (`from`, `read_from`). `--compare` starts
+  the scratch journal with the live recommendations of the re-run plugins still valid when the plugins begin, unless
+  superseded by then (`carried_in`, through `Journal.add`).
+- **The book check:** Kalshi's ticker marks an empty side as 0c or $1 (SPARQ's lesson). The 99% target is held
+  against **settled** books (unchanged for 500 ms): on real data on 2026-11-01, every mismatch fell within 500 ms of a
+  book change, since the ticker and the deltas are separate messages.
+- **The chart fix** (`cff4f24`): the chart's box has a definite height.
+- **Retired:** the generic-schema `ReplaySource`, `RECORDING_SCHEMA` and `write_recording`; the smoke run and the
+  tests use the recorder's own layout (`write_items`). **Moved:** `exact_ns` and `ns_time` to `clocks.py`; the shared
+  Kalshi test fakes to `tests/helpers`.
+
+**Verified.** Python: 1,632 tests, 22 for the replay, with made-up frames; the strongest runs the live source over
+made-up frames and replays its recording to the very same items and state; `replay.py` 95%, `kalshi/rows.py` 98%.
+With the restart fix: 2 new tests (a restart and the warm-up start with a made-up signal; what is carried in, and
+that it holds a repeat back), 1,634 on `m1/13`, `replay.py` 97%. The chart fix: an end-to-end test measures the chart
+twice, three seconds apart, on a market with no book (before the fix it grew to 528 px). Lint, types and the data
+guard clean. Live (read only, counts only):
+
+| Check | Result |
+|---|---|
+| Real data before the release (the workstation's recordings of 2026-11-01 19:00 to 19:30 MST) | 1.36 million items replayed (436,000 trades, ticker, books, and weather and news items), no late rows; two runs gave one digest (`08744fcdbb9794c4`), and so did a run after the fixes; books 3,019 comparisons, 94.7% agree overall, 396 of 396 (100%) settled; momentum made nothing, and the replay said why: the window predates the `market` channel ("partial") |
+| Upgrade to v0.1.13 (2026-11-01 about 21:45 MST) | the open hour, written with the old columns, folded into its Parquet and a new stream opened beside it; no damaged or part files; all four plugins running; `market` channel 234,028 rows at start (every market in the index, each new to it); `feed` channel a `start`, then 200 `watch` events (100 at start, 100 restated by the first checkpoint); book checkpoints 10,090 level rows (the 100 watched books); ticker rows for every market |
+| Replay of the one uninterrupted hour, **22:02:59 to 23:05:00 MST** (2026-11-02; the engine restarted at 21:47, 22:03, 23:05 and 23:29 MST), `ikars replay --compare --check-books --warmup-min 0`, 1 m 40 s | **Passed.** 6.08 million rows (3.11 million ticker, 2.08 million book deltas, 521,000 trades, 352,000 market rows), no late rows, digest `21d9b3b7cf74b56b`; books 29,617 comparisons, 98.3% agree, **7,060 of 7,060 settled (100%)** |
+| Momentum parity, before the restart fix | as the command ran: 239 live, 249 replayed, 179 matched, agreement growing through the hour (36 of 63 in the first 10 minutes, 42 of 45 in the last 12); with both sides starting equal (a scratch run: momentum sees nothing before the window's start, and the scratch journal starts with the 74 live recommendations still valid then): **239 live, 239 replayed, 239 matched**, the same digest |
+| Momentum parity, the command as shipped with the restart fix | no warm-up: 74 carried in, **239 live, 239 replayed, 239 matched**; the default 40-minute warm-up: 223 of 239, every one of the 30 mismatches on a market live recommended between 21:23 and 21:47, in the v0.1.12 run, which recorded no market details, so the replay could make nothing there (a warm-up inside recordings with market details, v0.1.13 on, has no such stretch) |
+
+**Review.** Per commit: `d3f26fa`, 3 found before committing, all fixed: (1) watched combo markets lost their quote in
+a replay: watched tracking; (2) an hour compacting while read could be read twice: the files are listed before and
+after; (3) a checkpoint moved a book's change time: it now only sets a missing book. `06557b2` (`/code-review low`)
+and `cff4f24`: nothing found. Merge review: `/code-review medium`, 10 findings, plus a fresh-eyes reviewer sub-agent
+(PLAN R16), 8 more open after the first fixes. All fixed in `3d2d972` unless marked:
+
+| # | Finding | Done |
+|---|---|---|
+| 1 | The start, reconnect and gap events took the pump's clock: a replay put the start after the first snapshots and cleared them | The start before the first subscription; pump events just after the newest frame handled |
+| 2 | A stream that failed part-way was re-read whole, repeating rows | The re-read skips what was sent |
+| 3 | `--out` could be the live data folder, or reuse an earlier replay's journal | Both refused; tested |
+| 4 | A full discovery that failed part-way never dumped | The dump runs in `finally` |
+| 5 | An open hour was read 5 times (its size grows with every flush) | Re-read only when a compaction renamed files |
+| 6 | Watched combos lost their quotes after a reconnect | `watch` and `unwatch` events keep the watched set |
+| 7 | Late rows in the next hour's file were missed at a window's end | One hour past the window is read |
+| 8 | The digest left out payloads | Payloads included |
+| 9 | `JournalService.flush` duplicated `step` | `flush` calls `step` |
+| 10 | Snapshot levels were split twice; constants were repeated | Split once; shared `NS` and `HOUR_NS` |
+| 11 | The checkpoint took wall time, so queued deltas replayed before it (sub-agent) | Stamped among the frames handled, in its own hour; tested |
+| 12 | Watch, unwatch and forget took wall time; an add's snapshot could beat its watch (sub-agent) | Same stamps; an add is watched before asking and restored when refused |
+| 13 | A full discovery held every market change back for minutes, until the dump (sub-agent) | Changes recorded as they come; the dump writes the rest; tested |
+| 14 | Markets the index dropped stayed in a replay (sub-agent) | A `removed` row; tested |
+| 15 | A feed event and a checkpoint could tie and swap (sub-agent) | Strictly increasing stamps |
+| 16 | Re-reading after a failed stream counts rows, not positions (sub-agent) | No change: Windows does not replace an open file, so the hour cannot change under the read |
+| 17 | Leaving out a re-run plugin's items relied on it naming itself as the source (sub-agent) | `emit` stamps the plugin's name |
+| 18 | A settings error printed a traceback; temporary folders stay (sub-agent) | A plain error; the folders stay on purpose (they hold the journal to inspect) |
+
+### 1.14 Settled markets after a restart
+
+**Status.** Plan approved 2026-11-01 (both start and on request; the journal settles too; the rest as shown);
+brought forward from PLAN §9. Built on `m1/14`, stacked on `m1/13`: `64d1094` (the slice), `014d0ea` (merge-review
+fixes), `c74bf41` (scalar settlements scored); these are the commits after the rebase onto `06557b2`, while the
+release tags keep the pre-rebase ones. **Open:** PR #37 (base `m1/13`). Releases: v0.1.15 (from `4f28b12`, 2026-11-01
+23:01 MST), v0.1.16 (from `93610d8`, 2026-11-01 23:27 MST). No new packages. Journal migration 4 (backed up first).
+
+**Owner's decisions (2026-11-01).**
+- **Both:** at start, the full discovery also reads recently closed markets; on request, a market the index lacks is
+  looked up by ticker, with a short cache.
+- **The journal:** an unsettled recommendation's market that the index lacks is looked up, batched, at most once
+  every 10 minutes per market, until it settles.
+- After the dry run: settled markets are read in the background once the feed is live, so they never hold the feed
+  back.
+- After the live check: fix the scalar scoring in M1.14, before momentum v1's review (~2026-11-04), whose scorecard
+  left these checks out.
+
+**Found while planning.**
+- **A settled market dropped out of the index at a restart.** The index keeps a settled market for 3 days after it
+  closes (`CLOSED_KEPT_NS`), but only while the engine runs: a full discovery read unopened and open markets only. Its
+  Market screen then answered 404.
+- **The journal never settled such a market.** It settles a recommendation from the index's result, so a market that
+  settled while the engine was down, or more than 3 days before, was never settled and its scores never landed.
+- **Kalshi's listing helps:** it filters by close time (`min_close_ts`, with status closed or settled) and fetches
+  markets by name (`tickers=`); markets past the cutoff come from its historical store.
+- **Dry run** (Kalshi's public listing, 2026-11-01): closed, waiting for a result: 18,290 markets, 19 pages, 3 s;
+  settled in the last 3 days: 310,459 markets, 311 pages, 130 s.
+
+**Found by the live check: scalar settlements were never scored.** 111 closed-market checks on 65 markets still
+waited: 5 markets were still closed or inactive (correct), but **60 were finalized with result `scalar`**: binary
+markets that paid a fraction (50c a contract on a tennis walkover, 54c on an exact-match market; mostly ATP and ITF
+tennis, some golf and MLB, per Kalshi's public listing). The journal scored only yes or no, a gap from the M1.12b
+settlement scoring (`f810687`) rather than from M1.14.
+
+**Built.**
+- **At start:** a full discovery reads unopened, open and every closed market. Once the feed is live, a background
+  pass (`recent_settled`) reads the markets settled in the last 3 days. It pauses half a second between pages, so the
+  gap backfill and the discovery cycles get the request budget, and moves the index version once, at the end. The
+  index after a restart is then a running engine's.
+- **`kalshi/lookup.py` (`MarketLookup`)** finds a market the index lacks: Kalshi's live store, then its historical
+  store, with a bounded cache. A recent market goes into the index, and so into the market channel. Concurrent asks
+  of one ticker share one request. A ticker not shaped like Kalshi's is never asked.
+- **The Market screen and its chart** use it, with candlesticks from the historical store past the cutoff. The
+  recommendation drill-down uses it for the title and fees; the recommendation lists look up missing titles in the
+  background. A Kalshi failure answers 503 ("try again"), never "no such market".
+- **The journal:** each minute, the unsettled recommendations whose market the index lacks are looked up, batched by
+  ticker, each at most once every 10 minutes, until settled. `result`, `trading` and fees read through the lookup.
+- **Scalar settlements** (`c74bf41`): `MarketInfo` keeps Kalshi's settlement value, and `settlement()` gives the
+  result with what a YES contract paid ($1, nothing, or the scalar value; a scalar without a value is never guessed).
+  The `market` channel records it (older recordings read it as null). The journal keeps `yes_paid_e6` with each
+  settlement (migration 4, backed up first; earlier rows backfilled as $1 or nothing) and scores a closed check at
+  that payout, a NO check at the rest, after the entry fee. The lookup counts a scalar as settled.
+
+**Verified.** Python: 1,645 tests, 11 new for the lookups, with made-up markets on a fake Kalshi; `kalshi/lookup.py`
+86%. The scalar fix: a 54c scalar scored for YES (+$0.62) and NO (-$0.18) on 10 contracts bought at 46c; the journal
+keeps and scores it; the upgrade backfill; `settlement()` for each result; a scalar found by the lookup; a replay's
+market row; 1,654 passed, coverage 93.4%. Lint, types and the data guard clean. Live (read through the API with GET
+only, the journal opened read-only):
+
+| Check | Result |
+|---|---|
+| v0.1.15 (installed by the owner; engine started 2026-11-01 23:04:37) | **Passed.** After the restart, `KXNBATOTAL-26NOV01TORLAL-254` opens again with its chart: `finalized`, 253 one-minute candles, and the journal has its result; the settled pass completes in the background: the full discovery (248,587 markets) at 23:05:40, then the recently settled markets (311,016) at 23:10:31, about 4 min 51 s after the feed went live, the feed not held back; the journal's lookups settle what was missed: 527 settlements learned since the restart, no lookup warnings |
+| The scalar fix on v0.1.16 (installed by the owner) | **Passed.** The journal backed up first (23:28:15), then migrated to version 4; the 47,551 earlier settlements backfilled exactly (27,430 no at nothing, 20,121 yes at $1, none empty); all 60 scalar markets settled (145 scalar settlements in all), their 105 closed checks scored, 35 at settlement, each the payout less the cost less a whole-cent entry fee; the other 70 had a bid when marked, so they are scored as sold at it (the M1.12b rule); the scorecard counts them; the 6 markets left waiting are Kalshi's 5 closed and 1 inactive, without a result; the lookups worked off the restart's backlog at their cap (100 a minute): 1,600 settled with 0 failures, all done by 23:46, about 18 minutes after the start |
+
+**Review.** Per commit: `64d1094`, 1 found before committing, fixed (the recommendation drill-down awaited a lookup
+unguarded, so a busy Kalshi made it a 500). `c74bf41` (`/code-review low`): 1 finding, no change (a replay of a
+recording made before the change might fail on the missing column; but Arrow parts go through `conform`, and real
+Parquet files from v0.1.15 read with the new schema give the column as null, 483,999 rows checked). Merge review:
+`/code-review medium`, 10 findings, fixed in `014d0ea` unless marked; no sub-agent reviewer (the slice is small and
+self-contained; R16: where it helps):
+
+| # | Finding | Done |
+|---|---|---|
+| 1 | Closed markets waiting for a result over 3 days went missing after a restart | Every closed market is read (3 s) |
+| 2 | Concurrent lookups of one ticker each called Kalshi | One shared request; tested |
+| 3 | The settled load could hold the gap backfill and discovery behind it for minutes | A pause between pages |
+| 4 | Each of ~300,000 puts moved the index version, so lists re-sorted on every poll | The version moves once at the end; tested |
+| 5 | The lookups' version moved even when nothing changed | Only on a change; tested |
+| 6 | A settled market with a result other than yes or no was asked about for 30 days | Settled is final; tested |
+| 7 | A failed batch stopped the pass, and the rest still waited 10 minutes | Each batch marked and guarded alone; tested |
+| 8 | The ticker from the address went into Kalshi URLs unchecked | A ticker shape check; tested |
+| 9 | Combos bumped the index's skipped count; a cached open market's "trading" can lag | Combos stay out of the index. The lag: no change. The journal's pass refreshes it every 10 minutes, and marks fall at 30 and 60 minutes |
+| 10 | A Kalshi failure read as "no such market" | 503 "try again"; tested |
+
+### 1.R Base hardening
+
+**Status.** Plan approved 2026-10-27 (items 1 to 26). Built on `m1/r-hardening`: `dd9f8d0`, `4735650`, `edae257`,
+`595a9b0`, `66fcec0` (a live fix) and the merge-review fixes. **Done:** PR #14 merged as `fca7941` (2026-10-27), CI
+green on `main`. No new packages. One security-relevant change: **`GET /portfolio/orders` joins the account key's
+allowed reads** (item 8, approved as "read with GET only"); the key still signs GETs only, and other order paths
+(`/portfolio/orders/<id>`, `/historical/orders`, order groups) stay refused, with tests.
+
+**Owner's decisions (2026-10-27).** Before the web terminal, the owner asked for a review of the whole code base "to
+have a solid base". Fix items 1 to 26, each with a test. Not changed: (27) production as the default environment
+(D21; a comment added); (28) the data guard's strict suffix rule; (29) the disproved `append_all` claim.
+
+**Found.** `/code-review` at high effort over all 10,900 source lines gave 31 candidate findings; each was checked
+against the code (one disproved by a test: `append_all` does skip a duplicate within one batch). Grouped as A (1–9)
+data loss, a stuck engine, a silent wrong state; B (10–14) what the screens show; C (15–20) long runs; D (21–26)
+smaller.
+
+**Built.**
+
+| # | Fixed | How |
+|---|---|---|
+| 1 | A refused resubscribe kept a stale sid | The sid is cleared; the rebalance waits for the retry; a resubscribe of a restored channel sends nothing |
+| 2 | A gap on a command reply was dropped | Reported like any other |
+| 3 | One damaged hour stopped every start | Any compaction failure is logged and left; an unreadable Parquet hour is set aside as `.damaged` (never deleted); Parquet is fsynced before it replaces anything |
+| 4 | Shutdown could hang | The source's output always ends; the engine is waited for 10 s, then cancelled |
+| 5 | A failed fold-in truncated the hour | New rows go to a part file (`HH.1.arrow`); readers take every part |
+| 6 | A dead pump went unnoticed | The run loop stops the engine on it, so the watchdog restarts it |
+| 7 | The engine's input was unbounded | 50,000 items; then the feed's own overflow handling runs |
+| 8 | Resting orders were a difference | When the balance falls short, resting buys' cost is read; either reading is exact; both numbers are recorded |
+| 9 | A late-listed fill was costed silently | Flagged `out_of_order` with a note for the owner to label |
+| 10 | A dropped book was never announced | Sent once as not ready |
+| 11 | A book with no snapshot never asked for one | A delta without a book asks (watched markets) and makes no empty book |
+| 12 | A gap from a lost link was read through the new one | Gaps from an older link are counted and dropped |
+| 13 | Unchanged books were re-sent | The version moves only on a real change |
+| 14 | The guard let WebSocket scopes through | Refused (code 1008) |
+| 15 | The import replayed the ledger every minute | The importer keeps its book and applies only new records (others' included) |
+| 16 | Per-market state and the index grew for ever; every markets request sorted the index | Markets settled more than three days ago leave the index and their state; combo quotes are kept nowhere; markets still unlisted after a cycle are forgotten; the list is sorted once per index change |
+| 17 | Long backfills held every trade id and restarted from zero | Each finished slice is remembered; a failure resumes at its slice; one slice's ids at a time; the bookmarks go when the gap closes |
+| 18 | An unconfirmed archived market was re-read every minute | Hourly |
+| 19 | The plugin gap list grew for ever | The latest 100 and a total |
+| 20 | The governor failed on a renamed file | Skipped; a held file is pruned next time |
+| 21 | A failed start counted as a clean shutdown | Only a finished start can end cleanly |
+| 22 | The restore drill crashed on a damaged copy | A failed drill naming the problem |
+| 23 | `ledger annotate` printed tracebacks | A JSON refusal |
+| 24 | The public REST client was never closed | Closed at shutdown |
+| 25 | Duplicated helpers | One copy each: series and combo rules (`ikars_core.markets`), the nested lookup (`runmode.at`), the atomic write, backup and free names (`files`) |
+| 26 | The ACL check raised off Windows | A warning, never a failed start |
+| 27 | (no change) Production as the default | A comment says why (D21) |
+
+**Verified.** 1,303 Python tests (94% coverage; money and fee code 100%); ruff, mypy, pip-audit, the data guard and
+gitleaks clean. Live, against the background engine:
+
+| Check | Result |
+|---|---|
+| Restart on the new code | started, feed connected, no open gaps |
+| Ledger | chain verified, **reconciles exactly**, no import errors |
+| Stop | **3.5 s**; recorded as a clean stop (the next start's gaps say "stopped") |
+| A torn real recording hour (a scratch copy, deleted after) | the start went on; the hour set aside as `07.parquet.damaged`; the open file's rows kept |
+| Resting orders (item 8) | **Passed (2026-10-27).** Both resting orders are read correctly: a **sell** closing part of a held YES position (Kalshi labels it `side` yes, `action` sell, `outcome_side` no, as the model maps it) and a **buy** of YES. **Kalshi's `balance` does not hold back a resting buy's cost:** with the buy open, the balance equals the ledger's cash exactly, so every reconciliation stayed exact with a zero difference, and the resting-cost allowance was not needed. It is kept (it is read only when the balance falls short) |
+
+Live finding, fixed (`66fcec0`): the minute import re-reads a day of fills; each already-recorded fill older than a
+later one was flagged and warned about before being skipped as already recorded (4 warnings). The real ledger holds
+no flagged fill; the warning now comes only for a fill actually added, with a test.
+
+**Review.**
+- Per commit: `dd9f8d0` none; `4735650` none; `edae257` none (a question on `seq` in record bodies checked: it is
+  there); `595a9b0` 1 fixed (a comment moved to the wrong constant); `66fcec0` none.
+- Merge review (medium), 10 findings:
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | A fold-in stopped between its steps (its Parquet held) was overwritten by the next fold-in of the hour: rows lost | Compaction finishes a pending fold-in first; tested |
+  | 2 | The kept book skipped a record another process appended during an import | The importer remembers the records it appended and applies every other; tested |
+  | 3 | A failed resting-orders read aborted the whole import | Treated as unknown (not exact); an order without `outcome_side` takes it from `side` and `action`; tested |
+  | 4 | A new market's quotes were dropped until the next discovery | Only combos are dropped at once; a market still unlisted after a cycle is forgotten then |
+  | 5 | Pruning removed closed markets that may still be held, and they churned back | Only markets settled more than three days ago; `put` never re-adds them; tested |
+  | 6 | A resubscribe retry could open a second order-book subscription after a reconnect restored it | A resubscribe of a restored channel sends nothing; tested |
+  | 7 | A schema change would have set good hours aside; damaged files escaped the budget | Only an unreadable file is set aside; the governor counts and prunes `.damaged` files; tested |
+  | 8 | Backfill bookmarks were never deleted; the live hour was re-read every slice | Deleted when the gap closes; the recent hours are read only when resuming a slice; tested |
+  | 9 | `_free_name` repeated the name loop item 25 consolidated | One `files.first_free`, used by both |
+  | 10 | The resume point did not mention M1.R | Updated |
+
+### 1.R2 Platform review for the new direction
+
+**Status.** Owner's request and approved placement 2026-10-27; review only (the findings are built in the slices they
+were placed in).
+
+**Owner's decisions (2026-10-27).** Asked for "one more full milestone review, keeping in mind the new direction, with
+an eye towards reusability and overall platform stability". M1.R had just reviewed every module for correctness, so
+this pass read the API, contracts, engine core, plugins, sources, runner, recorder and services for three questions:
+is the engine ready for the web terminal, can M1.12 and M2 plug in, and does it stay up for weeks. **Placement
+approved by the owner:**
+
+| # | Finding | Placed |
+|---|---|---|
+| 1 | High: every engine start picks a new port and token; a browser page cannot rediscover them, so each watchdog restart, update or reboot leaves a dead terminal window | M1.8a-web: a stable port in settings (fallback when taken, `ikars open` relaunches) and a session secret that survives restarts (DPAPI, D8) |
+| 2 | `HealthView.parts` is `dict[str, Any]`: the generated TypeScript type would be `any`, unchecked at runtime | M1.8a-web: a typed health contract |
+| 3 | Nanosecond integers (`received_ns`, health times) exceed 2^53 and are rounded by JavaScript (by about 0.25 µs); no test guards the rule | M1.8a-web: a contract test; `_ns` documented as approximate in the browser |
+| 4 | Mixed time formats on the wire (seconds and nanoseconds; `AlertView.at` is local time) | M1.8a-web: one format, settled before a client exists |
+| 5 | Market search filters and lowercases the whole index per request on the event loop; type-ahead could stall the feed | M1.8a-web: a precomputed search key, a debounced search, measured at the real index size |
+| 6 | High for back-tests: the recorder writes Kalshi channel schemas, but `ReplaySource` reads only the generic item schema (only the synthetic demo uses it), so G3 does not hold for real data | New slice **M1.13**, before M3's back-tests; G3 marked partly done |
+| 7 | `ReplaySource` loads every recording into memory (about 2.1 GB a day) | M1.13: a streaming merge |
+| 8 | The live runner never loads plugins (`discover`) or registers listeners: a signal or source plugin has no path in, its items are not recorded (D20 A) and never reach the API | M1.12 |
+| 9 | A plugin's emitted item keeps the `received_ns` the plugin chose; a buggy source could let a replay see the future | M1.12: the host stamps it |
+| 10 | Duplicated time helpers (`api.utc_text`/`ledger.iso_utc`, `alerts._ns`/`ledger_import.ns_of`) | PLAN §9: with the next slice touching them |
+
+**Found (checked, no change needed).** Off the event loop: hourly compaction, the storage governor, share backups,
+ledger checks, GPU detection. Bounded: metric names (per channel and plugin, never per market), the plugin gap list.
+Slow growth only: the alert log and the gap and exchange-status tables (a few rows a day). Shutdown, restart, damaged
+files and the feed were covered by M1.R.
+
+### 1.R3 Base hardening after a fresh-eyes review
+
+**Status.** Plan approved 2026-11-02 (M1.R3 as listed, then all four answers as recommended). Two parts, two PRs,
+both before M2.4: **1.R3a** correctness and data (A, B, C) first, so the scorecard is right for momentum v1's review
+(~2026-11-04), then **1.R3b** security, release and docs (D, E). Each item got a test (a script for the workflow
+items), the per-commit review, and a merge review with a fresh-eyes sub-agent.
+
+**Owner's decisions (2026-11-02).** The owner asked for "a complete fresh-eyes sub-agent review of the project so
+far" (R16), approved M1.R3 as listed, then the plan's four answers as recommended:
+1. **Branch:** R3a touches code still in the open stack (#35 to #37: the journal, lookup, polling and GDELT), so
+   `m1/r3a` is stacked on `m1/14`, retargeted to `main` when the stack merges.
+2. **C4, closed checks** (until then sold at the last bid if one was kept, the M1.12b rule): scored at the settlement
+   only, and the 920 re-scored (journal migration 5).
+3. **E3, release gate:** publish only if the tagged commit's CI checks are green (this keeps test releases from PR
+   branches), with a `SHA256SUMS` file and a build-provenance attestation.
+4. **A6, fee unit:** Kalshi charges the account at $0.0001; scores round each fee up to a cent (conservative). Keep
+   cents through v1's review, then decide with v2 (parked).
+
+**Found.** Five read-only reviewers, one per area, read the whole code base: A money and the ledger; B the Kalshi
+feed, recording and replay; C the engine, journal, momentum and sources; D the API, security and the web terminal;
+E the platform, CI and docs. They found 55 problems, none a secret, an order path or float money. Each top claim was
+checked against the code, and C2 and C4 against the live journal (read-only, counts only: 1,545 checks with no value,
+920 closed checks scored at a stale quote).
+
+**Not in M1.R3.** C1 (an empty side's false mid) and C5 (a window across an outage) change momentum's rule: they go
+to the Strategy review as **momentum v2** (~2026-11-04); v1 runs unchanged. Before that review a read-only replay of
+v1's week counts the recommendations that rest on a false mid, so its record is read with that in mind. C9 (the cost
+meter) stays in M2.6, before any paid plugin. Parked in PLAN §9: A6 (fee unit, question 4), A9 (restore fallback to
+older copies, M5), B8, B9, B10 (each needs a rare timing or an unconfirmed Kalshi behaviour).
+
+#### 1.R3a Correctness and data
+
+**Status.** Built on `m1/r3a`, stacked on `m1/14`: `c2530b3` (A), `cd07cf2` (B), `0348da7` (C), `8ead5f1`
+(merge-review fixes), `2537c63` (the scoring-query fix). **Open:** PR #47 (base `m1/14`; merges after #35, #36 and #37). Releases: v0.1.17 (from `ad44ffd`), v0.1.18 (from `899652b`, for the scoring fix), both 2026-11-02, release runs
+green. No new packages. API 2.3 (`ScoreLineView.late`); the scorecard's "scored" cell reads e.g. "106 of 237 (9
+late)" (the existing cell, no new screen). Machine changes when installed: journal migration 5 (backed up first)
+clears the scores of closed checks sold at a kept quote, so they are scored again at settlement; the real ledger is
+bound to `production` at its first start (a bookmark); nothing else.
+
+**Owner's decisions (2026-11-02).** A10: bind to the environment only (as built, against the plan, below).
+
+**Built.** Each item as fixed (as-built deviations from the plan included):
+
+| # | Problem | Fix |
+|---|---|---|
+| A1 | `ledger import` runs beside a live engine; the engine's kept book adds a fill another process committed, and later fills chain on the wrong position | Refused while the engine runs (like `restore`); the book takes only the entries `append_all` actually inserted |
+| A2 | An ACL error puts the key path into health, alerts and tracebacks | No path in `AclError`; a fixed `AuthError` message |
+| A3 | A damaged checkpoint stops every start; the CLI and engine share one fixed temp file | A damaged checkpoint is a named problem, not an exception; `write_text_atomic` uses a unique temp name |
+| A4 | A difference equal to resting orders counts as exact, though Kalshi was shown not to hold them back | Exact means a zero difference; the resting cost is kept as information |
+| A5 | Fills with one timestamp are recorded newest first (FIFO lots, M5) | A tie-break restores execution order within a time; existing records unchanged |
+| A7 | A derived settlement without a settlement time takes the archive time (can cross a tax year) | The market's settlement time, else its close time; never the archive's time |
+| A8 | One failed heartbeat write leaves the state store inside a transaction | Roll back on failure, as `remember()` does |
+| A10 | Nothing stops demo fills entering the real chain | The Kalshi environment kept as a ledger bookmark at the next import; an import refused when it differs. **As built, against the plan:** the key fingerprint is not bound, since that would stop every import at a routine key rotation, and each start already records the fingerprint as an `app` record (owner: the environment only) |
+| B1 | A snapshot lost in a second gap leaves a book broken until a reconnect | A gap clears the request; a request unanswered for 10 s is asked again (the test that enshrined the bug changed) |
+| B2 | A frame that fails to parse is dropped silently | Logged as a gap (rate-limited); on the book channel the books break and snapshots are asked |
+| B3 | Each 5 s recorder flush blocks the loop 30 to 68 ms | Buffers swapped on the loop; the recorder's own writer thread builds and writes the batches, and closing hours and reading trade ids run there too, awaited off the loop. A failed write is a loss the heartbeat logs as a gap for its channel and time range. The conversion holds the GIL, so it is done in 2,000-row parts (the loop runs between them) |
+| B4 | The background lookup cap does not hold within one call (up to 200 at once) | Counted when a task is created, not when it runs |
+| B5 | The daily discovery dump blocks about 2.4 s; the index version moves on every put, re-sorting 560k markets | The version moves only on a real change; the dump yields every 5,000 markets; the prune runs every 10 minutes. Still on the loop: when volumes move, the next Markets request re-sorts the index (about 280 ms at 560k markets, at most once a minute; parked in PLAN §9) |
+| B6 | The feed queue's bound is 550 to 800 MB, minutes of backlog | 25,000 frames (about 15 s) |
+| B7 | Reading known trade ids blocks the loop about 0.5 s after a reconnect | Off the loop (on the recorder's writer thread, B3) |
+| B11 | A late snapshot recreates the book of an unwatched market | A snapshot makes a book only for a watched market, once the recording has watch events (since v0.1.13); an older recording keeps its books. The first subscription now watches before it asks |
+| B12 | `known_keys` rebuilt on every frame | Cached |
+| C2 | Checks taken just after a restart have no quote and stay unscored (1,545) | The quote wait runs from the later of the due time and the engine's start; checks taken more than 11 minutes after they fell due count as `late`, apart from the figures on the scorecard; the backlog in one transaction. A paused market is no longer "closed" (one `trading()` rule, live and replay) |
+| C3 | A feed answering "not modified" for 14 days re-sends its old items as new | A 304 keeps the ids that feed last listed; a run's first poll of a feed reads the whole reply, so the poller knows what it lists |
+| C4 | A closed check is scored at a stale quote instead of the settlement (920) | A closed check is scored at the settlement only (question 2); journal migration 5 clears those scores so the next pass re-scores them |
+| C6 | The unsettled-markets query costs about 95 ms per pass at 30 days | A set kept in memory, updated on add and settle |
+| C7 | A false gap after a feed stopped on purpose; a GDELT DOC outage over an hour logged as recovered | The stop clears the feed's last good time; DOC windows past its timespan are `unrecoverable` |
+| C8 | The alert state file grows for ever | Entries older than the throttle are pruned |
+
+**Found by the live check, fixed** (`2537c63`): the scoring query's `NOT (m.closed = 1 AND s.ticker IS NULL)` is
+NULL, not true, for a mark whose market state was not known, so **515 checks from v0.1.7 (2026-10-28, before the
+`closed` column) were never scored**, and since merge review 5 a check on a paused market would not be either. Now
+`m.closed IS NOT 1 OR s.ticker IS NOT NULL`; tested (fails on the old code); on a scratch copy of the live journal
+the 515 are scored at their kept bid and only the 7 closed ones still wait.
+
+**Verified.** 1,690 Python tests (93.5% coverage), 232 web unit tests, 20 Playwright screens; ruff, mypy (both runs),
+the data guard and gitleaks clean. Each new test was run against the old code and fails there. Live on v0.1.17
+(2026-11-02, installed by the owner; the engine started 10:48:11 MST; the API with GET only, the journal, ledger and
+state read-only, counts only):
+
+| Check | Result |
+|---|---|
+| Upgrade | journal backed up, then schema 5; API 2.3; the real ledger bound to `production` |
+| C4 re-score | every closed check sold at a kept quote is now scored at its settlement (53,584 at settlement, none left sold); none given up for want of fees (the lookups: 706, 0 failures); 7 closed checks wait for their markets' results |
+| C2 scorecard | 30 min: 107,880 checks, 0 late; 60 min: 107,506 checks, 111 late, counted apart |
+| Ledger | verified, reconciles exactly, 0 errors |
+| Feed and recorder | connected, 100 of 100 books ready, no open gaps, every channel recording, no recording losses |
+| B3 flush stall | a bench at the live rates (864 ticker, 578 delta, 145 trade rows a second), measured with `sleep(0)` (Windows' timer floors `sleep(0.001)` at ~16 ms): the loop's worst gap per flush **10 to 15 ms**, against 26 to 32 ms before |
+| B11 and the restart replay | `ikars replay --compare --check-books --warmup-min 0` from 10:48:00 to 11:00:00 (across the recorded start): **120 of 120** recommendations matched, books 9,155 of 9,333 (all 2,072 settled ones agree); from 10:48:30 (19 s after the start, so momentum's first 19 s unseen) 111 of 120, as expected |
+
+The scoring fix on v0.1.18 (2026-11-02, installed by the owner; read-only, counts only): **passed.** No check with an
+unknown market state is left unscored (the 515 from v0.1.7 are scored: 495 with a value, 24 with no price at that
+moment, with the few made since); only 8 closed checks wait for their markets' results. Journal schema 5 (no
+migration, so no new backup); the scorecard's checks unchanged in kind, more scored; the ledger verified and exact;
+the feed connected with 100 of 100 books ready and no open gaps; all four plugins running.
+
+**Review.** Per commit (`/code-review low`): `c2530b3` 1 fixed (the rest of a pass used a book another writer had
+changed: rebuilt at once); `cd07cf2` none; `0348da7` none. Merge review (`/code-review medium` and a fresh-eyes
+sub-agent, R16), 19 findings:
+
+| # | Finding | Done |
+|---|---|---|
+| 1 | Migration 5 re-scores checks whose market left the index; with no fees and an old mark time they were given up at once (both reviewers; proved by the sub-agent) | The journal asks the lookup for those markets; the fees wait runs from the start; tested (`8ead5f1`) |
+| 2 | A 304 refreshed every id of a shared scope (all news feeds), so none was ever forgotten | Only that feed's last listed ids; a run's first poll reads the whole reply; tested |
+| 3 | The yielding dump could write a market's older details after a change made meanwhile | Each row is the market as it is when written, stamped then; tested |
+| 4 | A7 fell back to the expiration time, which can be a scheduled date after the settlement | The settlement, else the close time (the plan) |
+| 5 | A paused market counted as closed: its check waited for the settlement | Only ended statuses are closed; one `trading()` for live and replay; tested |
+| 6 | A failed write was raised twice (to the waiter and to the next writer) | Losses kept for the gap log, raised only to the waiter (with 8) |
+| 7 | A cancelled heartbeat's compaction and the shutdown's could share the pending list | `pop` guarded; two at once are safe |
+| 8 | The unsettled set never dropped markets past the 30-day window | Dropped as the window moves; tested |
+| 9 | `Ledger.append_all` kept its own BEGIN/ROLLBACK beside the new helper | On `transaction(immediate=True)` |
+| 10 | A crash between write and rename leaves a uniquely named `.tmp` file | No change: a window of milliseconds on a few small files; a scan per write would cost more |
+| 11 | (sub-agent) The batch conversion holds the GIL, so the loop still stalled per channel (27 ms measured) | Converted in 2,000-row parts |
+| 12 | (sub-agent) Recordings before v0.1.13 have no watch events: B11 dropped all their books | Every snapshot kept until a recording names its watched markets; tested |
+| 13 | (sub-agent) A replay across a recorded restart kept the old quotes and quote wait | A recorded start forgets the quotes; the replay restarts the journal's wait; tested |
+| 14 | (sub-agent) A10 binds the environment only | No change: the owner chose the environment only (2026-11-02) |
+| 15 | (sub-agent) Taking the buffer and queueing it were two lock sections: a trade-id read could pass between | One lock section; queued at once |
+| 16 | (sub-agent) A failed write was raised into whichever caller wrote next | A loss logged by the heartbeat as a gap for its channel and times; tested |
+| 17 | (sub-agent) A writer thread started after a close shared the stopped one's queue: the close could hang | Each thread its own queue; the join has a limit; tested |
+| 18 | (sub-agent) Every bad book frame wrote a break event (hundreds a second) | Once per broken book; the no-ticker case clears the snapshot requests; tested |
+| 19 | (sub-agent) A snapshot the state ignores was still handed on as an item | No item (live and replay) |
+
+**Open.** Parked in PLAN §9: B5's remaining re-sort on the loop (about 280 ms at 560k markets, at most once a
+minute).
+
+#### 1.R3b Security, release and docs
+
+**Status.** Built on `m1/r3b`, stacked on `m1/r3a`: `c41000d` (D1 to D9), `83c16ad` (release: E1 to E3, E9, F1),
+`7eef70c` (platform: E4 to E8, E10, E11), `670b10e` (docs: E12 to E15), `0454e16` (merge-review fixes). **Open:** PR #48 (base `m1/r3a`). Releases: v0.1.19 (from `078b0ed`, 2026-11-02). No new runtime packages. Pinned: `hatchling`
+1.32.4 (both packages' build backend, with hashed constraints in `tools/release/build-constraints.txt`) and
+`velopack==1.2.161` (as `vpk`). New pinned actions (each over 7 days old): `actions/upload-artifact` v7.0.2,
+`actions/download-artifact` v8.0.2, `actions/attest-build-provenance` v4.2.2. `dotnet-tools.json` moved to
+`.config/`. Machine changes: the watchdog task re-registered (E7); settings unchanged; the release workflow gains
+`id-token` and `attestations` write rights (question 3), held by the attest job.
+
+**Owner's decisions (2026-11-02).** Two items added with the owner's go-ahead ("continue with the next M1.R3b", after
+the v0.1.17 live check named them): F1 and F2 below.
+
+**Built.** Each item as fixed (as-built deviations from the plan included):
+
+| # | Problem | Fix |
+|---|---|---|
+| D1 | A process holding the fixed port during a restart receives the session cookie, which still works on the fallback port | The cookie names its port (`issued.expires.port.signature`), checked against `Host`; cookies from before M1.R3 are refused, so one `ikars open` after the upgrade. On a fallback the session key rotates (every window signs out) and an urgent alert says why, through the engine's own desk. A program that takes the port and lets it go before the engine starts is not caught: parked for the M7 security review (PLAN §9) |
+| D2 | Opening `/update?to=…` checks and installs with no click | The Update window only reads (`GET /v1/update`) until **Install** is clicked; Cancel closes it (the window's existing layout, one button; no new screen) |
+| D3 | A second `ikars_session` cookie locks the owner out | Any valid one is accepted |
+| D4 | Request bodies have no size limit (sign-in included) | Any `Transfer-Encoding`, or a `Content-Length` over 64 KB (4 KB to sign in), is refused before a read |
+| D5 | The Markets refresh asks for more than 200 subscriptions | The limit becomes 400 (twice a page) |
+| D6 | An 8-window layout uses every stream | 16 streams; the Update window opens none |
+| D7 | The headline rounds a sub-cent price | `cents()` as Copy order does |
+| D8 | Holding T, I or D toggles the answer | Key repeats ignored |
+| D9 | An older refresh hides a just-saved answer | A snapshot asked before the answer was saved keeps it |
+| E1 | The release job's write token is visible to every build step | Four jobs: gate; build (read-only token, no stored credential); attest (the provenance, in a job of its own); publish (only uploads; checks the sums) |
+| E2 | hatchling unpinned in the release build | Pinned, with a hashed build constraint |
+| E3 | Any `v*` tag publishes with no tests or checksums | The gate publishes only if the tagged commit's `python`, `hygiene`, `web` and `CodeQL` passed (the aggregate check on a pull request's commits, every `analyze (…)` job on main's; question 3); `SHA256SUMS` of this release's files only; a build-provenance attestation; a draft until `SHA256SUMS` is beside the downloads |
+| E4 | A foreground `run` takes no engine lock | It takes `EngineLock` and refuses when the engine runs |
+| E5 | A rollback restores old data before an apply that may fail | A failed apply puts the newer data back (restore's undo list) |
+| E6 | A failed update leaves the engine down silently | "Restart to update", Velopack's update hook and a rollback stop the engine "until" 15 minutes on (an `updating` marker); past that the watchdog restarts it and alerts. `ikars stop` stays the owner's stop |
+| E7 | The watchdog task's command lacks `-I` | The task runs `pythonw -I`; each start writes it again once (a stamp in the data folder) when the Run value is this program's |
+| E8 | A legacy `portable.marker` puts data where an update wipes it | The marker is ignored inside the program folder; D12 describes `.portable` / `IKARS-data` |
+| E9 | The velopack SDK unpinned against the pinned `vpk` | Pinned `==1.2.161`; Dependabot's `nuget` watches `vpk`, grouped with it (it reads `dotnet-tools.json` in `.config/`) |
+| E10 | The data guard misses settings files, archives, logs, the sandbox file, `.claude/settings.local.json` | It also refuses `settings.toml`, `.claude/settings.local.json`, archives, logs, `.wsb`, and `build`, `data`, `logs`, `backups`, `support` folders, and reads every staged text line for a UNC host or a profile name that is not one of the placeholders the docs and tests use (`<nas>`, `127.0.0.1`, `someone`, ...); `.claude/settings.local.json` in `.gitignore` |
+| E11 | A refused rollback leaves the stop markers behind | Cleared on refusal |
+| E12 | The code-signing privacy policy leaves out NWS, GDELT and the RSS feeds | Listed |
+| E13 | PLAN §5 and the README stale | Updated |
+| E14 | DEPENDENCIES.md stale (RSA for Ed25519, rows in use under "later", the Claude API in M2) | Corrected |
+| E15 | The 95% gate leaves out money modules | `pnl`, `ledger`, `ledger_import`, `portfolio`, `costs` added |
+| F1 | `/v1/hello` reports `engine_version` 0.0.0 (the release stamps Velopack's version, not the package's; `program.version` said 0.1.17); seen in R3a's v0.1.17 check | It reports the installed program's version (Velopack's), never the packages' 0.0.0 |
+| F2 | An open terminal's one-second stream pass costs about 25 to 35 ms of loop time each second (portfolio, alerts, the recommendations page; older than R3a); seen in R3a's v0.1.17 check | Investigated: each part measures well under a millisecond (the portfolio is cached, the recommendations page about 1 ms, the alert read 0.1 ms); reply p99 stays near 30 ms (inside D20 J); the rest needs a sampling profiler: parked in PLAN §9 |
+
+**Verified.** 1,713 Python tests (93.5%; the money gate's seven modules 98%), 235 web unit tests, 20 Playwright
+screens; ruff, mypy, the data guard and gitleaks clean. The workflow was parsed and its permissions checked; `uv
+build` with the hashed constraints was run here (and refuses a changed hash: the sub-agent's probe). Live: v0.1.19
+is the first release through the four-job workflow: gate, build, attest and publish all passed; `SHA256SUMS` beside
+the six downloads; the installer's attestation found on GitHub.
+
+**Review.** Per commit (`/code-review low`): `c41000d` none; `83c16ad` 1 fixed (the gate failed a tag whose commit had
+a failed earlier release run: it now reads only the required checks); `7eef70c` none. Merge review (`/code-review
+medium` and a fresh-eyes sub-agent, R16), 19 findings:
+
+| # | Finding | Done |
+|---|---|---|
+| 1 | The port alert made a second alert desk on the engine's state file, saved from another thread | Sent through the Notices' desk and thread |
+| 2 | Any port fallback (old connections too) raised a "hostile program" alert | Worded as a fallback; the rotation kept (the windows must sign in again either way) |
+| 3 | `SHA256SUMS` and the attestation covered the earlier release's packages kept for the delta | Only this release's files; the attestation from the sums file |
+| 4 | main's commits have no `CodeQL` check: every release tagged on main would wait and fail (proved on four merges) | `CodeQL` as main's `analyze (…)` jobs; tested |
+| 5 | A required check "skipped" counted as passed | Only "success" passes; tested |
+| 6 | The guard crashed on a staged text file that is not UTF-8 | Read with replacement |
+| 7 | A rollback's undo could raise and hide the install's failure, leaving the stop marks | Guarded; the marks always go; tested |
+| 8 | The sign-in signed with `ctx.port` (possibly None), the guard checked `ctx.port or 0` | One value |
+| 9 | Every start ran `schtasks /Create` (up to 60 s) | Once per command, with a stamp; tested |
+| 10 | The guard missed Markdown and forward-slash forms | Both; tested |
+| 11 | `price()` cut at 4 places while saying never rounded | 6 places, zeros trimmed; tested |
+| 12 | (sub-agent) A squatter that lets the port go before the engine binds keeps a valid cookie; a service worker could outlive a new key | Parked for the M7 security review, with the narrowing (PLAN §9) |
+| 13 | (sub-agent) A rollback whose installer fails after IKARS exits leaves the newer program on the older data | Parked with M5's restore work (PLAN §9) |
+| 14 | (sub-agent) A foreground `run` holding the lock wrote no snapshot and ignored `ikars stop` | It answers the stop and writes the snapshot |
+| 15 | (sub-agent) The guard's pre-filters let only backslash lines through; a git error passed as "no match"; false positives on pipes and Public | Fixed all three; tested |
+| 16 | (sub-agent) Answer A, move to B before the reply: A's answer showed under B | Shown only on its own recommendation |
+| 17 | (sub-agent) A rotated key that could not be saved left the old key file, trusted at the next start | Deleted; tested |
+| 18 | (sub-agent) A refused swap left the update's stop for 15 minutes; a failed undo was swallowed | Cleared on every refusal; the undo reports what it could not put back; tested |
+| 19 | (sub-agent) The OIDC token was in every publish step; the release went live before its sums; one `gh api` error failed the gate; Dependabot may not find a root `dotnet-tools.json` | An attest job; draft until the sums are attached; the gate asks again; the manifest in `.config/` |
+
+**Open.** The owner's install of v0.1.19 and its live checks: the engine reports its version in `/v1/hello`; one
+`ikars open` signs in (cookies now name the port); the Update window waits for Install; a held fixed port signs the
+windows out with an alert (a scratch listener); the watchdog task's command has `-I` and the stamp is written; a
+70 KB body is refused (scratch, GET only otherwise). Parked in PLAN §9: D1's port squatter and a service worker
+outliving a new key (M7 security review); a rollback whose installer fails after IKARS exits (M5's restore work);
+F2's sampling profile.
+
+## M2 Sources
+
+### M2 proposal
+
+**Status.** Approved 2026-10-28: PLAN §4.3, decisions D22 to D30, slices M2.1 to M2.10. **Done:** PR #32 merged as
+`dfc3f4b`. All within the frozen scope (D5, D9, D15, D20 A/B, G8, G17); perp research moves in from M1.10. Each
+slice still gets its own plan before code.
+
+**Owner's decisions (2026-10-28).**
+- **The local LLM:** the Strata server on the home network, beside Claude (then amended, below).
 - **The monthly ceiling:** **$20**.
 - **News:** GDELT plus curated RSS.
 - **The plan:** as proposed, with M1.13 after M2.3.
+- **Amended** ("slower response rate is acceptable"; "approved as amended"): M2 uses **the local LLM only**.
+  - **Claude** is deferred to an M3 decision, made on M2's labelled-sample measure.
+  - **Embeddings (now M2.5)** come before the LLM layer (now M2.6), so the pre-filter bounds the volume.
+  - **Thinking** is turned off for classification if measurement supports it.
+  - **The gate** adds the quality measure.
+  - **Setup:** no Claude account and no `anthropic` package.
 
-It is all within the frozen scope (D5, D9, D15, D20 A/B, G8, G17), and perp research moves in from M1.10. Each
-slice still gets its own plan before code.
+**Found.** The comparison came from a probe of the Strata model, `qwen3.8-flash-next`, quantised to IQ3_S, on six
+made-up items, one an injection attempt: valid JSON 6 of 6; relevance 6 of 6; category 4 of 6 (both misses
+defensible); the injection resisted; 2.5 to 5 s per item at 36 to 54 tokens a second, most of it the model
+"thinking".
 
-**Amended (owner, 2026-10-28: "slower response rate is acceptable"; "approved as amended"):** M2 uses **the local
-LLM only**.
+**D9 as approved on 2026-10-26, before this amendment:** the Claude API (a fast, cheap model as a first-pass filter,
+a stronger one for candidate matches and impact estimates) plus a local model on the RTX 5070 Ti (a quantised model
+of about 7 to 14B parameters fits in 16 GB), first for the high-volume first pass, so the cloud is called only for
+candidates; the runtime (llama.cpp server, Ollama or ONNX Runtime GenAI) to be chosen by measured speed and quality
+against the Claude baseline on a labelled sample; a daily spend cap on cloud calls; the local model an optional
+extra in the release. D24 makes the Strata server the local backend and defers Claude to M3; the daily cap on
+cloud calls is not built (there are none before M3); the $20 monthly ceiling (D21-5) bounds paid spend.
 
-The comparison came from a probe of the Strata model, `qwen3.8-flash-next`, quantised to IQ3_S. It ran on six
-made-up items, one an injection attempt:
-- valid JSON 6 of 6;
-- relevance 6 of 6;
-- category 4 of 6 (both misses defensible);
-- the injection resisted;
-- 2.5 to 5 s per item at 36 to 54 tokens a second, most of it the model "thinking".
+### 2.1 Polling-source framework
 
-**What changes:**
-- **Claude** is deferred to an M3 decision, made on M2's labelled-sample measure.
-- **Embeddings (now M2.5)** come before the LLM layer (now M2.6), so the pre-filter bounds the volume.
-- **Thinking** is turned off for classification if measurement supports it.
-- **The gate** adds the quality measure.
-- **Setup:** no Claude account and no `anthropic` package.
+**Status.** Plan approved 2026-10-28 (as proposed). Built on `m2/1`: `2ed9abf` (the framework), `6815d92` (merge-review
+fixes), `976f707` (a test closing its store). **Done:** PR #33 merged as `86726d7`. No new packages.
 
-## 2.1 Polling-source framework (plan APPROVED 2026-10-28)
+**Owner's decisions (2026-10-28).** The User-Agent contact is the repository's URL (an email optional, in the local
+settings only). A feed unreachable for more than **twice its healthy wait** gets a gap entry for the missed window;
+shorter blips are retried quietly and counted in health.
 
-**Owner, 2026-10-28:** approved as proposed.
-- **The User-Agent contact:** the repository's URL; an email optionally, in the local settings only.
-- **When a gap is logged:** a feed unreachable past **twice its interval** gets a gap entry for the missed window.
-  Shorter blips are retried quietly and counted in health.
+**Built.**
+- `polling.py`: `PollingSource` (a source plugin names its feeds and reads one reply) and `Poller`, the engine's one
+  HTTP client for polling sources (the host service `"poller"`; health under `sources`, with no URLs; closed after
+  the plugins stop).
+- Per feed: its own interval with jitter, never sooner than the server's `max-age`; HTTPS only, no redirects, a 5 MB
+  reply limit, about one request a second per host on the engine's clock; waits of half the interval after a first
+  blip, at least the interval or `Retry-After` after a slow-down, otherwise doubling to 15 minutes; conditional GET
+  with both validators, kept only after the reply's items have gone out; each id emitted once, refreshed by every
+  sighting and dropped after 14 days unseen. A source's feeds run in a TaskGroup; a plugin fault (an item kind it
+  may not emit) crashes the plugin instead of being retried as a feed problem.
+- State store migration 3 (`poll_feed`, `poll_seen`). Settings version 6: `[sources] contact_email`; an unchanged $40
+  ceiling becomes the owner's **$20** (now the default; a ceiling the owner set stays).
+- `docs/research/sources.md`: the NWS and GDELT terms checks (G17) and how every polling source behaves.
 
-**Builds:**
-1. **A `PollingSource` base:**
-   - per-feed schedules with jitter;
-   - a per-host request budget, with `Retry-After` and 429 honoured, and backoff with jitter;
-   - HTTPS only, a reply size limit, and timeouts;
-   - conditional GET, with the validators kept in the state store;
-   - persisted emitted ids, so nothing is recorded twice;
-   - the User-Agent.
-2. **A gap log for polling sources.**
-3. **Health per source.**
-4. **A `[sources]` settings section**, with a migration (backup first).
-5. **`docs/research/sources.md`:** the terms checks for NWS and GDELT (G17).
-6. **Tests** against a fake HTTP server.
+**Verified.** 1,574 Python tests (20 for polling, against a fake HTTP server and clock); `polling.py` 96%; lint,
+types and the data guard clean. **Live probe of `api.weather.gov`** (2026-10-28; public, our User-Agent accepted):
+a weak `ETag`, `Last-Modified` and `max-age=280`; `If-Modified-Since` gives a 304 but `If-None-Match` alone does not
+(the weak `ETag` names the server that answered), **so IKARS sends both**; `/points/{lat},{lon}` gives a location's
+forecast URLs (used by M2.2). The migrations first ran live with M2.2's v0.1.11.
 
-**Live check:** one conditional GET to `api.weather.gov`. No source runs in the live engine until M2.2. **No new
-packages.**
+**Review.** Per commit: `2ed9abf` 1 fixed before committing (the validators were saved before the reply's items
+went out, so a failed parse or emit lost them behind a 304; now kept in `succeeded()`). Merge review (medium), 10
+findings, all fixed in `6815d92`:
 
-#### 2.1 built (2026-10-28)
+| # | Finding | Done |
+|---|---|---|
+| 1 | `2.0**failures` overflowed after about 17 hours of failures and crashed the source | The exponent is capped; tested at 5,000 |
+| 2 | `gather` left the other feeds' loops running when one failed, so a restart doubled them | A TaskGroup cancels them |
+| 3 | A server `max-age` over twice the interval gave a false gap on every poll | The gap rule uses the healthy wait, kept with the feed; tested |
+| 4 | The "backoff" retried sooner than the healthy interval | After the first blip, never sooner than the interval; tested |
+| 5 | An item still listed after 14 days was forgotten and recorded again | Each sighting refreshes it; tested |
+| 6 | A partial emit failure re-sent the items already out | What went out is remembered; tested |
+| 7 | Plugin faults were retried for ever as feed problems | They crash the plugin; tested |
+| 8 | `Retry-After` dates were read against the real clock | The engine's clock |
+| 9 | Remembering ids was one fsync per row on the event loop | One transaction |
+| 10 | The dedup ran twice, and the store was read twice per poll | One pass, one read |
 
-**Built** on `m2/1`:
+### 2.2 Weather
 
-| Commit | What |
-|---|---|
-| `abc5e80` | the plan |
-| `2ed9abf` | the framework |
-| `6815d92` | merge-review fixes |
-| `976f707` | a test closing its store |
+**Status.** Plan approved 2026-10-29 (as proposed). Built on `m2/2`: `d347239` (the slice), `eca9ef5` (merge-review
+fixes). **Done:** PR #34 merged as `436bef2`. Releases: v0.1.11 (from `f0e5b10`, installed 2026-10-29 00:32 MDT;
+M2's 7-day weather clock starts with it). No new packages.
 
-After the M2 plan (PR #32, `dfc3f4b`). **No new packages.**
+**Owner's decisions.**
+- 2026-10-29: NWS is the proxy for the settlement source, measured later (M2.4); stations: every climate-report code
+  named by an open market.
+- 2026-11-01 (CI before the merge): `pnpm audit` began failing on GHSA-g3hv-75wg-m249 (moderate: denial of service in
+  minimatch below 11.0.1), reached only through the lint tools, with no parent accepting minimatch 11 yet. Owner:
+  ignore it, dated, in `web/pnpm-workspace.yaml`; its removal is parked in PLAN §9.
 
-- **`polling.py`:**
-  - **`PollingSource`:** a source plugin names its feeds and reads one reply.
-  - **`Poller`:** the engine's one HTTP client for polling sources, offered to plugins as the service
-    `"poller"`, its health under `sources` (no URLs), and closed after the plugins stop.
-- **Per feed:**
-  - **Schedule:** its own interval with jitter, never sooner than the server's `max-age`; after a start, the
-    next poll comes when it is due.
-  - **Politeness:** HTTPS only, no redirects followed, a 5 MB reply limit, about one request a second per host
-    (on the engine's clock).
-  - **Waits:**
-    - after a first blip, half the interval;
-    - after a server that said slow down, at least the interval or its `Retry-After`;
-    - otherwise doubling to 15 minutes.
-  - **Conditional GET:** both validators are sent, and kept only after the reply's items have gone out.
-  - **Once only:** each id is emitted once, and each sighting refreshes it (ids not seen for 14 days are
-    dropped).
-  - **The gap rule (owner):** a gap entry for the missed window when the time since the last good poll passes
-    **twice the healthy wait**, for an outage or an engine that was stopped. Shorter blips are counted in health
-    only.
-  - **Isolation:** the feeds of one source run in a TaskGroup. A fault in the plugin (an item kind it may not
-    emit) crashes the plugin, so the host counts it, instead of being retried as a feed problem.
-- **The state store, migration 3:** `poll_feed` (validators, last good poll, healthy wait) and `poll_seen`.
-- **Settings, version 6:**
-  - `[sources] contact_email`: empty by default, local only, and added to the User-Agent when set.
-  - An unchanged $40 monthly ceiling becomes the owner's **$20**; a ceiling the owner set stays.
-  - The default is now $20.
-- **`docs/research/sources.md`:** the NWS and GDELT terms checks (G17) and how every polling source behaves.
+**Found.** Kalshi's weather markets settle on **The Weather Company's** value, from the government station their
+rules name ("recorded at New York City (CLINYC) … according to The Weather Company"), not on the NWS climate report.
+The Weather Company has no free feed and no terms for automated access (G17). So the NWS report for the same station
+is recorded as the proxy. D22 in PLAN §4.3 and `docs/research/sources.md` note it, and M2.4 measures the proxy
+against Kalshi's settlements.
 
-**Live check (2026-10-28), a probe of `api.weather.gov`** (public, no key, our User-Agent accepted):
-- **Observations:** a weak `ETag`, a `Last-Modified` and `max-age=280`.
-- **Conditional requests:** `If-Modified-Since` gives a 304, but `If-None-Match` alone does not (the weak `ETag`
-  names the server that answered), so IKARS sends both.
-- **Locations:** `/points/{lat},{lon}` gives a location's forecast URLs (for M2.2).
-
-No source runs in the live engine yet. The new migrations first run on the owner's workstation with M2.2's test
-release.
-
-**Verified.**
-- **Python:** 1,574 tests (20 new for polling, against a fake HTTP server and clock); `polling.py` coverage 96%.
-- **Checks:** lint, types and the data guard are clean.
-
-**Review.**
-- **Per commit:** `2ed9abf`: 1 found and fixed before committing. The validators were saved before the reply's
-  items went out, so a failed parse or emit lost them behind a 304. They are now kept in `succeeded()`.
-- **Merge review (medium), 10 findings, all fixed in `6815d92`:**
-
-  | # | Finding | Done |
-  |---|---|---|
-  | 1 | `2.0**failures` overflowed after about 17 hours of failures and crashed the source | The exponent is capped; tested at 5,000 |
-  | 2 | `gather` left the other feeds' loops running when one failed, so a restart doubled them | A TaskGroup cancels them |
-  | 3 | A server `max-age` over twice the interval gave a false gap on every poll | The gap rule uses the healthy wait, kept with the feed; tested |
-  | 4 | The "backoff" retried sooner than the healthy interval | After the first blip, never sooner than the interval; tested |
-  | 5 | An item still listed after 14 days was forgotten and recorded again | Each sighting refreshes it; tested |
-  | 6 | A partial emit failure re-sent the items already out | What went out is remembered; tested |
-  | 7 | Plugin faults were retried for ever as feed problems | They crash the plugin; tested |
-  | 8 | `Retry-After` dates were read against the real clock | The engine's clock |
-  | 9 | Remembering ids was one fsync per row on the event loop | One transaction |
-  | 10 | The dedup ran twice, and the store was read twice per poll | One pass, one read |
-
-**M2.1 built.** It waits for the owner's merge.
-
-## 2.2 Weather (plan APPROVED 2026-10-29)
-
-**Owner, 2026-10-29:** approved as proposed.
-- **The settlement source:** NWS is the proxy, measured later.
-- **Stations:** every climate-report code named by an open market.
-
-**Found while planning:** Kalshi's weather markets settle on **The Weather Company's** value, from the government
-station their rules name ("recorded at New York City (CLINYC) … according to The Weather Company"), not on the NWS
-climate report. The Weather Company has no free feed and no terms for automated access (G17). So the NWS report for
-the same station is recorded as the proxy. D22 in PLAN §4.3 and `docs/research/sources.md` note it, and M2.4
-measures the proxy against Kalshi's settlements.
-
-#### 2.2 built (2026-10-29)
-
-**Built** on `m2/2`:
-
-| Commit | What |
-|---|---|
-| `d347239` | the slice |
-| `eca9ef5` | merge-review fixes |
-
-After M2.1 (PR #33, `86726d7`). **No new packages.**
-
-- **Stations from the rules:**
-  - the market index keeps each market's climate-report code (`\(CLI[A-Z]{3}\)` in its rules);
-  - the engine offers the codes open markets name (`climate_codes`);
-  - a code maps to its station (`K` plus its location, confirmed at `/stations`) and its forecast grid
-    (`/points`, four decimal places).
-  - On 2026-10-28, open markets named **24 codes**, and all 24 mapped.
+**Built.**
+- **Stations from the rules:** the market index keeps each market's climate-report code (`\(CLI[A-Z]{3}\)` in its
+  rules); the engine offers the codes open markets name (`climate_codes`); a code maps to its station (`K` plus its
+  location, confirmed at `/stations`) and its forecast grid (`/points`, four decimal places). On 2026-10-28, open
+  markets named **24 codes**, and all 24 mapped.
 - **The `nws` source plugin** (entry point `nws`), through the shared poller:
   - `weather_obs`: the latest observation, every 5 min;
   - `weather_forecast`: the hourly and daily forecasts, hourly, the first 48 hours kept;
-  - `weather_climate`: the latest climate report, every 15 min, parsed:
-    - the day, and whether it is "today" (preliminary) or "yesterday" (final);
-    - the high and low, with NWS's record flag;
-    - precipitation and snow, as text ("T" a trace; "MM" stored as None);
-    - the report's text, kept.
-- **The plugin over time:**
-  - Codes are checked every 10 minutes: new ones start their feeds, and those whose markets have all closed stop
-    theirs.
-  - A code that does not map is shown in health and tried again.
-  - A city is looked up again weekly, or after 6 hours of failing feeds.
-  - It can be turned off with `plugin_settings.nws.enabled = false`.
+  - `weather_climate`: the latest climate report, every 15 min, parsed: the day and whether it is "today"
+    (preliminary) or "yesterday" (final); the high and low, with NWS's record flag; precipitation and snow as text
+    ("T" a trace; "MM" stored as None); the report's text, kept.
+- **The plugin over time:** codes are checked every 10 minutes (new ones start their feeds; those whose markets have
+  all closed stop theirs); a code that does not map is shown in health and tried again; a city is looked up again
+  weekly, or after 6 hours of failing feeds; `plugin_settings.nws.enabled = false` turns it off.
 - **The polling base:** feeds that start and stop while it runs, a per-feed item kind, one-off lookups, and
   per-source notes in health (`sources: {feeds, notes}`).
 
-**Dry run against the real NWS** (2026-10-28 23:00 MDT, a scratch store, three minutes):
-- **Stations:** 24 of 24 codes mapped.
-- **Feeds:** 96, with no errors.
-- **First round:** 24 observations, 48 forecasts and 24 climate reports, every report parsed. For example, NYC's
-  28 October preliminary report read high 61, low 45, no precipitation; Boston's final read high 52, low 38.
+**Verified.** Python: 1,585 tests, 11 for NWS, with hand-written made-up replies (rules and codes, parsing, mapping,
+an unmapped code, a retry, closing, a timeout and a record value); `nws.py` 93%; lint, types and the data guard
+clean. Live (counts and states only):
 
-**Verified.**
-- **Python:** 1,585 tests, 11 for NWS, with hand-written made-up replies: rules and codes, parsing, mapping, an
-  unmapped code, a retry, closing, a timeout and a record value. `nws.py` coverage 93%.
-- **Checks:** lint, types and the data guard are clean.
+| Check | Result |
+|---|---|
+| Dry run against the real NWS (2026-10-28 23:00 MDT, a scratch store, three minutes) | 24 of 24 codes mapped; 96 feeds, no errors; first round 24 observations, 48 forecasts and 24 climate reports, every report parsed (e.g. NYC's 28 October preliminary: high 61, low 45, no precipitation; Boston's final: high 52, low 38) |
+| Install of v0.1.11 (2026-10-29 00:32 MDT) | settings version 6 with the **$20** ceiling and `[sources]`, after a backup; the state store on schema 3, after a backup; `momentum` and `nws` running; 24 of 24 codes mapped; first round 96 feeds polled, 96 items emitted, 0 errors, 0 gaps; recorded in `recordings\item`: 24 observations, 48 forecasts and 23 climate reports (the 24th still in the hour's buffer) |
+| Gap check (2026-11-01 19:18 MST, 91.8 hours after the install, read only) | **Passed.** No restart; 96 feeds made 39,670 polls against about 39,660 expected, 21,628 "not modified"; no feed failing, none last good more than two intervals ago; 5 polls failed, the next poll of each succeeded; the gap log's one weather entry: `nws.CLIMDW.cli` unreachable 31 minutes (2026-11-01 07:06 MST), then refetched; the rest Kalshi's own reconnects (the install at 00:32, a drop at 00:58 of about 30 minutes recovered by discovery and backfill, 10 seconds on 2026-11-01 at 01:00), all logged; recorded 6,381 observations, 1,202 forecasts and 254 climate reports; every hour has weather items and every recording file reads |
+| Quiet hours (M1.12c), nights of 2026-10-28 to 2026-10-31 | **Passed.** Momentum made 2,457 to 4,166 recommendations each night from 22:00 to 07:00 and no notification was shown then (a recommendation is not offered in quiet hours, so the alert log has no record of them); since 2026-10-28, 107 recommendation notifications shown, at most 3 in any hour (the cap) |
 
-**Live check on v0.1.11** (test release from `f0e5b10`, published on the owner's word; installed 2026-10-29
-00:32 MDT; counts and states only):
-- **The upgrades:** settings version 6 with the **$20** ceiling and `[sources]`, after a backup; the state store on
-  schema 3, after a backup.
-- **The plugins:** `momentum` and `nws` running.
-- **Stations:** 24 of 24 codes mapped.
-- **First round:** 96 feeds polled, 96 items emitted, 0 errors, 0 gaps.
-- **Recorded in `recordings\item`:** 24 observations, 48 forecasts and 23 climate reports (the 24th still in the
-  hour's buffer).
+**Found by the gap check: holes are NWS's, not losses.** An item is recorded when NWS publishes something new, so the
+time between items follows NWS's own schedule: 1.8 hours median for observations, about 12 hours between forecast
+issues. The longest were KNYC's observation (3.6 hours, while the station's latest stayed the same) and Phoenix's and
+San Antonio's climate reports (24 hours, one issue a day). The polls through those holes all succeeded. **No unlogged
+gaps.**
 
-M2's 7-day weather clock starts with this release.
+**Review.** Per commit: `d347239`, 3 found before committing, 2 fixed, 1 no change: a lookup that failed once kept a
+city unmapped until a restart (now tried again); a city whose markets closed was polled for ever (its feeds now stop);
+the health shape changed (no change: only the engine reads it). Merge review (medium), 10 findings, all fixed in
+`eca9ef5`:
 
-**Gap check: passed** (2026-11-01 19:18 MST, 91.8 hours after the install; read only, counts and states):
-- **Polling never stopped.** The engine ran the whole window without a restart. Its 96 feeds made 39,670 polls,
-  against about 39,660 expected from the intervals; 21,628 were "not modified". No feed is failing now, and none
-  last succeeded more than two intervals ago.
-- **Errors:** 5 polls failed, and the next poll of each succeeded.
-- **The gap log:** one weather entry: `nws.CLIMDW.cli` unreachable for 31 minutes (2026-11-01 07:06 MST), then
-  refetched. The rest were Kalshi's own reconnects: the install at 00:32, a drop at 00:58 (about 30 minutes, recovered
-  by discovery and backfill), and 10 seconds on 2026-11-01 at 01:00. All are logged.
-- **Recorded:** 6,381 observations, 1,202 forecasts and 254 climate reports. Every hour of the window has weather
-  items, and every recording file reads.
-- **Holes are NWS's, not losses.** An item is recorded when NWS publishes something new, so the time between items
-  follows NWS's own schedule. That was 1.8 hours median for observations, and about 12 hours between forecast
-  issues. The longest were KNYC's observation (3.6 hours, while the station's latest stayed the same) and Phoenix's
-  and San Antonio's climate reports (24 hours, one issue a day). The polls through those holes all succeeded. **No
-  unlogged gaps.**
+| # | Finding | Done |
+|---|---|---|
+| 1 | A station lookup timing out (30 s) crashed the whole source, which could end up paused | Caught; the city is unmapped and tried again; lookups get 2 minutes; tested |
+| 2 | A record value ("92R") was dropped | Read, with a `high_record`/`low_record` flag; tested |
+| 3 | Stopped feeds stayed in health for ever | Removed on stop; tested |
+| 4 | A blank value borrowed the next line's, or the next section's | Read on its own line within its own section; tested |
+| 5 | A city's forecast URLs were never looked up again | Weekly, or after 6 hours of failing feeds |
+| 6 | Rules that no longer name a station kept the old code | Only an update without rules keeps it; tested |
+| 7 | The codes service built and sorted ticker lists to throw away | `open_climate_codes`, codes only; tested |
+| 8 | Health read `sources.sources`, and the notes were shared, not copied | `{feeds, notes}`, the notes deep-copied |
+| 9 | NWS times went through floats, and a time without an offset was read as local | Exact integer nanoseconds; none without an offset; tested |
+| 10 | Codes were checked only hourly, so feeds started up to an hour late | Every 10 minutes |
 
-**Quiet hours (M1.12c): passed.** The check covered the nights of 2026-10-28 to 2026-10-31. Momentum made between
-2,457 and 4,166 recommendations each night from 22:00 to 07:00, and no notification was shown in those hours. A
-recommendation is not offered at all in quiet hours, so the alert log has no record for them. Since 2026-10-28, 107
-recommendation notifications were shown, with at most 3 in any hour, which is the cap.
+**Open.** Parked in PLAN §9: removing the minimatch `pnpm audit` exception.
 
-**CI before the merge (2026-11-01):** `pnpm audit` began failing on GHSA-g3hv-75wg-m249 (moderate: denial of
-service in minimatch below 11.0.1). It is reached only through the lint tools, and no parent accepts minimatch 11
-yet. **Owner:** ignore it, dated, in `web/pnpm-workspace.yaml`; its removal is parked in PLAN §9.
+### 2.3 News
 
-**Review.**
-- **Per commit:** `d347239`, 3 found before committing; 2 fixed, 1 no change:
-  - a lookup that failed once kept a city unmapped until a restart: it is now tried again;
-  - a city whose markets closed was polled for ever: its feeds now stop;
-  - the health shape changed: no change, since only the engine reads it.
-- **Merge review (medium), 10 findings, all fixed in `eca9ef5`:**
+**Status.** Plan approved 2026-11-01 (GDELT both; government RSS only; `defusedxml` and our own parser; the rest as
+shown). Built on `m2/3`: `7c0d40d` (the slice), `a19a332` (merge-review fixes). **Open:** PR #35 (base `main`).
+Releases: v0.1.12 (from `b2548b5`, 2026-11-01; M2's 7-day news clock starts with it); also in v0.1.13 (1.13).
+Packages: `defusedxml` 0.7.1 (PSF-2.0, no dependencies); type stubs not added (one targeted `type: ignore`).
 
-  | # | Finding | Done |
-  |---|---|---|
-  | 1 | A station lookup timing out (30 s) crashed the whole source, which could end up paused | Caught; the city is unmapped and tried again; lookups get 2 minutes; tested |
-  | 2 | A record value ("92R") was dropped | Read, with a `high_record`/`low_record` flag; tested |
-  | 3 | Stopped feeds stayed in health for ever | Removed on stop; tested |
-  | 4 | A blank value borrowed the next line's, or the next section's | Read on its own line within its own section; tested |
-  | 5 | A city's forecast URLs were never looked up again | Weekly, or after 6 hours of failing feeds |
-  | 6 | Rules that no longer name a station kept the old code | Only an update without rules keeps it; tested |
-  | 7 | The codes service built and sorted ticker lists to throw away | `open_climate_codes`, codes only; tested |
-  | 8 | Health read `sources.sources`, and the notes were shared, not copied | `{feeds, notes}`, the notes deep-copied |
-  | 9 | NWS times went through floats, and a time without an offset was read as local | Exact integer nanoseconds; none without an offset; tested |
-  | 10 | Codes were checked only hourly, so feeds started up to an hour late | Every 10 minutes |
+**Owner's decisions (2026-11-01).**
+- **GDELT:** both. The GKG files are the main stream; DOC API topic queries are added when it answers, with
+  duplicates removed between them (D23 amended).
+- **RSS:** government feeds only to start. Publisher feeds come only by the owner's decision, feed by feed.
+- **Parser:** `defusedxml` and a small parser of our own.
+- **The rest as shown:** a feed without a recorded terms note is not polled; duplicates are removed by cleaned link
+  across all news feeds; settings version 7 holds the starting list; no terminal change until M2.7; a dry run, then
+  a test release on the owner's word.
 
-**M2.2 built and checked live (0.1.11; gap check and quiet hours passed 2026-11-01).** It waits for the owner's merge.
-
-## 2.3 News (plan APPROVED 2026-11-01)
-
-**Probes while planning (2026-11-01, public GETs):**
+**Found (probes while planning, 2026-11-01, public GETs).**
 - **GDELT's DOC 2.0 API** answered every query with 429 ("one request every 5 seconds"), even 90 seconds apart, and
   a 15-minute span was refused as too short. A query returns at most 250 articles.
 - **GDELT's raw files over HTTPS work.** `lastupdate.txt` names the newest 15-minute files. The GKG file was 2.5 MB
@@ -3221,52 +2394,11 @@ yet. **Owner:** ignore it, dated, in `web/pnpm-workspace.yaml`; its removal is p
   Center, the White House, SEC, FDA and USGS. BLS refuses the User-Agent (403), and Treasury's feed address needs
   finding.
 
-**Owner, 2026-11-01:** approved as proposed.
-- **GDELT:** both. The GKG files are the main stream, and DOC API topic queries are added when it answers, with
-  duplicates removed between them (D23 amended).
-- **RSS:** government feeds only to start. Publisher feeds come only by the owner's decision, feed by feed.
-- **Parser:** `defusedxml` and a small parser of our own.
-- **The rest as shown:**
-  - a feed without a recorded terms note is not polled;
-  - duplicates are removed by cleaned link across all news feeds;
-  - settings version 7 holds the starting list;
-  - no terminal change until M2.7;
-  - a dry run, then a test release on the owner's word.
-
-**The plan:**
-- **`gdelt` plugin:**
-  - `lastupdate.txt` is checked every 2 minutes, and each new GKG file is fetched once.
-  - The zip is opened safely: one member only, with caps on the unzipped size and the ratio.
-  - Kept: the title, link, source, GDELT's time, the publisher's time, and the themes, places, people,
-    organisations and tone. Quotations and article text are never kept.
-  - Missed files are fetched by name, up to 24 hours back, with their true (late) received time, and logged as
-    backfilled.
-  - DOC API topic queries from the settings run every 15 minutes, at most one GDELT API request every 10 seconds.
-- **`rss` plugin:**
-  - RSS 2.0 and Atom, read with `defusedxml`.
-  - Kept: the headline, link, publisher time, and the feed's summary as text, cut to 1,000 characters.
-  - Each feed's interval is in the settings, 5 minutes by default.
-- **Duplicates:** the id is the cleaned link (tracking parameters, `www.` and the fragment dropped). It is shared
-  across every news feed through a "seen" scope in the polling base. The first source to deliver a link wins.
-- **Settings version 7:** `[news]` with the GDELT switch, the topic queries and the feeds. Each feed has a `terms`
-  note; without one it is not polled, and health says why.
-- **Docs:** a terms row per feed in `docs/research/sources.md`, plus DEPENDENCIES.
-- **New package:** `defusedxml` 0.7.1 (PSF-2.0, no dependencies; already in the lock for development).
-
-#### 2.3 built (2026-11-01)
-
-**Built** on `m2/3`:
-
-| Commit | What |
-|---|---|
-| `7c0d40d` | the slice |
-| `a19a332` | merge-review fixes |
-
-After M2.2 (PR #34, `436bef2`).
-
+**Built.**
 - **The `gdelt` plugin (entry point `gdelt`):**
-  - **GKG files.** The index is read every 2 minutes, and each new file is fetched once.
-    - Files missed are fetched by name, up to a day back, four per read. Older ones are logged as unrecoverable.
+  - **GKG files.** The index (`lastupdate.txt`) is read every 2 minutes, and each new file is fetched once.
+    - Files missed are fetched by name, up to a day back, four per read, with their true (late) received time.
+      Older ones are logged as unrecoverable.
     - A file is unpacked and read in a worker thread: one member only, with caps on the unzipped size and the
       ratio. The newest file is checked against the index's MD5.
     - The bookmark moves on, and gaps are logged, only once a read's items have gone out.
@@ -3285,650 +2417,73 @@ After M2.2 (PR #34, `436bef2`).
   - Ids are by cleaned link, or by guid for a feed that reuses links (Census). A feed on link ids whose reply
     repeats a link is flagged in health.
   - Feeds without a terms note, with a bad or duplicate name, or not on HTTPS are refused, and health says why.
-- **Duplicates:** every news item's id is its cleaned link, in one seen scope shared by all news feeds. Claims keep
-  two feeds from both sending one item, and an id is remembered only by the feed that sent it.
-- **Settings version 7:** `[news]` with 12 US government feeds (Fed ×2, BEA, Census, EIA ×2, NHC ×2, White House ×2,
-  FDA, USGS) and five GDELT searches. BLS and SEC wait for a contact email (`docs/research/sources.md`).
-- **The polling base:**
-  - index feeds read whole every time; a per-host rate; the HTTP status on errors;
-  - `read` and `delivered` hooks for sources;
-  - a source that backfills logs its own gaps;
-  - `iso_ns` and `exact_ns` shared with NWS.
-- **New package:** `defusedxml` 0.7.1 (PSF-2.0). Type stubs were not added: one targeted `type: ignore`.
+- **Duplicates:** every news item's id is its cleaned link (tracking parameters, `www.` and the fragment dropped), in
+  one seen scope shared by all news feeds; the first source to deliver a link wins. Claims keep two feeds from both
+  sending one item, and an id is remembered only by the feed that sent it.
+- **Settings version 7:** `[news]` with the GDELT switch, 12 US government feeds (Fed ×2, BEA, Census, EIA ×2,
+  NHC ×2, White House ×2, FDA, USGS; each feed's interval in the settings, 5 minutes by default) and five GDELT
+  searches. BLS and SEC wait for a contact email (`docs/research/sources.md`, which has a terms row per feed).
+- **The polling base:** index feeds read whole every time; a per-host rate; the HTTP status on errors; `read` and
+  `delivered` hooks for sources; a source that backfills logs its own gaps; `iso_ns` and `exact_ns` shared with NWS.
 
-**Dry run against the real sources** (2026-11-01 about 20:00 MST, a scratch store):
-- **GKG:** one file gave 1,101 to 1,178 articles from 280 to 293 sources, all but a handful with a title, and about
-  half with the publisher's time.
-- **RSS:** the 12 feeds gave 233 items with no errors; 232 had a time and all had a summary.
-- **Overall:** ids all unique, no gaps; payloads average 1.2 KB (about 120 MB a day of payload before compression).
-- **DOC searches:** answered 429 again, with one exception that returned nothing new.
-
-**Verified.** Python: 1,612 tests (27 for news), with made-up feeds, GKG rows and zips. Coverage: `gdelt.py` 92%,
-`rss.py` 97%, `polling.py` 95%. Lint, types and the data guard are clean.
-
-**Review.**
-- **Per commit:** `7c0d40d`, 1 found before committing, fixed. After a day-long outage, the poller logged the whole
-  window as backfilled while GDELT also logged its oldest part as unrecoverable. Now a backfilling source logs its
-  own gaps.
-- **Merge review:** `/code-review medium`, 10 findings, plus a fresh-eyes reviewer sub-agent (PLAN R16), 9 findings.
-  Five were found by both. All fixed in `a19a332` unless marked:
-
-  | # | Finding | Done |
-  |---|---|---|
-  | 1 | A feed remembered every id it listed, including one another feed had claimed but then failed to send: that item was lost | Only ids it sent or no one holds are remembered; tested (both reviews) |
-  | 2 | GKG unzip and parse ran on the event loop, about 50 ms a file and 4 files a read during a catch-up, against the 33 ms screen target | A worker thread (both) |
-  | 3 | Any non-404 failure on one file (a damaged zip, too large) stalled the GKG stream for up to a day | A damaged or missing old file is logged and passed; tested |
-  | 4 | Gaps were logged before delivery: a failed read logged its window again each retry, and the backfill entry was "done" before any file came | Logged at delivery, once; tested (both) |
-  | 5 | Waiting for GDELT's API turn counted against the 60 s call timeout: the fifth search waited 40 s, a seventh always timed out | The turn is taken before the timed call (both) |
-  | 6 | A 404 on a file just behind the newest was written off, though GDELT may still be publishing it | Only from two slots back; tested |
-  | 7 | Titles were decoded twice, so `&lt;script&gt;` became markup and was dropped | Decoded once |
-  | 8 | A store error in `emitted` left ids claimed until a restart | Released in `finally` (both) |
-  | 9 | `Feed.max_bytes` was never used | Removed |
-  | 10 | A redundant condition in the gap rule | One condition |
-  | 11 | A backfill window that held a lost file was logged as both recovered and lost; a restart mid-catch-up logged an overlapping second backfill | The backlog's start is kept in the state store; the backfill leaves out lost windows; tested (sub-agent) |
-  | 12 | GDELT's crawl time was recorded as the publisher's time | The publisher's time only; GDELT's stays in `gdelt_time` (sub-agent) |
-  | 13 | The missed-file count divided as a float | Integer division (sub-agent) |
-  | 14 | Only the newest file has an MD5 in the index | No change: documented; a backfilled file is checked by unzipping (sub-agent) |
-  | 15 | `max_bytes or default` read 0 as the default | `is None` (sub-agent) |
-
-**Live check: pending** (test release **v0.1.12**, published on the owner's word 2026-11-01 from `b2548b5`):
-- settings version 7 upgrades cleanly;
-- both plugins record;
-- after a day, no unlogged gaps.
-
-The 7-day news clock starts then.
-
-**Live check on v0.1.12** (installed 2026-11-01 about 20:39 MST; read only, counts and states):
-- **The upgrade:** settings version 7, the version 6 file kept beside it first, plus the installer's pre-upgrade copy.
-- **Plugins:** `gdelt`, `momentum`, `nws` and `rss` are running.
-- **RSS:** all 12 feeds polled with no errors and none refused; 235 items. No feed is flagged for repeated links.
-- **GKG:** two index reads, one file recorded (521 articles), with the bookmark on the newest file and nothing
-  behind.
-- **DOC searches:** all five answered 429, as expected; GDELT is still refusing them.
-- **Where to see it:** the terminal's Health screen shows only each plugin's state. The per-feed cards are M2.7's
-  (D29, mock-up first).
-
-**Pending:** a day of recording with no unlogged gaps. M2's 7-day news clock starts with this release
-(2026-11-01).
-
-## 1.13 Replay of real recordings (plan APPROVED 2026-11-01)
-
-After M2.3, as the M2 proposal placed it. Branch `m1/13`, stacked on `m2/3` so a test release keeps M2.3's recording;
-it moves onto `main` once PR #35 merges.
-
-**Found while planning:**
-- **The replay cannot read a real recording.** `ReplaySource` reads one generic schema (`RECORDING_SCHEMA`). The
-  recorder writes six typed channel files plus an `item` file whose layout differs from that schema (the payload
-  as text, and a `hops` column).
-- **It loads every file into memory,** which is about 2.1 GB a day (review 1.R2 items 6 and 7).
-- **The recordings lack some of what the live code used:**
-  - live items carry the whole Kalshi message, but the recorder keeps a subset of its fields;
-  - ticker rows are kept for the 100 watched markets only: about 11 a second out of about 690 a second for all
-    markets (measured 2026-11-01);
-  - discovery's market details (status, close time, series fees), which momentum checks, are not recorded.
-- **Ticker volume:** about 96% of ticker frames change the quote or its sizes, and 21% change the bid or ask. So
-  "quote changes only" would not replay momentum's size check faithfully.
-- **SPARQ and KAPS** (a read-only survey by a sub-agent, PLAN R16): neither has a streaming replay, a book rebuild
-  from deltas or a simulated clock. Their lessons are taken here:
-  - order ties must be broken stably (SPARQ's runs once differed);
-  - a gap must never read as "no data";
-  - Kalshi marks an empty side with a 0-cent bid or a 100-cent ask;
-  - a rebuilt book should be checked against the ticker feed (SPARQ planned 99% and never built it).
-
-**Owner, 2026-11-01:** approved as proposed.
-- **Ticker:** record every market's frames (about +1.7 GB a day, to about 3.8 GB a day; the 200 GB budget then holds
-  about 50 days).
-- **Market details:** record a `market` channel.
-- **Live items:** one row, one item.
-- **The rest as shown.**
-
-**The plan:**
-- **One row, one item.** The live Kalshi source builds each item from the row it records, with one function per
-  channel that the replay uses too, so live and replay items are identical by construction (tested).
-- **One path for Kalshi state.** Quotes, last prices and books update through shared code. A book is rebuilt from
-  snapshots and deltas; a sequence gap or a logged gap breaks it until the next snapshot, and it never reads as
-  empty.
-- **A streaming reader.** A k-way merge over every channel's hour files (Parquet, open IPC hours, part files) in
-  batches, ordered by received time and then a stable key. Memory is bounded by about one batch per channel. A
-  window reads only its own hours. The `item` channel replays as recorded.
-- **`ikars replay --from --to [--plugins]`.** Recordings are read only, even while the engine runs, into a scratch
-  folder, never the live journal or state. It prints counts, the recommendations, a determinism digest, and the
-  gaps in the window.
-- **Recording:** every market's ticker frames, and a `market` channel (a row when a market's details first appear or
-  change).
-- **Checks:**
-  - two runs give one digest;
-  - live vs replay parity: momentum v1 on a recorded hour against the live journal;
-  - the rebuilt book's best bid and ask agree with the recorded ticker at least 99% of the time.
-- **No new packages.** A test release is needed for the recording changes.
-
-#### 1.13 built (2026-11-01)
-
-**Built** on `m1/13` (stacked on `m2/3`):
-
-| Commit | What |
-|---|---|
-| `d3f26fa` | the slice |
-| `3d2d972` | merge-review fixes |
-
-**No new packages.**
-
-- **One row, one item.**
-  - `kalshi/rows.py` builds each feed message's recorded row, then the engine's item from that row, for the live
-    source and the replay alike.
-  - Live items now carry the recorded fields: momentum reads only those. Kalshi item payloads were slimmed; only
-    momentum read them.
-- **One path for the kept state.** `KalshiState` holds quotes, last prices, books and the watched set, and is changed
-  only from rows and recorded **feed events**:
-  - `start`, before the first subscription;
-  - `reconnect`, which clears every book;
-  - `sequence_gap`, which now breaks every book until its snapshot;
-  - `watch` and `unwatch`;
-  - `forget`.
-  - Each event is stamped just after the newest frame the pump handled, strictly increasing, so a replay puts it
-    exactly where it fell among the frames.
-- **Recording changes:**
-  - every market's ticker frames (owner);
-  - a `market` channel: details on change, a dump after each full discovery, removals, and the series' fee terms;
-  - the `feed` channel;
-  - an hourly checkpoint of each sound book, with the watched set restated;
-  - empty snapshots;
-  - the books' `clock`.
-  - Columns are only ever added. A file written before a column existed reads with it null (`conform`), so the hour
-    spanning the upgrade still compacts.
-- **The streaming reader** (`replay.py`): a k-way merge of every channel's hour files in received-time order, ties by
-  channel and then file and row order.
-  - A compacted hour is streamed in batches; an open or split hour is read whole and sorted.
-  - It reads one hour past the window, for late rows.
-  - It re-reads an hour that a compaction renamed mid-read.
-- **`ikars replay --from --to [--plugins] [--compare] [--check-books] [--out]`.**
-  - Only signal plugins run, with a scratch journal (`JournalService.step` each virtual second).
-  - Recorded items of the plugins being run again are left out.
-  - The market details come as they were (25 hours looked back), with a 40-minute warm-up that is not reported.
-  - It reports a digest of the items and their payloads, the logged gaps, the comparison with the live journal, and
-    the book check.
-  - It never writes inside IKARS's folder, never reuses a journal, and reads the settings without migrating them.
-- **The book check:** Kalshi's ticker marks an empty side as 0c or $1 (SPARQ's lesson). The 99% target is held
-  against **settled** books (unchanged for 500 ms). On real data on 2026-11-01, every mismatch fell within 500 ms
-  of a book change: the ticker and the deltas are separate messages.
-- **Retired:** the generic-schema `ReplaySource`, `RECORDING_SCHEMA` and `write_recording`. The smoke run and the
-  tests use the recorder's own layout (`write_items`).
-- **Moved:** `exact_ns` and `ns_time` to `clocks.py`; the shared Kalshi test fakes to `tests/helpers`.
-
-**Checked on real data** (the live workstation's recordings of 2026-11-01 19:00 to 19:30 MST, read only):
-- **Replayed:** 1.36 million items (436,000 trades, ticker, books, and weather and news items), with no late rows.
-  Two runs gave one digest (`08744fcdbb9794c4`), and so did a run after the fixes.
-- **Books:** 3,019 comparisons; 94.7% agree overall and 396 of 396 (100%) settled.
-- **Momentum:** made nothing, and the replay said why: the window predates the `market` channel ("partial").
-- **Live vs replay parity** of momentum needs recordings made with this release. It is the live check.
-
-**Verified.** Python: 1,632 tests, 22 for the replay, with made-up frames. The strongest runs the live source over
-made-up frames and replays its recording to the very same items and state. Coverage: `replay.py` 95%,
-`kalshi/rows.py` 98%. Lint, types and the data guard are clean.
-
-**Review.**
-- **Per commit:** `d3f26fa`, 3 found before committing, all fixed:
-  1. Watched combo markets lost their quote in a replay: watched tracking.
-  2. An hour compacting while read could be read twice: the files are listed before and after.
-  3. A checkpoint moved a book's change time: it now only sets a missing book.
-- **Merge review:** `/code-review medium`, 10 findings, plus a fresh-eyes reviewer sub-agent (PLAN R16), 8 more open
-  after the first fixes. All fixed in `3d2d972` unless marked:
-
-  | # | Finding | Done |
-  |---|---|---|
-  | 1 | The start, reconnect and gap events took the pump's clock: a replay put the start after the first snapshots and cleared them | The start before the first subscription; pump events just after the newest frame handled |
-  | 2 | A stream that failed part-way was re-read whole, repeating rows | The re-read skips what was sent |
-  | 3 | `--out` could be the live data folder, or reuse an earlier replay's journal | Both refused; tested |
-  | 4 | A full discovery that failed part-way never dumped | The dump runs in `finally` |
-  | 5 | An open hour was read 5 times (its size grows with every flush) | Re-read only when a compaction renamed files |
-  | 6 | Watched combos lost their quotes after a reconnect | `watch` and `unwatch` events keep the watched set |
-  | 7 | Late rows in the next hour's file were missed at a window's end | One hour past the window is read |
-  | 8 | The digest left out payloads | Payloads included |
-  | 9 | `JournalService.flush` duplicated `step` | `flush` calls `step` |
-  | 10 | Snapshot levels were split twice; constants were repeated | Split once; shared `NS` and `HOUR_NS` |
-  | 11 | The checkpoint took wall time, so queued deltas replayed before it (sub-agent) | Stamped among the frames handled, in its own hour; tested |
-  | 12 | Watch, unwatch and forget took wall time; an add's snapshot could beat its watch (sub-agent) | Same stamps; an add is watched before asking and restored when refused |
-  | 13 | A full discovery held every market change back for minutes, until the dump (sub-agent) | Changes recorded as they come; the dump writes the rest; tested |
-  | 14 | Markets the index dropped stayed in a replay (sub-agent) | A `removed` row; tested |
-  | 15 | A feed event and a checkpoint could tie and swap (sub-agent) | Strictly increasing stamps |
-  | 16 | Re-reading after a failed stream counts rows, not positions (sub-agent) | No change: Windows does not replace an open file, so the hour cannot change under the read |
-  | 17 | Leaving out a re-run plugin's items relied on it naming itself as the source (sub-agent) | `emit` stamps the plugin's name |
-  | 18 | A settings error printed a traceback; temporary folders stay (sub-agent) | A plain error; the folders stay on purpose (they hold the journal to inspect) |
-
-**Live check: pending** (test release **v0.1.13**, published on the owner's word 2026-11-01 from `25e2bee`, with M2.3):
-- the upgrade compacts the open hour;
-- the new channels record;
-- after an hour, a replay of momentum against the live journal (parity), and the book check at 99% settled or more.
-
-**On v0.1.13** (installed 2026-11-01 about 21:45 MST; read only, counts and states):
-- **The upgrade:** the open hour, written with the old columns, folded into its Parquet, and a new stream opened
-  beside it. No damaged or part files. All four plugins are running.
-- **Recording:**
-  - the `market` channel: 234,028 rows at start (every market in the index, each new to it);
-  - the `feed` channel: a `start`, then 200 `watch` events (100 at start, 100 restated by the first checkpoint);
-  - book checkpoints: 10,090 level rows (the 100 watched books);
-  - ticker rows for every market.
-- **Pending:** an hour of recording, then the momentum parity and the book check.
-
-**The live check: passed** (2026-11-02, read only; counts only). The engine restarted at 21:47, 22:03 (v0.1.14),
-23:05 and 23:29 MST (the `feed` channel's `start` events), so the window is the one uninterrupted hour,
-**22:02:59 to 23:05:00 MST**, with no warm-up (`ikars replay --compare --check-books --warmup-min 0`, 1 m 40 s):
-- **Replayed:** 6.08 million rows (3.11 million ticker, 2.08 million book deltas, 521,000 trades, 352,000 market
-  rows), no late rows, digest `21d9b3b7cf74b56b`.
-- **Books:** 29,617 comparisons, 98.3% agree; **7,060 of 7,060 settled (100%)**.
-- **Momentum, as the command runs it:** 239 live, 249 replayed, 179 matched. Agreement grew through the hour (36 of
-  63 in the first 10 minutes, 42 of 45 in the last 12). Every mismatch traced to the restart at 22:03, which the
-  replay does not reproduce:
-  - the replay's plugins start at the hour's start (22:00), so momentum carried three minutes of memory across the
-    restart. Its "last mid before the window" (a quiet market's price) lasts until a market is idle for an hour;
-  - the live journal held recommendations from before the restart, still valid (30 minutes) and holding repeats
-    back; the replay's scratch journal did not;
-  - one recommendation made at a different time moves every later one on that market (one at a time, 30 minutes).
-- **Momentum, with both sides starting equal** (a scratch run: momentum sees nothing before the window's start, and
-  the scratch journal starts with the 74 live recommendations still valid then): **239 live, 239 replayed, 239
-  matched**, the same digest.
-- **Found:** the replay does not reproduce a restart.
-
-**Fixed in M1.13** (owner, 2026-11-02: fix now; `06557b2` on `m1/13`, `m1/14` rebased onto it):
-- A recorded `start` restarts the signal plugins: each goes on as a new instance (`PluginHost.restart`), as the new
-  process's did.
-- Plugins get items only from the warm-up's start; the state is still read from that hour's start (its checkpoint).
-  The report gives both (`from`, `read_from`).
-- `--compare` starts the scratch journal with the live recommendations of the re-run plugins still valid when the
-  plugins begin, unless superseded by then (`carried_in`, through `Journal.add`).
-- **Tests:** 2 new (a restart and the warm-up start with a made-up signal; what is carried in, and that it holds a
-  repeat back). Python: 1,634 tests on `m1/13`, `replay.py` 97%. Lint, types and the data guard are clean.
-- **The real hour again, with the command as shipped:**
-  - no warm-up: 74 carried in, **239 live, 239 replayed, 239 matched**;
-  - the default 40-minute warm-up: 223 of 239. Every one of the 30 mismatches is on a market live recommended
-    between 21:23 and 21:47, in the v0.1.12 run: it recorded no market details, so the replay could make nothing
-    there. A warm-up inside recordings with market details (v0.1.13 on) has no such stretch.
-- **Review:** per commit (`/code-review low`), nothing found.
-- After the rebase, M1.14's commits are `64d1094`, `014d0ea` and `c74bf41` (were `ba99efe`, `81b08ab`, `a6b2c44`;
-  the release tags keep the old ones).
-
-**Fixed during the live check (owner, 2026-11-01).** On a settled market's screen, the price chart grew without
-bound. The cause: with nothing taller beside it (an empty book), the chart's box took its height from the chart,
-which sizes itself to its box, so each resize grew the next.
-- **The fix:** the box has a definite height (`cff4f24`). An end-to-end test measures the chart twice, three seconds
-  apart, on a market with no book; before the fix it grew to 528 px.
-- **Review:** per commit, nothing found.
-- **Seen beside it and parked (PLAN §9):** after a restart, a settled market is not in the index, so its Market
-  screen answers 404. A full discovery reads only unopened and open markets.
-
-## 1.14 Settled markets after a restart (plan APPROVED 2026-11-01)
-
-Brought forward from PLAN §9 (owner, 2026-11-01). Branch `m1/14`, stacked on `m1/13`.
-
-**Found while planning:**
-- **A settled market drops out of the index at a restart.** The index keeps a settled market for 3 days after it
-  closes (`CLOSED_KEPT_NS`), but only while the engine runs: a full discovery reads unopened and open markets only.
-  Its Market screen then answers 404.
-- **The journal never settles such a market.** It settles a recommendation from the index's result, so a market
-  that settled while the engine was down, or more than 3 days before, is never settled and its scores never land.
-- **Kalshi's listing helps:** it filters by close time (`min_close_ts`, with status closed or settled) and fetches
-  markets by name (`tickers=`); markets past the cutoff come from its historical store.
-
-**Owner, 2026-11-01:** approved as proposed.
-- **Both:** at start, the full discovery also reads markets closed in the last 3 days; on request, a market the
-  index lacks is looked up by ticker, with a short cache.
-- **The journal:** an unsettled recommendation's market that the index lacks is looked up, batched, at most once
-  every 10 minutes per market, until it settles.
-- **The rest as shown:** tests with made-up markets, a dry run measuring the start-up requests, a test release, then
-  the check that the settled NBA market seen on 2026-11-01 opens again.
-
-#### 1.14 built (2026-11-01)
-
-**Built** on `m1/14` (stacked on `m1/13`):
-
-| Commit | What |
-|---|---|
-| `64d1094` | the slice |
-| `014d0ea` | merge-review fixes |
-
-**No new packages.**
-
-**Dry run** (Kalshi's public listing, 2026-11-01):
-- **Closed, waiting for a result:** 18,290 markets, 19 pages, 3 s.
-- **Settled in the last 3 days:** 310,459 markets, 311 pages, 130 s.
-- **Owner:** settled markets are read in the background once the feed is live, so they never hold the feed back.
-
-- **At start:** a full discovery reads unopened, open and every closed market. Once the feed is live, a background pass
-  (`recent_settled`) reads the markets settled in the last 3 days.
-  - It pauses half a second between pages, so the gap backfill and the discovery cycles get the request budget.
-  - It moves the index version once, at the end.
-  - The index after a restart is then a running engine's.
-- **`kalshi/lookup.py` (`MarketLookup`)** finds a market the index lacks: Kalshi's live store, then its historical
-  store, with a bounded cache.
-  - A recent market goes into the index, and so into the market channel.
-  - Concurrent asks of one ticker share one request.
-  - A ticker not shaped like Kalshi's is never asked.
-- **The Market screen and its chart** use it, with candlesticks from the historical store past the cutoff. The
-  recommendation drill-down uses it for the title and fees. The recommendation lists look up missing titles in the
-  background.
-  - A Kalshi failure answers 503 ("try again"), never "no such market".
-- **The journal:** each minute, the unsettled recommendations whose market the index lacks are looked up, batched by
-  ticker, each at most once every 10 minutes, until settled. `result`, `trading` and fees read through the lookup.
-
-**Verified.** Python: 1,645 tests, 11 new for the lookups, with made-up markets on a fake Kalshi. Coverage:
-`kalshi/lookup.py` 86%. Lint, types and the data guard are clean.
-
-**Review.**
-- **Per commit:** `64d1094`, 1 found before committing, fixed. The recommendation drill-down awaited a lookup
-  unguarded, so a busy Kalshi made it a 500.
-- **Merge review:** `/code-review medium`, 10 findings, fixed in `014d0ea` unless marked. A second, sub-agent reviewer
-  was not used: the slice is small and self-contained (R16: where it helps).
-
-  | # | Finding | Done |
-  |---|---|---|
-  | 1 | Closed markets waiting for a result over 3 days went missing after a restart | Every closed market is read (3 s) |
-  | 2 | Concurrent lookups of one ticker each called Kalshi | One shared request; tested |
-  | 3 | The settled load could hold the gap backfill and discovery behind it for minutes | A pause between pages |
-  | 4 | Each of ~300,000 puts moved the index version, so lists re-sorted on every poll | The version moves once at the end; tested |
-  | 5 | The lookups' version moved even when nothing changed | Only on a change; tested |
-  | 6 | A settled market with a result other than yes or no was asked about for 30 days | Settled is final; tested |
-  | 7 | A failed batch stopped the pass, and the rest still waited 10 minutes | Each batch marked and guarded alone; tested |
-  | 8 | The ticker from the address went into Kalshi URLs unchecked | A ticker shape check; tested |
-  | 9 | Combos bumped the index's skipped count; a cached open market's "trading" can lag | Combos stay out of the index. The lag: no change. The journal's pass refreshes it every 10 minutes, and marks fall at 30 and 60 minutes |
-  | 10 | A Kalshi failure read as "no such market" | 503 "try again"; tested |
-
-**Live check passed** on **v0.1.15** (test pre-release from `4f28b12`, published 2026-11-01 23:01 MST; installed
-by the owner, engine started 23:04:37; read through the API with GET only and the journal opened read-only):
-- After the restart, `KXNBATOTAL-26NOV01TORLAL-254` opens again with its chart: `finalized`, 253 one-minute candles,
-  and the journal has its result.
-- The settled pass completes in the background: the full discovery (248,587 markets) at 23:05:40, then the
-  recently settled markets (311,016) at 23:10:31, about 4 min 51 s after the feed went live; the feed was not held
-  back.
-- The journal's lookups settle what was missed: 527 settlements learned since the restart, no lookup warnings.
-
-**Found by the check: scalar settlements were never scored.** 111 closed-market checks on 65 markets still waited:
-5 markets were still closed or inactive (correct), but **60 were finalized with result `scalar`**: binary
-markets that paid a fraction (50c a contract on a tennis walkover, 54c on an exact-match market; mostly ATP and
-ITF tennis, some golf and MLB, per Kalshi's public listing). The journal scored only yes or no, a gap from the
-M1.12b settlement scoring (`f810687`) rather than from M1.14. **Owner (2026-11-01): fix it in M1.14**, before
-momentum v1's review (~2026-11-04), whose scorecard left these checks out.
-
-- **Built** (`c74bf41`): `MarketInfo` keeps Kalshi's settlement value, and `settlement()` gives the result with what
-  a YES contract paid ($1, nothing, or the scalar value; a scalar without a value is never guessed). The `market`
-  channel records it (older recordings read it as null). The journal keeps `yes_paid_e6` with each settlement
-  (migration 4, backed up first; earlier rows backfilled as $1 or nothing) and scores a closed check at that payout,
-  a NO check at the rest, after the entry fee. The lookup counts a scalar as settled.
-- **Tests:** a 54c scalar scored for YES (+$0.62) and NO (-$0.18) on 10 contracts bought at 46c; the journal keeps
-  and scores it; the upgrade backfill; `settlement()` for each result; a scalar found by the lookup; a replay's
-  market row. 1,654 passed, coverage 93.4%.
-- **Review** (`/code-review low`): 1 finding. A replay of a recording made before the change might fail on the
-  missing column. No change: Arrow parts go through `conform`, and real Parquet files from v0.1.15 read with the
-  new schema give the column as null (483,999 rows checked).
-- **Live check of the fix passed** on **v0.1.16** (test pre-release from `93610d8`, published 2026-11-01 23:27 MST;
-  installed by the owner; the journal opened read-only, the API with GET only):
-  - The journal was backed up first (23:28:15), then migrated to version 4; the 47,551 earlier settlements were
-    backfilled exactly (27,430 no at nothing, 20,121 yes at $1, none empty).
-  - All 60 scalar markets settled (145 scalar settlements in all), and their 105 closed checks are scored, 35 at
-    settlement; each of those is the payout less the cost less a whole-cent entry fee. The other 70 had a bid
-    when marked, so they are scored as sold at it (the M1.12b rule).
-  - The scorecard counts them. The 6 markets left waiting are Kalshi's 5 closed and 1 inactive, without a result.
-  - The lookups worked off the restart's backlog at their cap (100 a minute): 1,600 settled with 0 failures, all
-    done by 23:46, about 18 minutes after the start.
-
-## 1.R3 Base hardening after a fresh-eyes review (plan APPROVED 2026-11-02, all four answers as recommended; branches `m1/r3a`, then `m1/r3b`)
-
-**Why.** The owner asked for "a complete fresh-eyes sub-agent review of the project so far" (R16). Five read-only
-reviewers, one per area, read the whole code base: A money and the ledger, B the Kalshi feed, recording and
-replay, C the engine, journal, momentum and sources, D the API, security and the web terminal, E the platform,
-CI and docs. They found 55 problems, none a secret, an order path or float money; each top claim was checked
-against the code, and C2 and C4 against the live journal (read-only, counts only: 1,545 checks with no value,
-920 closed checks scored at a stale quote). **The owner approved M1.R3 as listed** (2026-11-02), then this plan with all four answers as recommended.
-
-**Two parts, two PRs, both before M2.4.** **M1.R3a** correctness and data (A, B, C), first, so the scorecard is
-right for momentum v1's review (~2026-11-04); **M1.R3b** security, release and docs (D, E). Each item gets a test
-(a script for the workflow items), the per-commit review, and a merge review with a fresh-eyes sub-agent.
-
-#### M1.R3a correctness and data
-
-| # | Problem | Fix |
-|---|---|---|
-| A1 | `ledger import` runs beside a live engine; the engine's kept book adds a fill another process committed, and later fills chain on the wrong position | Refused while the engine runs (like `restore`); the book takes only the entries `append_all` actually inserted |
-| A2 | An ACL error puts the key path into health, alerts and tracebacks | No path in `AclError`; a fixed `AuthError` message |
-| A3 | A damaged checkpoint stops every start; the CLI and engine share one fixed temp file | A damaged checkpoint is a named problem, not an exception; `write_text_atomic` uses a unique temp name |
-| A4 | A difference equal to resting orders counts as exact, though Kalshi was shown not to hold them back | Exact means a zero difference; the resting cost is kept as information |
-| A5 | Fills with one timestamp are recorded newest first (FIFO lots, M5) | A tie-break restores execution order within a time; existing records unchanged |
-| A7 | A derived settlement without a settlement time takes the archive time (can cross a tax year) | The market's settlement time, else its close time, never the archive time |
-| A8 | One failed heartbeat write leaves the state store inside a transaction | Roll back on failure, as `remember()` does |
-| A10 | Nothing stops demo fills entering the real chain | The environment and key fingerprint kept as a ledger bookmark at the next import; an import refused when either differs |
-| B1 | A snapshot lost in a second gap leaves a book broken until a reconnect | A gap clears the request; a request unanswered for 10 s is asked again (the test that enshrined the bug changes) |
-| B2 | A frame that fails to parse is dropped silently | Logged as a gap (rate-limited); on the book channel the books break and snapshots are asked |
-| B3 | Each 5 s recorder flush blocks the loop 30 to 68 ms | Buffers swapped on the loop; batches built and written by one writer thread per recorder |
-| B4 | The background lookup cap does not hold within one call (up to 200 at once) | Counted when a task is created, not when it runs |
-| B5 | The daily discovery dump blocks about 2.4 s; the index version moves on every put, re-sorting 560k markets | The dump in chunks off the loop; the version moves only on a real change; the prune every few minutes |
-| B6 | The feed queue's bound is 550 to 800 MB, minutes of backlog | 25,000 frames (about 15 s) |
-| B7 | Reading known trade ids blocks the loop about 0.5 s after a reconnect | On a worker thread |
-| B11 | A late snapshot recreates the book of an unwatched market | A snapshot makes a book only for a watched market |
-| B12 | `known_keys` rebuilt on every frame | Cached |
-| C2 | Checks taken just after a restart have no quote and stay unscored (1,545) | The quote wait runs from the later of the due time and the engine's start; checks marked more than a tolerance late are counted apart on the scorecard; the backlog in one transaction |
-| C3 | A feed answering "not modified" for 14 days re-sends its old items as new | A 304 refreshes the ids the feed last listed |
-| C4 | A closed check is scored at a stale quote instead of the settlement (920) | A closed check is scored at the settlement only (question 2); journal migration 5 clears the 920 scores so the next pass re-scores them |
-| C6 | The unsettled-markets query costs about 95 ms per pass at 30 days | A set kept in memory, updated on add and settle |
-| C7 | A false gap after a feed stopped on purpose; a GDELT DOC outage over an hour logged as recovered | The stop clears the feed's last good time; DOC windows past its timespan are `unrecoverable` |
-| C8 | The alert state file grows for ever | Entries older than the throttle are pruned |
-
-#### M1.R3b security, release and docs
-
-| # | Problem | Fix |
-|---|---|---|
-| D1 | A process holding the fixed port during a restart receives the session cookie, which still works on the fallback port | The cookie carries the port and is checked against `Host`; on a fallback the session key rotates (every window signs out) and an urgent alert says why |
-| D2 | Opening `/update?to=…` checks and installs with no click | The Update window waits for an **Install** button (the window's existing layout, one button; no new screen) |
-| D3 | A second `ikars_session` cookie locks the owner out | Any valid one is accepted |
-| D4 | Request bodies have no size limit (sign-in included) | `Content-Length` required and capped (4 KB sign-in, 64 KB otherwise) |
-| D5 | The Markets refresh asks for more than 200 subscriptions | The limit becomes 400 (twice a page) |
-| D6 | An 8-window layout uses every stream | 16 streams; the Update window opens none |
-| D7 | The headline rounds a sub-cent price | `cents()` as Copy order does |
-| D8 | Holding T, I or D toggles the answer | Key repeats ignored |
-| D9 | An older refresh hides a just-saved answer | A snapshot asked before the answer was saved keeps it |
-| E1 | The release job's write token is visible to every build step | Split: a build job with read-only rights and no stored credential, then a publish job that only uploads |
-| E2 | hatchling unpinned in the release build | Pinned, with a hashed build constraint |
-| E3 | Any `v*` tag publishes with no tests or checksums | Published only if the tagged commit's CI checks passed (question 3); a `SHA256SUMS` file and a build-provenance attestation |
-| E4 | A foreground `run` takes no engine lock | It takes `EngineLock` and refuses when the engine runs |
-| E5 | A rollback restores old data before an apply that may fail | A failed apply puts the newer data back (restore's undo list) |
-| E6 | A failed update leaves the engine down silently | An `updating` marker with a 15-minute deadline; then the watchdog restarts and alerts |
-| E7 | The watchdog task's command lacks `-I` | Added; the task is re-registered on the next start that finds the old command |
-| E8 | A legacy `portable.marker` puts data where an update wipes it | The marker is ignored inside the program folder; D12 describes `.portable` / `IKARS-data` |
-| E9 | The velopack SDK unpinned against the pinned `vpk` | Pinned `==1.2.161`; Dependabot's `nuget` watches `vpk`, grouped with it |
-| E10 | The data guard misses settings files, archives, logs, the sandbox file, `.claude/settings.local.json` | Names, folders and a content check for UNC and user-profile paths; `.claude/settings.local.json` in `.gitignore` |
-| E11 | A refused rollback leaves the stop markers behind | Cleared on refusal |
-| E12 | The code-signing privacy policy leaves out NWS, GDELT and the RSS feeds | Listed |
-| E13 | PLAN §5 and the README stale | Updated |
-| E14 | DEPENDENCIES.md stale (RSA for Ed25519, rows in use under "later", the Claude API in M2) | Corrected |
-| E15 | The 95% gate leaves out money modules | `pnl`, `ledger`, `ledger_import`, `portfolio`, `costs` added |
-
-**Not in M1.R3.** C1 (an empty side's false mid) and C5 (a window across an outage) change momentum's rule: they go
-to the Strategy review as **momentum v2** (~2026-11-04); v1 runs unchanged. Before that review a read-only replay of
-v1's week counts the recommendations that rest on a false mid, so its record is read with that in mind. C9 (the
-cost meter) stays in M2.6, before any paid plugin. Parked in PLAN §9: A6 (fee unit, question 4), A9 (restore
-fallback to older copies, M5), B8, B9, B10 (each needs a rare timing or an unconfirmed Kalshi behaviour).
-
-**Changes on the workstation.** No new packages (hatchling and velopack only pinned). Journal migration 5 re-scores
-the closed checks (question 2; backed up first). The ledger gains one bookmark (A10). The watchdog task is
-re-registered (E7). Settings unchanged. The release workflow gains `id-token` and `attestations` write rights in
-the publish job only (question 3).
-
-**Live checks** on a test release of each part:
-- R3a: upgrade clean; the scorecard counts late checks apart; no unscored check after a restart of over 10
-  minutes; the recorder's flush off the loop (the loop-lag metric); a forced parse failure logged as a gap (unit
-  only); ledger reconciles exactly; `ledger import` refused with the engine running.
-- R3b: the Update window waits for Install; a held fixed port signs the windows out with an alert (a scratch
-  listener); the watchdog task command has `-I`; the release itself built by the split workflow, with checksums.
-
-**Questions, answered by the owner (2026-11-02, all as recommended).**
-1. **Branch.** R3a touches code still in the open stack (#35 to #37: the journal, lookup, polling and GDELT).
-   Recommended: `m1/r3a` stacked on `m1/14` now, retargeted to `main` when the stack merges.
-2. **C4: closed checks.** Today a closed market's check is sold at the last bid if one was kept (the M1.12b rule).
-   Recommended: score a closed check at the settlement only, and re-score the 920 (journal migration 5).
-3. **E3: release gate.** Recommended: publish only if the tagged commit's CI checks are green (this keeps test
-   releases from PR branches), with a `SHA256SUMS` file and a build-provenance attestation.
-4. **A6: fee unit.** Kalshi charges your account at $0.0001; scores round each fee up to a cent (conservative).
-   Recommended: keep cents through v1's review, then decide with v2 (parked).
-
-#### 1.R3a built (2026-11-02)
-
-**Built** on `m1/r3a`, stacked on `m1/14`: `c2530b3` (A), `cd07cf2` (B), `0348da7` (C), merge-review fixes
-`8ead5f1`. No new packages. The API goes to 2.3 (`ScoreLineView.late`); the scorecard's "scored" cell reads
-"106 of 237 (9 late)" (the existing cell, no new screen).
-
-**What changed on the workstation when installed:** journal migration 5 (backed up first) clears the scores of
-closed checks sold at a kept quote, so they are scored again at settlement; the real ledger is bound to
-`production` at its first start (a bookmark); nothing else.
-
-**As built, against the plan:**
-- **A10 narrowed:** only the Kalshi environment is bound, not the key fingerprint. Binding the fingerprint would
-  stop every import at a routine key rotation; each start already records the fingerprint as an `app` record.
-  **Owner (2026-11-02): bind to the environment only.**
-- **A7:** the settlement time, else the market's close time (the plan); never the archive's time.
-- **B3:** the recorder's own writer thread builds and writes the batches; closing hours and reading trade ids run
-  there too, awaited off the loop. A failed write is a loss the heartbeat logs as a gap for its channel and time
-  range. The conversion holds the GIL, so it is done in 2,000-row parts (the loop runs between them).
-- **B5:** the version moves only on a real change, the dump yields every 5,000 markets, the prune runs every 10
-  minutes. Still on the loop: when volumes move, the next Markets request re-sorts the index (about 280 ms at
-  560k markets, at most once a minute). Parked in PLAN §9.
-- **B11:** a snapshot makes a book only for a watched market, once the recording has watch events (since
-  v0.1.13); an older recording keeps its books. The first subscription now watches before it asks.
-- **C2:** the scorecard counts checks taken more than 11 minutes after they fell due as `late`, apart from the
-  figures. A paused market is no longer "closed" (one `trading()` rule, live and replay).
-- **C3:** a run's first poll of a feed reads the whole reply (so the poller knows what it lists); a later 304
-  keeps those ids.
-
-**Tests:** 1,690 Python tests pass (93.5% coverage), 232 web unit tests, 20 Playwright screens; ruff, mypy
-(both runs), the data guard and gitleaks clean. Each new test was run against the old code and fails there.
-
-**Review.**
-- **Per commit** (`/code-review low`): `c2530b3` 1 fixed (the rest of a pass used a book another writer had
-  changed: rebuilt at once); `cd07cf2` none; `0348da7` none.
-- **Merge review** (`/code-review medium` and a fresh-eyes sub-agent, R16), 19 findings:
-
-  | # | Finding | Done |
-  |---|---|---|
-  | 1 | Migration 5 re-scores checks whose market left the index; with no fees and an old mark time they were given up at once (both reviewers; proved by the sub-agent) | The journal asks the lookup for those markets; the fees wait runs from the start; tested (`8ead5f1`) |
-  | 2 | A 304 refreshed every id of a shared scope (all news feeds), so none was ever forgotten | Only that feed's last listed ids; a run's first poll reads the whole reply; tested |
-  | 3 | The yielding dump could write a market's older details after a change made meanwhile | Each row is the market as it is when written, stamped then; tested |
-  | 4 | A7 fell back to the expiration time, which can be a scheduled date after the settlement | The settlement, else the close time (the plan) |
-  | 5 | A paused market counted as closed: its check waited for the settlement | Only ended statuses are closed; one `trading()` for live and replay; tested |
-  | 6 | A failed write was raised twice (to the waiter and to the next writer) | Losses kept for the gap log, raised only to the waiter (with 8) |
-  | 7 | A cancelled heartbeat's compaction and the shutdown's could share the pending list | `pop` guarded; two at once are safe |
-  | 8 | The unsettled set never dropped markets past the 30-day window | Dropped as the window moves; tested |
-  | 9 | `Ledger.append_all` kept its own BEGIN/ROLLBACK beside the new helper | On `transaction(immediate=True)` |
-  | 10 | A crash between write and rename leaves a uniquely named `.tmp` file | No change: a window of milliseconds on a few small files; a scan per write would cost more |
-  | 11 | (sub-agent) The batch conversion holds the GIL, so the loop still stalled per channel (27 ms measured) | Converted in 2,000-row parts |
-  | 12 | (sub-agent) Recordings before v0.1.13 have no watch events: B11 dropped all their books | Every snapshot kept until a recording names its watched markets; tested |
-  | 13 | (sub-agent) A replay across a recorded restart kept the old quotes and quote wait | A recorded start forgets the quotes; the replay restarts the journal's wait; tested |
-  | 14 | (sub-agent) A10 binds the environment only | No change: the owner chose the environment only (2026-11-02) |
-  | 15 | (sub-agent) Taking the buffer and queueing it were two lock sections: a trade-id read could pass between | One lock section; queued at once |
-  | 16 | (sub-agent) A failed write was raised into whichever caller wrote next | A loss logged by the heartbeat as a gap for its channel and times; tested |
-  | 17 | (sub-agent) A writer thread started after a close shared the stopped one's queue: the close could hang | Each thread its own queue; the join has a limit; tested |
-  | 18 | (sub-agent) Every bad book frame wrote a break event (hundreds a second) | Once per broken book; the no-ticker case clears the snapshot requests; tested |
-  | 19 | (sub-agent) A snapshot the state ignores was still handed on as an item | No item (live and replay) |
-
-**v0.1.17 published** (test pre-release from `ad44ffd`, 2026-11-02; release run green). Live checks pending the owner's install.
-
-**Live check on v0.1.17** (2026-11-02, installed by the owner; the engine started 10:48:11 MST; the API with GET
-only, the journal, ledger and state read-only, counts only):
+**Verified.** Python: 1,612 tests (27 for news), with made-up feeds, GKG rows and zips; `gdelt.py` 92%, `rss.py`
+97%, `polling.py` 95%; lint, types and the data guard clean. Live (counts and states only):
 
 | Check | Result |
 |---|---|
-| Upgrade | journal backed up, then schema 5; API 2.3; the real ledger bound to `production` |
-| C4 re-score | every closed check sold at a kept quote is now scored at its settlement (53,584 at settlement, none left sold); none given up for want of fees (the lookups: 706, 0 failures); 7 closed checks wait for their markets' results |
-| C2 scorecard | 30 min: 107,880 checks, 0 late; 60 min: 107,506 checks, 111 late, counted apart |
-| Ledger | verified, reconciles exactly, 0 errors |
-| Feed and recorder | connected, 100 of 100 books ready, no open gaps, every channel recording, no recording losses |
-| B3 flush stall | a bench at the live rates (864 ticker, 578 delta, 145 trade rows a second), measured with `sleep(0)` (Windows' timer floors `sleep(0.001)` at ~16 ms): the loop's worst gap per flush **10 to 15 ms**, against 26 to 32 ms before |
-| B11 and the restart replay | `ikars replay --compare --check-books --warmup-min 0` from 10:48:00 to 11:00:00 (across the recorded start): **120 of 120** recommendations matched, books 9,155 of 9,333 (all 2,072 settled ones agree); from 10:48:30 (19 s after the start, so momentum's first 19 s unseen) 111 of 120, as expected |
+| Dry run against the real sources (2026-11-01 about 20:00 MST, a scratch store) | GKG: one file gave 1,101 to 1,178 articles from 280 to 293 sources, all but a handful with a title, about half with the publisher's time; RSS: the 12 feeds gave 233 items with no errors, 232 with a time, all with a summary; ids all unique, no gaps; payloads average 1.2 KB (about 120 MB a day before compression); DOC searches answered 429 again, with one exception that returned nothing new |
+| Install of v0.1.12 (2026-11-01 about 20:39 MST, read only) | settings version 7, the version 6 file kept beside it first, plus the installer's pre-upgrade copy; `gdelt`, `momentum`, `nws` and `rss` running; RSS: all 12 feeds polled, no errors, none refused, 235 items, none flagged for repeated links; GKG: two index reads, one file recorded (521 articles), the bookmark on the newest file and nothing behind; DOC searches: all five answered 429, as expected (GDELT still refusing them) |
 
-**Found by the live check, fixed** (`2537c63`): the scoring query's `NOT (m.closed = 1 AND s.ticker IS NULL)` is
-NULL, not true, for a mark whose market state was not known, so **515 checks from v0.1.7 (2026-10-28, before the
-`closed` column) were never scored**, and since merge review 5 a check on a paused market would not be either.
-Now `m.closed IS NOT 1 OR s.ticker IS NOT NULL`; tested (fails on the old code); on a scratch copy of the live
-journal the 515 are scored at their kept bid and only the 7 closed ones still wait. Its live check needs a test
-release.
+The terminal's Health screen shows only each plugin's state; the per-feed cards are M2.7's (D29, mock-up first).
 
-**Seen, not R3a's** (to R3b): `/v1/hello` reports `engine_version` 0.0.0 (the release stamps Velopack's version,
-not the package's; `program.version` says 0.1.17); an open terminal's one-second stream pass costs about 25 to 35
-ms of loop time each second (portfolio, alerts, the recommendations page), older than R3a.
+**Review.** Per commit: `7c0d40d`, 1 found before committing, fixed (after a day-long outage, the poller logged the
+whole window as backfilled while GDELT also logged its oldest part as unrecoverable; now a backfilling source logs
+its own gaps). Merge review: `/code-review medium`, 10 findings, plus a fresh-eyes reviewer sub-agent (PLAN R16), 9
+findings; five found by both. All fixed in `a19a332` unless marked:
 
-**v0.1.18 published** (test pre-release from `899652b`, 2026-11-02; release run green) for the scoring fix's live check.
+| # | Finding | Done |
+|---|---|---|
+| 1 | A feed remembered every id it listed, including one another feed had claimed but then failed to send: that item was lost | Only ids it sent or no one holds are remembered; tested (both reviews) |
+| 2 | GKG unzip and parse ran on the event loop, about 50 ms a file and 4 files a read during a catch-up, against the 33 ms screen target | A worker thread (both) |
+| 3 | Any non-404 failure on one file (a damaged zip, too large) stalled the GKG stream for up to a day | A damaged or missing old file is logged and passed; tested |
+| 4 | Gaps were logged before delivery: a failed read logged its window again each retry, and the backfill entry was "done" before any file came | Logged at delivery, once; tested (both) |
+| 5 | Waiting for GDELT's API turn counted against the 60 s call timeout: the fifth search waited 40 s, a seventh always timed out | The turn is taken before the timed call (both) |
+| 6 | A 404 on a file just behind the newest was written off, though GDELT may still be publishing it | Only from two slots back; tested |
+| 7 | Titles were decoded twice, so `&lt;script&gt;` became markup and was dropped | Decoded once |
+| 8 | A store error in `emitted` left ids claimed until a restart | Released in `finally` (both) |
+| 9 | `Feed.max_bytes` was never used | Removed |
+| 10 | A redundant condition in the gap rule | One condition |
+| 11 | A backfill window that held a lost file was logged as both recovered and lost; a restart mid-catch-up logged an overlapping second backfill | The backlog's start is kept in the state store; the backfill leaves out lost windows; tested (sub-agent) |
+| 12 | GDELT's crawl time was recorded as the publisher's time | The publisher's time only; GDELT's stays in `gdelt_time` (sub-agent) |
+| 13 | The missed-file count divided as a float | Integer division (sub-agent) |
+| 14 | Only the newest file has an MD5 in the index | No change: documented; a backfilled file is checked by unzipping (sub-agent) |
+| 15 | `max_bytes or default` read 0 as the default | `is None` (sub-agent) |
 
-**The scoring fix's live check passed** on **v0.1.18** (2026-11-02, installed by the owner; read-only, counts
-only): no check with an unknown market state is left unscored (the 515 from v0.1.7 are scored: 495 with a value,
-24 with no price at that moment, with the few made since); only 8 closed checks wait for their markets' results.
-Journal schema 5 (no migration, so no new backup); the scorecard's checks unchanged in kind, more scored; the
-ledger verified and exact; the feed connected with 100 of 100 books ready and no open gaps; all four plugins
-running. **M1.R3a is built and checked**; PR #47 merges after #35, #36 and #37.
+**Open.** The gap check: a day of recording with no unlogged gaps (due 2026-11-02 evening); then the owner's merge of
+the stack (#35 → #36 → #37 → #47 → #48).
 
-#### 1.R3b built (2026-11-02)
+### Candidate family R. Reversion / fade (owner, 2026-11-01; not approved)
 
-**Built** on `m1/r3b`, stacked on `m1/r3a`: `c41000d` (D1 to D9), `83c16ad` (release: E1 to E3, E9, F1),
-`7eef70c` (platform: E4 to E8, E10, E11), `670b10e` (docs: E12 to E15), merge-review fixes `0454e16`. Two items
-added with the owner's go-ahead ("continue with the next M1.R3b", after the v0.1.17 live check named them):
-**F1** `/v1/hello` reports the installed program's version (Velopack's), never the packages' 0.0.0; **F2** the
-open terminal's one-second pass, investigated: each part measures well under a millisecond (the portfolio is cached,
-the recommendations page about 1 ms, the alert read 0.1 ms), reply p99 stays near 30 ms (inside D20 J), and the
-rest needs a sampling profiler: parked in PLAN §9.
+**Status.** Recorded in PLAN D13 (summary, not approved) and §9 (comes back through the M3 Signals proposal). Docs
+only: PR #38 merged as `935829d`. The owner's trade's figures stay out of the repository.
 
-No new runtime packages. Pinned: `hatchling` 1.32.4 (both packages' build backend, with hashed constraints in
-`tools/release/build-constraints.txt`) and `velopack==1.2.161` (as `vpk`). New pinned actions (each over 7 days
-old): `actions/upload-artifact` v7.0.2, `actions/download-artifact` v8.0.2, `actions/attest-build-provenance`
-v4.2.2. `dotnet-tools.json` moved to `.config/`, where Dependabot's `nuget` reads it.
+**The idea** (from the owner's manual in-play trade, 2026-11-01).
 
-**As built:**
-- **D1:** a cookie names its port (`issued.expires.port.signature`); cookies from before M1.R3 are refused, so one
-  `ikars open` after the upgrade. A fallback rotates the key and raises an urgent alert through the engine's own
-  desk. A program that takes the port and lets it go before the engine starts is not caught: parked for the M7
-  security review (PLAN §9).
-- **D2:** the Update window only reads (`GET /v1/update`) until **Install** is clicked; Cancel closes it.
-- **D4:** any `Transfer-Encoding`, or a `Content-Length` over 64 KB (4 KB to sign in), is refused before a read.
-- **E1, E3:** four jobs: gate (the tagged commit's `python`, `hygiene`, `web` and `CodeQL` passed: the
-  aggregate check on a pull request's commits, every `analyze (…)` job on main's), build (read-only token, no
-  stored credential, `SHA256SUMS` of this release's files only), attest (the provenance, in a job of its own),
-  publish (checks the sums; a draft until `SHA256SUMS` is beside the downloads).
-- **E6:** "Restart to update", Velopack's update hook and a rollback stop the engine "until" 15 minutes on; past
-  that the watchdog restarts it and alerts. `ikars stop` stays the owner's stop.
-- **E7:** the watchdog task runs `pythonw -I`; each start writes it again once (a stamp in the data folder) when
-  the Run value is this program's.
-- **E10:** the data guard also refuses `settings.toml`, `.claude/settings.local.json`, archives, logs, `.wsb`,
-  and `build`, `data`, `logs`, `backups`, `support` folders, and reads every staged text line for a UNC host or a
-  profile name that is not one of the placeholders the docs and tests use (`<nas>`, `127.0.0.1`, `someone`, ...).
+| Family | Edge over humans | Needs | Main risk |
+|---|---|---|---|
+| **R. Reversion / fade** | Humans over-react to an early setback, such as a heavy favourite's price dropping sharply in the first quarter, and the price comes back. Buy the drop and sell on the rebound. | A fair value to tell an over-reaction from a real repricing: other-venue odds (G7) or a live score feed (D5 option D, parked); before either exists, the pre-game price and the time left as a rough anchor. D14's scale-in / ladder and take-profit (or a bracket with a stop), the sizing cap (G2), and D7's fees on every fill. | Averaging down into a real repricing (an injury, say) compounds the loss, and a binary contract can go to 0. |
 
-**Tests:** 1,713 Python tests pass (93.5%; the money gate's seven modules 98%), 235 web unit tests, 20 Playwright
-screens; ruff, mypy, the data guard and gitleaks clean. The workflow was parsed and its permissions checked;
-`uv build` with the hashed constraints was run here (and refuses a changed hash: the sub-agent's probe).
+**Variants**, by how the position is built and closed:
+- **Averaging down / buying the dip.** Add to a position after the price falls, which lowers the average cost. The
+  exit target can be the first entry price, or only above the blended cost: the 2026-11-01 trade exited above its
+  blended cost but below its first entry, so the second lot rescued a first lot that was losing.
+- **Scale-in ladder.** The adds are planned at set price levels (D14). If each add is bigger than the last, it is a
+  martingale, which the sizing cap (G2) must forbid.
+- **Trading out.** Exit on the rebound instead of holding to settlement.
+- **Repeated round trips (range trading; scalping when the moves are small).** Re-enter after an exit and repeat the
+  cycle. Fees on each fill (D7) decide whether the small moves are worth taking.
 
-**Review.**
-- **Per commit** (`/code-review low`): `c41000d` none; `83c16ad` 1 fixed (the gate failed a tag whose commit
-  had a failed earlier release run: it now reads only the required checks); `7eef70c` none.
-- **Merge review** (`/code-review medium` and a fresh-eyes sub-agent, R16), 19 findings:
-
-  | # | Finding | Done |
-  |---|---|---|
-  | 1 | The port alert made a second alert desk on the engine's state file, saved from another thread | Sent through the Notices' desk and thread |
-  | 2 | Any port fallback (old connections too) raised a "hostile program" alert | Worded as a fallback; the rotation kept (the windows must sign in again either way) |
-  | 3 | `SHA256SUMS` and the attestation covered the earlier release's packages kept for the delta | Only this release's files; the attestation from the sums file |
-  | 4 | main's commits have no `CodeQL` check: every release tagged on main would wait and fail (proved on four merges) | `CodeQL` as main's `analyze (…)` jobs; tested |
-  | 5 | A required check "skipped" counted as passed | Only "success" passes; tested |
-  | 6 | The guard crashed on a staged text file that is not UTF-8 | Read with replacement |
-  | 7 | A rollback's undo could raise and hide the install's failure, leaving the stop marks | Guarded; the marks always go; tested |
-  | 8 | The sign-in signed with `ctx.port` (possibly None), the guard checked `ctx.port or 0` | One value |
-  | 9 | Every start ran `schtasks /Create` (up to 60 s) | Once per command, with a stamp; tested |
-  | 10 | The guard missed Markdown and forward-slash forms | Both; tested |
-  | 11 | `price()` cut at 4 places while saying never rounded | 6 places, zeros trimmed; tested |
-  | 12 | (sub-agent) A squatter that lets the port go before the engine binds keeps a valid cookie; a service worker could outlive a new key | Parked for the M7 security review, with the narrowing (PLAN §9) |
-  | 13 | (sub-agent) A rollback whose installer fails after IKARS exits leaves the newer program on the older data | Parked with M5's restore work (PLAN §9) |
-  | 14 | (sub-agent) A foreground `run` holding the lock wrote no snapshot and ignored `ikars stop` | It answers the stop and writes the snapshot |
-  | 15 | (sub-agent) The guard's pre-filters let only backslash lines through; a git error passed as "no match"; false positives on pipes and Public | Fixed all three; tested |
-  | 16 | (sub-agent) Answer A, move to B before the reply: A's answer showed under B | Shown only on its own recommendation |
-  | 17 | (sub-agent) A rotated key that could not be saved left the old key file, trusted at the next start | Deleted; tested |
-  | 18 | (sub-agent) A refused swap left the update's stop for 15 minutes; a failed undo was swallowed | Cleared on every refusal; the undo reports what it could not put back; tested |
-  | 19 | (sub-agent) The OIDC token was in every publish step; the release went live before its sums; one `gh api` error failed the gate; Dependabot may not find a root `dotnet-tools.json` | An attest job; draft until the sums are attached; the gate asks again; the manifest in `.config/` |
-
-**Live checks** (on a test release): the release itself runs the new workflow (gate, attest, draft then
-published, `SHA256SUMS` beside the downloads); the engine reports its version in `/v1/hello`; one `ikars open`
-signs in (cookies now name the port); the Update window waits for Install; the watchdog task's command has `-I`
-and the stamp is written; a 70 KB body is refused (scratch, GET only otherwise).
-
-**v0.1.19 published** (test pre-release from `078b0ed`, 2026-11-02): the first through the four-job workflow; gate, build, attest and publish all passed; `SHA256SUMS` beside the six downloads; the installer's attestation found on GitHub. Live checks pending the owner's install.
+For the ledger and tax records, a laddered position closes lot by lot under FIFO (D18), so one exit can close a
+first lot at a loss and a later lot at a gain. Whether wash-sale rules reach event contracts is a question for M5's
+tax export. R is the opposite of momentum: on the same drop, the momentum rule (M) would point the other way. If both
+are approved, the Strategy review (G19) compares their records on the same markets.

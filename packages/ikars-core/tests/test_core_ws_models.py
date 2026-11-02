@@ -192,7 +192,7 @@ def test_bytes_frames_parse_too() -> None:
     assert parse_frame(frame("ticker", TICKER).encode()).type == "ticker"
 
 
-# What the real service sent on 2026-10-24 (live capture, BUILD-LOG K1a.5), with invented values.
+# What the real service sent on 2026-10-24 (live capture, KAPS's BUILD-LOG K1a.5); invented values.
 REAL_TICKER = {
     "type": "ticker",
     "sid": 1,

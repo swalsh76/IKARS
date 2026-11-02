@@ -12,9 +12,8 @@ of a Design canvas; `canvas.json` lays them out. All data in them is made up (`K
 | `Health.dc.html` | Health |
 | `Alerts.dc.html` | Alerts by priority, and hotkeys |
 | `Layout.dc.html` | A two-monitor layout sketch |
-| `Settings.html` | Settings (M1.8b-1; static HTML, made-up values; for approval) |
-| `Wizard.html` | The first-run wizard (M1.8b-1; static HTML, made-up values; for approval) |
+| `Settings.html` | Settings (M1.8b-1; static HTML, made-up values) |
+| `Wizard.html` | The first-run wizard (M1.8b-1; static HTML, made-up values) |
 
-**Status:** approved for now by the owner (2026-10-27), and revisable before M1.8 builds the screens. Since the
-D1 amendment (2026-10-27) the terminal is a web app, so these HTML and CSS mock-ups are its starting point.
-M1.8 follows these screens; any change to them is drawn here first.
+**Status:** approved by the owner (2026-10-27; Settings and the wizard with M1.8b-1). The web terminal was built
+from them. A new screen, or a change to one, is drawn here and approved before it is built (R9).

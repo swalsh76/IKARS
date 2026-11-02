@@ -84,12 +84,12 @@ in use since M1.8a-web-2a (above).
 
 | What | Slice | Base or optional | Licence | Install note |
 |---|---|---|---|---|
-| DuckDB | M1.5 onward (queries, D4) | base | MIT | Python wheel. |
+| DuckDB | when the first analysis needs it (D4; not used yet) | base | MIT | Python wheel. |
 | PDF/A writer for the tax package | M5 (D18) | base | to choose | Library chosen in M5's plan. |
 | Claude API (`anthropic` SDK) | an M3 decision (D24 as amended: M2 uses the local model only) | base | MIT | An API key in an environment variable or DPAPI; a monthly cost ceiling (D21-5). |
 | **NVIDIA driver with CUDA 12.8 or later** | M2 onward (D15) | optional | proprietary | Blackwell (`sm_120`) needs CUDA 12.8+. The user installs the driver; IKARS never does. |
 | ONNX Runtime (CUDA) and sentence-transformers models | M2 (D15 embeddings) | optional extra | MIT; model licences per model | Downloaded on demand from the terminal's settings, never bundled (D12). |
-| Local LLM runtime (llama.cpp server, Ollama or ONNX Runtime GenAI) and a 7 to 14B quantised model | M2 (D9) | optional extra | MIT (runtimes); model licences per model | Chosen by measured speed and quality in the slice; downloaded on demand. |
+| Local LLM | M2.6 (D9, D24) | outside service | per model | M2 uses an OpenAI-style server on the home network (D24): nothing installed on the workstation; its key in a user environment variable, never in the repository. A quantised model on the workstation's GPU remains an option behind the same interface. |
 | XGBoost (CUDA) or LightGBM; PyTorch (cu128) for sequence models; CuPy for sweeps | M3 to M5 (D15, D16) | optional extra | Apache-2.0; MIT; BSD-3; MIT | CUDA wheels run to gigabytes: optional, on demand. CPU fallbacks for each. |
 | Other-venue prices (exchange WebSockets, odds APIs) | later milestones (D19 G7) | plugin | per source | A paid odds API counts against the cost ceiling. |
-| Code signing (SignPath free plan or Azure Trusted Signing) | M1.9 (D12) | build only | service | Removes SmartScreen warnings; chosen in the packaging slice. |
+| Code signing (SignPath Foundation's free plan) | applied for in M1.9b (D12) | build only | service | Removes SmartScreen warnings; unsigned until it is approved ([CODE-SIGNING.md](CODE-SIGNING.md)). |
