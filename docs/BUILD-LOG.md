@@ -3208,3 +3208,47 @@ yet. **Owner:** ignore it, dated, in `web/pnpm-workspace.yaml`; its removal is p
   | 10 | Codes were checked only hourly, so feeds started up to an hour late | Every 10 minutes |
 
 **M2.2 built and checked live (0.1.11; gap check and quiet hours passed 2026-11-01).** It waits for the owner's merge.
+
+## 2.3 News (plan APPROVED 2026-11-01)
+
+**Probes while planning (2026-11-01, public GETs):**
+- **GDELT's DOC 2.0 API** answered every query with 429 ("one request every 5 seconds"), even 90 seconds apart, and
+  a 15-minute span was refused as too short. A query returns at most 250 articles.
+- **GDELT's raw files over HTTPS work.** `lastupdate.txt` names the newest 15-minute files. The GKG file was 2.5 MB
+  zipped (7.5 MB unzipped) with `max-age=3600` and an ETag. It held 551 articles from 150 sources, every one with
+  its title. That is about 240 MB a day to download.
+- **Government feeds** answer, most with ETag or Last-Modified: the Fed, BEA, Census, EIA, the National Hurricane
+  Center, the White House, SEC, FDA and USGS. BLS refuses the User-Agent (403), and Treasury's feed address needs
+  finding.
+
+**Owner, 2026-11-01:** approved as proposed.
+- **GDELT:** both. The GKG files are the main stream, and DOC API topic queries are added when it answers, with
+  duplicates removed between them (D23 amended).
+- **RSS:** government feeds only to start. Publisher feeds come only by the owner's decision, feed by feed.
+- **Parser:** `defusedxml` and a small parser of our own.
+- **The rest as shown:**
+  - a feed without a recorded terms note is not polled;
+  - duplicates are removed by cleaned link across all news feeds;
+  - settings version 7 holds the starting list;
+  - no terminal change until M2.7;
+  - a dry run, then a test release on the owner's word.
+
+**The plan:**
+- **`gdelt` plugin:**
+  - `lastupdate.txt` is checked every 2 minutes, and each new GKG file is fetched once.
+  - The zip is opened safely: one member only, with caps on the unzipped size and the ratio.
+  - Kept: the title, link, source, GDELT's time, the publisher's time, and the themes, places, people,
+    organisations and tone. Quotations and article text are never kept.
+  - Missed files are fetched by name, up to 24 hours back, with their true (late) received time, and logged as
+    backfilled.
+  - DOC API topic queries from the settings run every 15 minutes, at most one GDELT API request every 10 seconds.
+- **`rss` plugin:**
+  - RSS 2.0 and Atom, read with `defusedxml`.
+  - Kept: the headline, link, publisher time, and the feed's summary as text, cut to 1,000 characters.
+  - Each feed's interval is in the settings, 5 minutes by default.
+- **Duplicates:** the id is the cleaned link (tracking parameters, `www.` and the fragment dropped). It is shared
+  across every news feed through a "seen" scope in the polling base. The first source to deliver a link wins.
+- **Settings version 7:** `[news]` with the GDELT switch, the topic queries and the feeds. Each feed has a `terms`
+  note; without one it is not polled, and health says why.
+- **Docs:** a terms row per feed in `docs/research/sources.md`, plus DEPENDENCIES.
+- **New package:** `defusedxml` 0.7.1 (PSF-2.0, no dependencies; already in the lock for development).
