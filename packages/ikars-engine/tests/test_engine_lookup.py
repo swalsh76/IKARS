@@ -212,3 +212,15 @@ async def test_the_settled_load_moves_the_index_version_once(tmp_path: Path) -> 
     before = index.version
     assert await rig.discovery.recent_settled() == 3
     assert index.version == before + 1
+
+
+async def test_the_background_cap_holds_within_one_call(tmp_path: Path) -> None:
+    """M1.R3 B4: the cap counted lookups once they ran, so one call started every one it was given
+    (up to 200 after a restart), queueing everything else that shares the request budget."""
+    from ikars_engine.kalshi.lookup import BACKGROUND_AT_ONCE
+
+    rig = Rig(tmp_path, [])
+    lookup = MarketLookup(rig.kalshi.data(), rig.discovery.index, rig.clock.now_ns)
+    lookup.want([f"KXT-26JAN01-{n}" for n in range(3 * BACKGROUND_AT_ONCE)])
+    assert len(lookup._tasks) == BACKGROUND_AT_ONCE
+    await lookup.stop()

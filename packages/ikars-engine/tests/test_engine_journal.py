@@ -278,3 +278,111 @@ def test_a_journal_from_v0_1_7_gains_settlements_with_a_backup(tmp_path: Path) -
     journal.settle("KXDEMO-26JAN01-T50", "no", 0, T0)
     journal.close()
     assert list(tmp_path.glob("journal.*.bak.sqlite"))  # the old file kept first
+
+
+def test_after_a_restart_a_check_due_meanwhile_waits_for_a_quote(tmp_path: Path) -> None:
+    """M1.R3 C2: the quote wait ran from the due time, so every check due while the engine was down
+    was taken at the first pass, before any quote had come, and could never be scored."""
+    clock = VirtualClock(T0)
+    quotes: dict[str, tuple[int | None, int | None]] = {}
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.add(item("r1", T0, rec()))  # made before the engine stopped
+    clock.advance_to(T0 + 45 * 60 * S)  # back 45 minutes on: the 30-minute check is overdue
+    service = JournalService(journal, quotes, clock.now_ns)
+    service._write([])
+    assert journal.recent()[0].marks == []  # no quote since the start: it waits
+    quotes["KXDEMO-26JAN01-T50"] = (440_000, 450_000)
+    clock.advance_to(T0 + 45 * 60 * S + 5 * S)
+    service._write([])
+    assert [(m.horizon_s, m.yes_bid_e6) for m in journal.recent()[0].marks] == [(1800, 440_000)]
+    journal.close()
+
+
+def test_closed_checks_sold_at_a_kept_quote_are_scored_again_at_settlement(tmp_path: Path) -> None:
+    """M1.R3 C4 (owner): migration 5 clears those scores; the next pass scores them as settled."""
+    import json
+
+    from ikars_core.fees import fee_schedule
+    from ikars_engine.journal import JOURNAL_MIGRATIONS
+    from ikars_engine.store import open_store
+
+    path = tmp_path / "journal.sqlite"
+    db = open_store(path, JOURNAL_MIGRATIONS[:4])  # the schema v0.1.16 shipped
+    payload = json.dumps(rec())
+    for rid, closed, at_settlement in (("sold", 1, 0), ("open", 0, 0), ("held", 1, 1)):
+        db.execute(
+            "INSERT INTO recommendation VALUES (?, 'momentum', '9f2ce1a0', ?, 'yes', ?, ?,"
+            " 'expired', NULL, 'momentum', ?)",
+            (rid, "KXDEMO-26JAN01-T50", T0, T0 + 1800 * S, payload),
+        )
+        db.execute(
+            "INSERT INTO mark VALUES (?, 1800, ?, 400000, 410000, ?, 1, -999, ?)",
+            (rid, T0 + 1800 * S, closed, at_settlement),
+        )
+    db.execute("INSERT INTO settlement VALUES ('KXDEMO-26JAN01-T50', 'yes', ?, 1000000)", (T0,))
+    db.close()
+    journal = Journal(path)  # migrated, backed up first
+    assert list(tmp_path.glob("journal.*.bak.sqlite"))
+    fees = fee_schedule("quadratic", 70_000)
+    journal.score(lambda ticker: fees, T0 + 3600 * S)
+    scores = {e.id: (e.marks[0].score_e6, e.marks[0].at_settlement) for e in journal.recent()}
+    assert scores["sold"][1] is True and scores["sold"][0] != -999  # at the $1 it paid
+    assert scores["open"] == (-999, False) and scores["held"] == (-999, True)  # untouched
+    journal.close()
+
+
+def test_the_unsettled_markets_are_kept_as_recommendations_come_and_settle(tmp_path: Path) -> None:
+    """M1.R3 C6: a 30-day query twice a minute on the loop; now read once and kept."""
+    path = tmp_path / "journal.sqlite"
+    journal = Journal(path)
+    journal.add(item("r1", T0, rec("KXA-1")))
+    assert journal.unsettled(T0) == ["KXA-1"]  # read once here
+    journal.add(item("r2", T0 + S, rec("KXB-1", expires_ns=T0 + 1800 * S)))
+    journal.settle("KXA-1", "yes", 1_000_000, T0 + 2 * S)
+    journal.add(item("r3", T0 + 3 * S, rec("KXA-1", expires_ns=T0 + 1800 * S)))  # settled: no
+    assert journal.unsettled(T0) == ["KXB-1"]
+    fresh = Journal(path)  # what the query says
+    assert fresh.unsettled(T0) == ["KXB-1"]
+    fresh.close()
+    assert journal.unsettled(T0 + 2 * S) == []  # past the window: dropped (merge review 8)
+    assert journal._unsettled == {}
+    journal.close()
+
+
+def test_a_check_whose_market_left_the_index_is_looked_up_then_scored(tmp_path: Path) -> None:
+    """M1.R3 merge review 1: a check scored again after the upgrade is days old and its market
+    has left the index: given up at once for want of fees, instead of looked up and scored."""
+    from ikars_core.fees import fee_schedule
+
+    ticker = "KXDEMO-26JAN01-T50"
+    clock = VirtualClock(T0 + 5 * 86_400 * S)  # five days on
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.add(item("r1", T0, rec()))
+    journal.mark("r1", 1800, T0 + 1800 * S, 400_000, 410_000, True)
+    journal.settle(ticker, "yes", 1_000_000, T0 + 3600 * S)
+    known: dict[str, Any] = {}
+    asked: list[str] = []
+    service = JournalService(journal, {}, clock.now_ns, fees=known.get, want=asked.extend)
+    service._write([])
+    assert asked == [ticker] and journal.recent()[0].marks[0].scored is False  # waits for it
+    known[ticker] = fee_schedule("quadratic", 70_000)  # the lookup came back
+    clock.advance_to(clock.now_ns() + 2 * S)
+    service._write([])
+    mark = journal.recent()[0].marks[0]
+    assert mark.at_settlement and mark.score_e6 is not None
+    journal.close()
+
+
+def test_a_check_whose_market_state_was_not_known_is_scored(tmp_path: Path) -> None:
+    """M1.R3 live check: the query's NOT (closed = 1 AND ...) is NULL for a mark whose state was not
+    known, so such checks (515 from v0.1.7, and any on a paused market) were never scored."""
+    from ikars_core.fees import fee_schedule
+
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.add(item("r1", T0, rec()))
+    journal.mark("r1", 1800, T0 + 1800 * S, 440_000, 450_000, None)  # not known: no settlement
+    fees = fee_schedule("quadratic", 70_000)
+    assert journal.score(lambda ticker: fees, T0 + 1800 * S) == 1
+    mark = journal.recent()[0].marks[0]
+    assert mark.scored and mark.score_e6 is not None and not mark.at_settlement
+    journal.close()

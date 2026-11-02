@@ -40,6 +40,7 @@ from ikars_core.endpoints import MarketData
 from ikars_core.ws import Data, Reconnected, ResubscribeFailed, SequenceGap
 from ikars_core.ws_models import (
     ORDERBOOK_CHANNEL,
+    Frame,
     MarketLifecycleMsg,
     OrderbookDeltaMsg,
     OrderbookSnapshotMsg,
@@ -76,6 +77,7 @@ FULL_BOOKMARK = "discovery.full_ns"
 MINUTE_NS = 60 * 1_000_000_000
 BACKFILL_RECENT_NS = 2 * 60 * MINUTE_NS  # earlier backfills' rows, by when they were fetched
 NS = 1_000_000_000
+SNAPSHOT_RETRY_NS = 10 * NS  # a snapshot asked for and not come by then is asked again (M1.R3 B1)
 CHANNEL_OF_TYPE = {
     "ticker": "ticker",
     "trade": "trade",
@@ -125,6 +127,7 @@ class Intervals:
     backfill_s: float = 10.0
     rebalance_s: float = 300.0
     governor_s: float = 600.0
+    prune_s: float = 600.0  # markets long settled leave the index this often (M1.R3 B5)
     backfill_pad_s: int = 5
     backfill_slice_s: int = 3_600
     backfill_attempts: int = 5
@@ -181,11 +184,12 @@ class KalshiSource:
         self.book_changed_ns = self.state.book_changed_ns
         self.book_version = self.state.book_version
         self._checkpoint_ns = 0  # the start of the hour last checkpointed
+        self._pruned_at = 0  # when the index was last pruned
         self._pump_at = 0  # the received time of the newest frame the pump has handled
         self._stamp = 0  # the newest feed event's or checkpoint's stamp: they never tie or reorder
         self._live_since = 0  # when the subscriptions went live: a loss starts here at the latest
         self._snapshots = 0
-        self._snapshot_wanted: set[str] = set()  # asked for, not yet arrived
+        self._snapshot_wanted: dict[str, int] = {}  # asked for, not yet arrived: when asked
         self._retrying: set[str] = set()  # subscriptions being sent again
         self._error_gap_at: dict[str, int] = {}
         self._side_tasks: set[asyncio.Task[None]] = set()
@@ -302,10 +306,36 @@ class KalshiSource:
         log.warning("feed event failed", extra={"event": type(event).__name__, "error": repr(exc)})
         frame = getattr(event, "frame", None)
         channel = CHANNEL_OF_TYPE.get(getattr(frame, "type", ""), "feed")
+        self._error_gap(channel, "processing error", repr(exc)[:300])
+
+    def _error_gap(self, channel: str, reason: str, detail: str) -> None:
+        """A gap for a failure on ``channel``, at most one per ``error_gap_s`` (failures come in
+        runs)."""
         now = self._clock.now_ns()
         if now - self._error_gap_at.get(channel, -(10**30)) >= self._every.error_gap_s * NS:
             self._error_gap_at[channel] = now
-            self._gap(channel, "processing error", now, repr(exc)[:300])
+            self._gap(channel, reason, now, detail)
+
+    def _unparsed(self, channel: str, frame: Frame) -> None:
+        """A frame whose message did not fit its model: a gap, and on the book channel its market's
+        book is broken (every book, when the market cannot be read) until a snapshot comes, through
+        a recorded feed event so a replay does the same (M1.R3 B2)."""
+        self._metrics.count("kalshi.frames.unparsed")
+        self._error_gap(channel, "unparsed frame", frame.error or "")
+        if channel != "book":
+            return
+        message = frame.raw.get("msg")
+        ticker = message.get("market_ticker") if isinstance(message, dict) else None
+        if isinstance(ticker, str):
+            book = self.state.books.get(ticker)
+            if book is not None and not book.broken:  # once, not per bad frame (review 9)
+                self._feed_event("break", "book", ticker)
+            if ticker in self.watched.current:
+                self._request_snapshots([ticker])
+        else:
+            self._feed_event("sequence_gap", "book", "a frame failed to parse")
+            self._snapshot_wanted.clear()  # as for a sequence gap
+            self._request_snapshots(sorted(self.watched.current))
 
     async def _recent_settled(self) -> None:
         try:
@@ -324,7 +354,10 @@ class KalshiSource:
         message = frame.payload
         at = event.received_ns
         channel = CHANNEL_OF_TYPE.get(frame.type)
-        if channel is None or message is None:
+        if channel is None:
+            return
+        if message is None:  # a known type that failed its model: never dropped unsaid (M1.R3 B2)
+            self._unparsed(channel, frame)
             return
         self.last_received[channel] = at
         self._pump_at = max(self._pump_at, at)
@@ -347,12 +380,13 @@ class KalshiSource:
             self.recorder.write("lifecycle", row)
             item = item_of("lifecycle", row)
         elif isinstance(message, OrderbookSnapshotMsg):
-            self.state.snapshot(message, at)
-            self._snapshot_wanted.discard(message.market_ticker)
+            kept = self.state.snapshot(message, at)
+            self._snapshot_wanted.pop(message.market_ticker, None)
             self._snapshots += 1
             for row in snapshot_rows(message, self._snapshots, at):
                 self.recorder.write("book_snapshot", row)
-            item = snapshot_item(message, self._snapshots, at)
+            # an unwatched market's (late) snapshot is recorded, never handed on (review 10)
+            item = snapshot_item(message, self._snapshots, at) if kept else None
         elif isinstance(message, OrderbookDeltaMsg):
             ticker = message.market_ticker
             self.watched.note_delta(ticker)
@@ -409,12 +443,18 @@ class KalshiSource:
 
     def _request_snapshots(self, tickers: list[str]) -> None:
         """Ask for fresh snapshots off the pump (a command waits for its reply, which comes through
-        the pump); a market already asked for is not asked again until its snapshot comes."""
-        wanted = [t for t in tickers if t not in self._snapshot_wanted]
+        the pump); a market already asked for is asked again only once its request is
+        ``SNAPSHOT_RETRY_NS`` old, as its snapshot may have been lost (M1.R3 B1)."""
+        now = self._clock.now_ns()
+        wanted = [
+            t
+            for t in tickers
+            if now - self._snapshot_wanted.get(t, -SNAPSHOT_RETRY_NS) >= SNAPSHOT_RETRY_NS
+        ]
         sid = self._feed.sid_of(ORDERBOOK_CHANNEL)  # looked up each time: a reconnect changes it
         if sid is None or not wanted:
             return
-        self._snapshot_wanted.update(wanted)
+        self._snapshot_wanted.update(dict.fromkeys(wanted, now))
         self._side_task(self._snapshot(sid, wanted), "snapshot")
 
     async def _snapshot(self, sid: int, tickers: list[str]) -> None:
@@ -422,7 +462,8 @@ class KalshiSource:
             await self._feed.get_snapshot(sid, tickers)
             self._metrics.count("kalshi.book.snapshot_requests")
         except Exception as exc:
-            self._snapshot_wanted.difference_update(tickers)  # free to ask again
+            for ticker in tickers:  # free to ask again
+                self._snapshot_wanted.pop(ticker, None)
             log.warning("snapshot request failed", extra={"error": repr(exc)})
 
     # --- losses ------------------------------------------------------------------------------
@@ -475,6 +516,7 @@ class KalshiSource:
         if channel == "book":
             # every book is broken until its snapshot comes: a gap never reads as a sound book
             self._feed_event("sequence_gap", "book", f"expected {event.expected}, got {event.got}")
+            self._snapshot_wanted.clear()  # one asked for may be among the frames lost (M1.R3 B1)
             self._request_snapshots(sorted(self.watched.current))
 
     def _resubscribe_failed(self, event: ResubscribeFailed) -> None:
@@ -523,7 +565,11 @@ class KalshiSource:
         unlisted = [
             t for t in self.quotes if t not in index.markets and self.changed_ns.get(t, 0) < began
         ]
-        self._forget([*index.prune(began), *unlisted])
+        pruned: list[str] = []
+        if began - self._pruned_at >= self._every.prune_s * NS:  # a scan of the whole index
+            self._pruned_at = began
+            pruned = index.prune(began)
+        self._forget([*pruned, *unlisted])
         for gap in self._state.gaps("open"):
             if gap.recovery == "discovery" and gap.end_ns <= began:  # this cycle covered it
                 self._state.finish_gap(gap.id, "done", "a discovery cycle ran after it")
@@ -543,9 +589,12 @@ class KalshiSource:
 
     async def _heartbeat(self) -> None:
         self._heartbeat_now()
+        for channel, start, _, error in self.recorder.take_losses():  # rows never written
+            self._gap(channel, "recording failed", start, error)
         self._checkpoint(self._clock.now_ns())
-        if self.recorder.close_finished(self._clock.now_ns()):  # flushes too
-            await asyncio.to_thread(self.recorder.compact_pending)  # seconds of work: off the loop
+        # both waits on the recorder's writer thread: off the loop (M1.R3 B3)
+        if await asyncio.to_thread(self.recorder.close_finished, self._clock.now_ns()):
+            await asyncio.to_thread(self.recorder.compact_pending)  # seconds of work
         if self._signer is not None:
             self._signer.offset_ms = self._skew.offset_ms
 
@@ -583,7 +632,11 @@ class KalshiSource:
         # an earlier backfill's rows carry the time they were fetched, not the trade's: read the
         # recent hours once, so overlapping gaps never store a trade twice (M1.8a-web-1a review)
         started = self._clock.now_ns()
-        recent = self.recorder.known_trade_ids(started - BACKFILL_RECENT_NS, started + MINUTE_NS)
+
+        async def known_ids(start: int, end: int) -> set[str]:  # off the loop (M1.R3 B7)
+            return await asyncio.to_thread(self.recorder.known_trade_ids, start, end)
+
+        recent = await known_ids(started - BACKFILL_RECENT_NS, started + MINUTE_NS)
         for low in range(first, last, self._every.backfill_slice_s):
             high = min(low + self._every.backfill_slice_s, last)
             now = self._clock.now_ns()
@@ -592,11 +645,9 @@ class KalshiSource:
                 self._state.set_bookmark(slice_key, began)
             # what the feed recorded in this slice, and what an earlier attempt at it stored (with
             # the time it was fetched, so in the hours since that attempt began)
-            known = recent | self.recorder.known_trade_ids(
-                low * NS - MINUTE_NS, high * NS + MINUTE_NS
-            )
+            known = recent | await known_ids(low * NS - MINUTE_NS, high * NS + MINUTE_NS)
             if began < now:  # resuming this slice: what the attempt that failed stored since
-                known |= self.recorder.known_trade_ids(began - MINUTE_NS, now + MINUTE_NS)
+                known |= await known_ids(began - MINUTE_NS, now + MINUTE_NS)
             # a slice that crosses the cutoff is read from both stores, split at the cutoff
             for historical, a, b in (
                 (True, low, min(high, cutoff)),
@@ -635,8 +686,15 @@ class KalshiSource:
             if ORDERBOOK_CHANNEL in self._retrying:
                 return  # refused after a reconnect and being sent again: not a second subscription
             if wanted:
-                await self._feed.subscribe(ORDERBOOK_CHANNEL, sorted(wanted))
+                # watched before asking: a snapshot can come before the answer, and the state keeps
+                # a snapshot only for a watched market (M1.R3 B11)
+                before = set(self.watched.current)
                 self._watch(wanted)
+                try:
+                    await self._feed.subscribe(ORDERBOOK_CHANNEL, sorted(wanted))
+                except Exception:
+                    self._watch(before)
+                    raise
             return
         # removals first, so the set never grows past its cap; the exchange's answer is the
         # truth after each step (a failed step leaves the set as it really is)

@@ -1470,6 +1470,9 @@
         "horizon_s": {
           "type": "integer"
         },
+        "late": {
+          "type": "integer"
+        },
         "mean_e6": {
           "anyOf": [
             {
@@ -1508,7 +1511,8 @@
         "scored",
         "above_zero",
         "mean_e6",
-        "median_e6"
+        "median_e6",
+        "late"
       ],
       "title": "ScoreLineView",
       "type": "object"
@@ -1974,5 +1978,5 @@
     "recommendations": "RecommendationPage"
   },
   "title": "IKARS loopback API",
-  "version": "2.2"
+  "version": "2.3"
 }

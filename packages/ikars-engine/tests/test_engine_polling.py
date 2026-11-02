@@ -152,7 +152,7 @@ def test_a_feed_is_asked_whether_it_changed_and_each_item_is_emitted_once(tmp_pa
     store.close()
 
 
-def test_a_restart_asks_changed_since_and_records_nothing_twice(tmp_path: Path) -> None:
+def test_a_restart_reads_the_feed_whole_and_records_nothing_twice(tmp_path: Path) -> None:
     first = Server([items("a", "b", headers={"Last-Modified": "Thu, 01 Jan 2026 00:00:00 GMT"})])
     emitted, _, clock, store = run_source(tmp_path, first, sleeps=0)
     assert [i.ref.id for i in emitted] == ["a", "b"]
@@ -162,7 +162,8 @@ def test_a_restart_asks_changed_since_and_records_nothing_twice(tmp_path: Path) 
     emitted, _, _, _ = run_source(tmp_path, again, sleeps=1, store=store, clock=later)
     assert [i.ref.id for i in emitted] == ["c"]
     assert later.slept[0] == pytest.approx(30.0)  # the next poll when it was due, not at once
-    assert again.requests[0].headers["If-Modified-Since"] == "Thu, 01 Jan 2026 00:00:00 GMT"
+    # a run's first poll reads the whole reply, so the poller knows what the feed lists (M1.R3 C3)
+    assert "If-Modified-Since" not in again.requests[0].headers
     store.close()
 
 
@@ -228,6 +229,40 @@ def test_an_engine_stopped_too_long_logs_the_missed_window(tmp_path: Path) -> No
     _, _, _, store = run_source(tmp_path, Server([items("a")]), sleeps=0, store=store)
     [gap] = store.gaps()
     assert gap.start_ns == T0 - 3_600 * NS and "the engine was not running" in gap.detail
+    store.close()
+
+
+def test_a_feed_stopped_on_purpose_logs_no_gap_when_it_starts_again(tmp_path: Path) -> None:
+    """M1.R3 C7: a city's feeds stopped because its markets closed kept their last good poll, so
+    starting them days later logged the whole time off as a gap."""
+    store = StateStore(tmp_path / "state.sqlite")
+    store.set_poll_feed("test-news.main", None, None, T0 - 3 * 86_400 * NS)
+    poller = Poller(store, FakeClock(0), user_agent("9.9"))
+    poller.closed("test-news.main")
+    asyncio.run(poller.aclose())
+    _, _, _, store = run_source(tmp_path, Server([items("a")]), sleeps=0, store=store)
+    assert store.gaps() == []
+    store.close()
+
+
+class Searches(News):
+    """A feed whose reply reaches back only an hour (GDELT's searches)."""
+
+    def feeds(self, ctx: PluginContext) -> list[Feed]:
+        return [Feed(name="test-news.main", url=self.url, every_s=self.every_s, reach_s=3_600.0)]
+
+
+@pytest.mark.parametrize(("off_s", "recovery"), [(1_800, "refetched"), (7_200, "unrecoverable")])
+def test_an_outage_longer_than_a_reply_reaches_is_unrecoverable(
+    tmp_path: Path, off_s: int, recovery: str
+) -> None:
+    """M1.R3 C7: a search over the last hour, down for longer, was logged as all recovered."""
+    store = StateStore(tmp_path / "state.sqlite")
+    store.set_poll_feed("test-news.main", None, None, T0 - off_s * NS)
+    _, _, _, store = run_source(tmp_path, Server([items("a")]), sleeps=0, source=Searches(),
+                                store=store)  # fmt: skip
+    [gap] = store.gaps()
+    assert gap.recovery == recovery
     store.close()
 
 
@@ -340,6 +375,23 @@ def test_an_item_still_listed_after_two_weeks_is_not_recorded_again(tmp_path: Pa
     store.close()
 
 
+def test_a_feed_unchanged_for_weeks_never_sends_its_old_items_again(tmp_path: Path) -> None:
+    """M1.R3 C3: a "not modified" answer refreshed nothing, so after two weeks of them the ids were
+    forgotten and the feed's next change re-sent every old item as new."""
+    server = Server([items("old", headers={"ETag": '"v1"'}), httpx.Response(304)])
+    daily = News(every_s=86_400.0)
+    emitted, _, clock, store = run_source(tmp_path, server, sleeps=15, source=daily)
+    assert [i.ref.id for i in emitted] == ["old"]  # then fifteen days of "not modified"
+    assert server.requests[1].headers["If-None-Match"] == '"v1"'
+    store.forget_seen(clock.now - 14 * 86_400 * NS)  # the daily prune
+    again = FakeClock(0)
+    again.now = clock.now + 60 * NS
+    server = Server([items("old", "new")])
+    emitted, _, _, _ = run_source(tmp_path, server, sleeps=0, store=store, clock=again)
+    assert [i.ref.id for i in emitted] == ["new"]
+    store.close()
+
+
 class Refuses(News):
     """Its spec does not let it emit what it reads: a fault in the plugin, not the feed."""
 
@@ -388,4 +440,22 @@ def test_what_went_out_before_an_emit_failed_is_remembered(tmp_path: Path) -> No
 
     asyncio.run(go())
     assert [s for s in sent if s != "fail"] == ["a", "b", "c"]  # a once, then b and c on the retry
+    store.close()
+
+
+def test_a_not_modified_keeps_only_that_feeds_ids(tmp_path: Path) -> None:
+    """M1.R3 merge review 2: feeds that share a scope (every news feed) must not keep each other's
+    ids for ever: a 304 refreshes only what that feed listed."""
+    store = StateStore(tmp_path / "state.sqlite")
+    clock = FakeClock(0)
+    poller = Poller(store, clock, user_agent("9.9"))
+    a = Feed(name="news.a", url=URL, every_s=60.0, seen="news")
+    b = Feed(name="news.b", url=URL, every_s=60.0, seen="news")
+    poller.emitted(a, ["1"], listed=True)
+    poller.emitted(b, ["2"], listed=True)
+    clock.now += 15 * 86_400 * NS
+    poller.unchanged(a)
+    store.forget_seen(clock.now - 14 * 86_400 * NS)
+    assert store.unseen("news", ["1", "2"]) == ["2"]
+    asyncio.run(poller.aclose())
     store.close()

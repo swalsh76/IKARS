@@ -15,6 +15,7 @@ Every call goes through the engine's REST client and its request budget; GET onl
 """
 
 import asyncio
+import functools
 import logging
 import re
 from collections import OrderedDict
@@ -51,7 +52,7 @@ class MarketLookup:
         self._tried: dict[str, int] = {}  # the journal's lookups: ticker -> when last asked
         # one lookup per ticker at a time: a second asker awaits the first's (merge review 2)
         self._flight: dict[str, asyncio.Task[MarketInfo | None]] = {}
-        self._tasks: set[asyncio.Task[None]] = set()
+        self._tasks: dict[str, asyncio.Task[None]] = {}  # the background lookups, by ticker
         self.lookups = 0
         self.failures = 0
         self.settled = 0  # unsettled recommendations' markets found settled
@@ -102,16 +103,24 @@ class MarketLookup:
         """Look up, in the background, the markets in ``tickers`` that are not known (a list's
         titles: they show on its next refresh). A few at a time; never waits."""
         for ticker in tickers:
-            if len(self._flight) >= BACKGROUND_AT_ONCE:
+            if len(self._tasks) >= BACKGROUND_AT_ONCE:  # counted as made, not as run (M1.R3 B4)
                 return
-            if self.info(ticker) is not None or ticker in self._flight or not TICKER.match(ticker):
+            if (
+                self.info(ticker) is not None
+                or ticker in self._tasks
+                or ticker in self._flight
+                or not TICKER.match(ticker)
+            ):
                 continue
             cached = self._found.get(ticker)
             if cached is not None and self._fresh(*cached):
                 continue
             task = asyncio.create_task(self._quietly(ticker), name=f"lookup.{ticker}")
-            self._tasks.add(task)
-            task.add_done_callback(self._tasks.discard)
+            self._tasks[ticker] = task
+            task.add_done_callback(functools.partial(self._finished, ticker))
+
+    def _finished(self, ticker: str, _: asyncio.Task[None]) -> None:
+        self._tasks.pop(ticker, None)
 
     async def settle(self, unsettled: list[str]) -> int:
         """One pass for the journal: the markets of unsettled recommendations that the index does
@@ -161,7 +170,7 @@ class MarketLookup:
                 log.warning("settlement lookups failed", extra={"error": type(exc).__name__})
 
     async def stop(self) -> None:
-        tasks = list(self._tasks)
+        tasks = list(self._tasks.values())
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

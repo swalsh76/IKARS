@@ -128,9 +128,10 @@ class Reconciliation:
 
     @property
     def exact(self) -> bool:
-        # Kalshi's balance is what is available for trading: a resting buy holds its cost back
-        # (M1.R 8). Either reading is exact; the record keeps both numbers.
-        return not self.positions and self.difference_e6 in (0, -self.reserved_e6)
+        # Kalshi's balance was shown live not to hold back a resting buy's cost (2026-10-27), so a
+        # shortfall equal to it is a difference like any other; the cost is kept as information
+        # (M1.R 8, M1.R3 A4)
+        return not self.positions and self.difference_e6 == 0
 
 
 @dataclass(slots=True)
@@ -225,6 +226,15 @@ class AccountImporter:
         self._in_book.clear()
         return self._book
 
+    def _keep(self, entries: list[Entry]) -> None:
+        """Append ``entries``, which the book already holds. One skipped was committed meanwhile
+        by another writer, whose record the next pass would apply again: the book is rebuilt
+        (M1.R3 A1)."""
+        added = self._ledger.append_all(entries)
+        self._in_book.update(added)
+        if len(added) < len(entries):
+            self._book = None
+
     async def run_once(self) -> ImportReport:
         try:
             return await self._run_once()
@@ -236,8 +246,10 @@ class AccountImporter:
 
     async def _run_once(self) -> ImportReport:
         first = self._ledger.bookmark(FIRST_DONE) is None
-        found = await self._read(first)
-        found.sort(key=lambda item: (item[0], item[1]))
+        listed = await self._read(first)
+        # Kalshi lists newest first, so the records of one time (an order sweeping several
+        # prices) are taken in the reverse of their listing: the order they were made (M1.R3 A5)
+        found = [f for _, f in sorted(enumerate(listed), key=lambda p: (p[1][0], p[1][1], -p[0]))]
         await self._look_up({m.ticker for _, _, m, _ in found if isinstance(m, (Fill, Settlement))})
         book = self._current_book()
         entries: list[Entry] = []
@@ -254,14 +266,16 @@ class AccountImporter:
                 log.warning("ledger: a fill arrived after a later one; flagged for the owner")
             book.add(entry)
             entries.append(entry)
-        self._in_book.update(self._ledger.append_all(entries))  # the book already holds these
+        self._keep(entries)
+        if self._book is None:  # another writer was here: the rest of the pass uses its records
+            book = self._current_book()
         if first:  # the history is in: never read it all again, whatever fails below
             self._ledger.set_bookmark(FIRST_DONE, str(self._clock.now_ns()))
         held = await self._account.positions()
         derived = await self._derive_archived(held, book)
-        self._in_book.update(self._ledger.append_all(derived))
         for entry in derived:
             book.add(entry)
+        self._keep(derived)
         reconciliation = await self.reconcile(held, book)
         log.info(
             "ledger import",
@@ -373,7 +387,10 @@ class AccountImporter:
         payout = value_e6(1_000_000, abs(held_e2)) if wins else 0
         if book.traded_e6.get(position.ticker, 0) + payout != position.realized_pnl_e6:
             return None
-        moment = market.settlement_ts or position.last_updated_ts
+        # never the archive time, which can fall in the next tax year (M1.R3 A7)
+        moment = market.settlement_ts or market.close_time
+        if moment is None:
+            return None
         settled_at = None if market.settlement_ts is None else market.settlement_ts.isoformat()
         evidence = {
             "archived_position": position.model_dump(mode="json"),

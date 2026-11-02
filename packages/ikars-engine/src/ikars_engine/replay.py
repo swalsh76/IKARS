@@ -234,8 +234,8 @@ class RecordingReplay:
                 if kept is None or not kept.ready:
                     self.state.snapshot(message, at)
                 return None
-            self.state.snapshot(message, at)
-            return snapshot_item(message, rows[0]["snapshot"], at)
+            applied = self.state.snapshot(message, at)
+            return snapshot_item(message, rows[0]["snapshot"], at) if applied else None
         if channel == "book_delta":
             self.state.delta(delta_message(row), at)
         elif channel == "ticker":
@@ -362,7 +362,7 @@ async def run_replay(
     valid when the plugins begin. Nothing outside ``out`` is written."""
     from ikars_engine.engine import Engine
     from ikars_engine.journal import Journal, JournalService
-    from ikars_engine.kalshi.discovery import OPEN_STATUSES
+    from ikars_engine.kalshi.discovery import trading as market_trading
     from ikars_engine.plugins import HostOptions, PluginKind, discover
 
     start_ns, end_ns = window
@@ -395,6 +395,8 @@ async def run_replay(
         if engine is not None:
             for name in sorted(rerun):
                 engine.host.restart(name)
+        if service is not None:  # its checks wait for quotes from the start (review 4)
+            service.started_ns = None
 
     replay = RecordingReplay(recordings, begin, end_ns, clock, rerun=rerun, tick=tick,
                              items_from=first, restart=restart)  # fmt: skip
@@ -406,7 +408,7 @@ async def run_replay(
 
     def trading(ticker: str) -> bool | None:
         info = markets.markets.get(ticker)
-        return None if info is None else info.status in OPEN_STATUSES
+        return market_trading(info)  # as live (merge review 5)
 
     service = JournalService(journal, replay.state.quotes, clock.now_ns, result=result,
                              trading=trading, fees=markets.fees_of)  # fmt: skip

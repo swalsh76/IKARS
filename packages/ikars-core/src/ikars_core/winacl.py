@@ -131,19 +131,19 @@ def other_readers(path: Path) -> list[str]:
         ctypes.byref(descriptor),
     )
     if status != 0:
-        raise AclError(status, f"cannot read the ACL of {path}")
+        raise AclError(status, "cannot read the file's ACL")
     try:
         if not dacl.value:
             return ["Everyone (no DACL)"]
         expected = EXPECTED_READERS | {_sid_string(owner.value or 0), current_user_sid()}
         info = _AclSizeInformation()
         if not _advapi32.GetAclInformation(dacl, ctypes.byref(info), ctypes.sizeof(info), 2):
-            raise AclError(ctypes.get_last_error(), f"cannot read the ACL of {path}")
+            raise AclError(ctypes.get_last_error(), "cannot read the file's ACL")
         readers: list[str] = []
         for index in range(info.AceCount):
             ace = ctypes.c_void_p()
             if not _advapi32.GetAce(dacl, index, ctypes.byref(ace)):
-                raise AclError(ctypes.get_last_error(), f"cannot read the ACL of {path}")
+                raise AclError(ctypes.get_last_error(), "cannot read the file's ACL")
             entry = ctypes.cast(ace, ctypes.POINTER(_AccessAllowedAce)).contents
             if entry.Header.AceType not in _ALLOW_TYPES:
                 continue  # deny entries only take rights away; other types do not apply to files

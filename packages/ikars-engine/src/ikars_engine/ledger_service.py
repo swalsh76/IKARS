@@ -17,11 +17,26 @@ from ikars_engine.taxzone import TaxZone
 
 log = logging.getLogger("ikars_engine.ledger")
 SETTINGS_HASH = "app.settings_sha256"
+ENVIRONMENT = "kalshi.environment"  # the Kalshi environment the real stream records (M1.R3 A10)
 ANNOTATION_KINDS = frozenset({"interest", "incentive", "fee", "funding", "adjustment"})
 
 
 def app_action(ledger: Ledger, now_ns: int, action: str, **fields: object) -> None:
     ledger.append(Entry("app", now_ns, "app", fields={"action": action, **fields}))
+
+
+def environment_problem(ledger: Ledger, environment: str) -> str | None:
+    """None when ``environment`` is the one this ledger records (or none is recorded yet); a
+    demo account's fills never join the real tax chain (M1.R3 A10)."""
+    bound = ledger.bookmark(ENVIRONMENT)
+    if bound is None or bound == environment:
+        return None
+    return f"this ledger records Kalshi's {bound} account, but IKARS is set to {environment}"
+
+
+def bind_environment(ledger: Ledger, environment: str) -> None:
+    if ledger.bookmark(ENVIRONMENT) is None:
+        ledger.set_bookmark(ENVIRONMENT, environment)
 
 
 def annotate(
@@ -57,6 +72,7 @@ class LedgerService:
         zone: TaxZone,
         *,
         key_fingerprint: str | None = None,
+        environment: str = "production",
         settings_sha256: str | None = None,
         every_s: float = 60.0,
     ) -> None:
@@ -66,6 +82,7 @@ class LedgerService:
         self._clock = clock
         self._zone = zone
         self._key = key_fingerprint
+        self._environment = environment
         self._settings = settings_sha256
         self._every = every_s
         self._task: asyncio.Task[None] | None = None
@@ -82,7 +99,12 @@ class LedgerService:
         """Walk the chain and compare it with the newest checkpoint. The runner calls this before
         the feed starts, so a long walk never delays a frame."""
         verified = self._ledger.verify()
-        problem = self._ledger.against_checkpoint(self._checkpoints) if verified.ok else None
+        problem = (
+            self._ledger.against_checkpoint(self._checkpoints)
+            or environment_problem(self._ledger, self._environment)
+            if verified.ok
+            else None
+        )
         self.verified = (
             verified if problem is None else replace(verified, ok=False, problem=problem)
         )
@@ -95,6 +117,7 @@ class LedgerService:
                 "ledger chain broken; nothing will be appended", extra={"problem": verified.problem}
             )
             return
+        bind_environment(self._ledger, self._environment)
         now = self._clock.now_ns()
         zone = {"tax_zone": self._zone.name, "tax_zone_source": self._zone.source}
         app_action(self._ledger, now, "engine_started", **zone)

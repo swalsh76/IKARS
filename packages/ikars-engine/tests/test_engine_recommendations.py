@@ -330,3 +330,17 @@ def test_the_scorecard_reads_without_writing(tmp_path: Path) -> None:
     assert scorecard(path, T0) == []
     with pytest.raises(sqlite3.OperationalError):  # read-only: a missing file is not made
         scorecard(tmp_path / "none.sqlite", T0)
+
+
+def test_late_checks_are_counted_apart_from_the_figures(tmp_path: Path) -> None:
+    """M1.R3 C2: a check taken hours late (the engine was down) was scored as the 30-minute one."""
+    path = tmp_path / "journal.sqlite"
+    journal = Journal(path)
+    journal.add(item("r1", made("KXa")))
+    journal.mark("r1", 1800, T0 + 1800 * S, 500_000, 510_000, False)  # on time: +$0.04
+    journal.add(item("r2", made("KXb")))
+    journal.mark("r2", 1800, T0 + 5400 * S, 600_000, 610_000, False)  # an hour late
+    journal.score(lambda ticker: FEES, T0 + 5400 * S)
+    (line,) = scorecard(path, T0)
+    assert (line.checks, line.scored, line.late, line.mean_e6) == (2, 1, 1, 40_000)
+    journal.close()

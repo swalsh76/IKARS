@@ -42,6 +42,7 @@ DOC_HOST = "api.gdeltproject.org"
 INDEX_EVERY_S = 120.0
 FILE_EVERY = timedelta(minutes=15)
 DOC_EVERY_S = 900.0
+DOC_REACH_S = 3_600.0  # a search reaches back an hour ("timespan": "1h")
 DOC_PER_SECOND = 0.1  # one request every 10 seconds, under GDELT's one every 5
 BACKFILL_S = 86_400  # missed files are fetched up to a day back (owner, 2026-11-01)
 FILES_PER_READ = 4  # a catch-up of a day takes about an hour, in small steps
@@ -224,7 +225,7 @@ def parse_doc(query: str, body: bytes) -> list[Found]:
 def doc_url(query: str) -> str:
     return DOC + "?" + urlencode({
         "query": query, "mode": "artlist", "format": "json", "maxrecords": 250,
-        "timespan": "1h", "sort": "datedesc",
+        "timespan": "1h", "sort": "datedesc",  # DOC_REACH_S
     })  # fmt: skip
 
 
@@ -346,5 +347,6 @@ class GdeltNews(PollingSource):
                 continue
             names.add(q.name)
             start(Feed(name=f"gdelt.q.{q.name}", url=doc_url(q.query), every_s=DOC_EVERY_S,
-                       accept="application/json", kind=KIND, seen=SEEN))  # fmt: skip
+                       accept="application/json", kind=KIND, seen=SEEN,
+                       reach_s=DOC_REACH_S))  # fmt: skip
         self._note["searches"] = sorted(names)

@@ -118,38 +118,53 @@ class ScoreLine:
     version: str
     horizon_s: int
     checks: int  # made in the period (scored, unscorable and waiting for a settlement)
-    scored: int
+    scored: int  # those on time with a score (the figures below are theirs)
     above_zero: int
     mean_e6: int | None
     median_e6: int | None
+    late: int = 0  # taken long after they fell due (the engine was down): not in the figures
 
 
-def scorecard(path: Path, since_ns: int) -> list[ScoreLine]:
+QUOTE_WAIT_NS = 600 * 1_000_000_000  # a check with no quote waits this long for one (the journal)
+# a check taken later than this after it fell due (the engine was down): counted apart on the
+# scorecard, as a price hours late is not the rule's 30- or 60-minute check (M1.R3 C2)
+LATE_NS = QUOTE_WAIT_NS + 60 * 1_000_000_000
+
+# a check and whether it was taken late (``late_ns`` after it fell due): the scorecard's rows
+_CHECKS = (
+    "SELECT r.strategy, r.version, m.horizon_s, m.score_e6,"
+    " m.at_ns > r.received_ns + m.horizon_s * 1000000000 + ? AS late"
+    " FROM recommendation r JOIN mark m ON m.id = r.id WHERE r.received_ns >= ?"
+)
+
+
+def scorecard(path: Path, since_ns: int, late_ns: int = LATE_NS) -> list[ScoreLine]:
     """Every strategy version's checks of recommendations made since ``since_ns``, from the
-    journal's kept scores (a read-only connection: call it on a worker thread)."""
+    journal's kept scores (a read-only connection: call it on a worker thread). A check taken more
+    than ``late_ns`` after it fell due is counted apart (M1.R3 C2)."""
     uri = path.resolve().as_uri() + "?mode=ro"
     lines = []
     with contextlib.closing(sqlite3.connect(uri, uri=True)) as db:
         groups = db.execute(
-            "SELECT r.strategy, r.version, m.horizon_s, COUNT(*), COUNT(m.score_e6),"
-            " SUM(m.score_e6 > 0), SUM(m.score_e6) FROM recommendation r JOIN mark m ON m.id = r.id"
-            " WHERE r.received_ns >= ? GROUP BY 1, 2, 3 ORDER BY 1, 2, 3",
-            (since_ns,),
+            f"WITH c AS ({_CHECKS}) SELECT strategy, version, horizon_s, COUNT(*), SUM(late),"  # noqa: S608
+            " COUNT(CASE WHEN NOT late THEN score_e6 END), SUM(NOT late AND score_e6 > 0),"
+            " SUM(CASE WHEN NOT late THEN score_e6 END) FROM c GROUP BY 1, 2, 3 ORDER BY 1, 2, 3",
+            (late_ns, since_ns),
         ).fetchall()
-        for strategy, version, horizon, checks, scored, above, total in groups:
+        for strategy, version, horizon, checks, late, scored, above, total in groups:
             mean = median = None
             if scored:
                 mean = total // scored
                 middle = [v for (v,) in db.execute(
-                    "SELECT m.score_e6 FROM recommendation r JOIN mark m ON m.id = r.id"
-                    " WHERE r.strategy = ? AND r.version = ? AND m.horizon_s = ?"
-                    " AND r.received_ns >= ? AND m.score_e6 IS NOT NULL"
-                    " ORDER BY m.score_e6 LIMIT ? OFFSET ?",
-                    (strategy, version, horizon, since_ns, 2 - scored % 2, (scored - 1) // 2),
+                    f"WITH c AS ({_CHECKS}) SELECT score_e6 FROM c"  # noqa: S608
+                    " WHERE strategy = ? AND version = ? AND horizon_s = ? AND NOT late"
+                    " AND score_e6 IS NOT NULL ORDER BY score_e6 LIMIT ? OFFSET ?",
+                    (late_ns, since_ns, strategy, version, horizon, 2 - scored % 2,
+                     (scored - 1) // 2),
                 )]  # fmt: skip
                 median = sum(middle) // len(middle)
             lines.append(ScoreLine(strategy, version, horizon, checks, scored, above or 0, mean,
-                                   median))  # fmt: skip
+                                   median, late or 0))  # fmt: skip
     return lines
 
 

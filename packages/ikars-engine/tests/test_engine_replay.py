@@ -131,6 +131,7 @@ async def test_feed_events_keep_the_replayed_books_as_live(tmp_path: Path) -> No
 
 def test_the_state_follows_snapshots_deltas_and_feed_events() -> None:
     state = KalshiState()
+    state.feed_event({"received_ns": 0, "event": "watch", "channel": "book", "detail": "M"})
     rows = [
         {
             "received_ns": 1,
@@ -159,6 +160,9 @@ def test_the_state_follows_snapshots_deltas_and_feed_events() -> None:
     assert state.books["M"].ready
     state.feed_event({"received_ns": 5, "event": "unwatch", "channel": "book", "detail": "M"})
     assert "M" not in state.books
+    state.snapshot(snapshot_message(rows), 6)
+    assert "M" not in state.books  # a late snapshot never brings an unwatched book back (M1.R3 B11)
+    state.feed_event({"received_ns": 6, "event": "watch", "channel": "book", "detail": "M"})
     state.snapshot(snapshot_message(rows), 6)
     state.ticker({"received_ns": 7, "ticker": "M", "price_e6": 1, "yes_bid_e6": 2, "yes_ask_e6": 3})
     state.feed_event({"received_ns": 8, "event": "forget", "channel": "", "detail": "M"})
@@ -243,17 +247,20 @@ async def test_late_rows_are_released_at_once_never_back_in_time(tmp_path: Path)
 # --- market details ------------------------------------------------------------------------------
 
 
-def test_the_index_records_a_market_when_its_details_change_not_its_volume() -> None:
+async def test_the_index_records_a_market_when_its_details_change_not_its_volume() -> None:
     rows: list[dict[str, Any]] = []
     index = MarketIndex(now_ns=lambda: T0)
     index.record = rows.append
     index.fee_terms["KXDEMO"] = ("quadratic", 70_000)
     index.put(Market.model_validate(market("A")))
+    version = index.version
+    index.put(Market.model_validate(market("A")))  # unchanged: nothing to re-sort (M1.R3 B5)
+    assert index.version == version
     index.put(Market.model_validate(market("A", volume="99.00")))  # volume only: not recorded
     index.put(Market.model_validate(market("A", status="closed")))
     assert [r["status"] for r in rows] == ["active", "closed"]
     assert rows[0]["fee_type"] == "quadratic" and rows[0]["fee_multiplier_e6"] == 70_000
-    assert index.dump() == 1 and rows[-1]["full"] is True
+    assert await index.dump() == 1 and rows[-1]["full"] is True
     info = index.markets["A"]
     row = market_row(info, None, T0)
     assert row["close_ns"] == (None if info.close_time is None else exact_ns(info.close_time))
@@ -473,6 +480,10 @@ def test_a_window_without_market_details_says_it_is_partial(tmp_path: Path) -> N
 
 def test_the_book_check_reads_empty_sides_and_counts_settled_books(tmp_path: Path) -> None:
     recorder = Recorder(tmp_path)
+    for ticker in ("M", "N"):  # a snapshot comes only for a watched market
+        recorder.write(
+            "feed", {"received_ns": T0, "event": "watch", "channel": "book", "detail": ticker}
+        )
     for side, price in (("yes", 400_000), ("no", 500_000)):
         recorder.write(
             "book_snapshot",
@@ -717,3 +728,20 @@ async def test_a_checkpoint_lands_between_the_frames_the_pump_really_handled(
     rows = list(merged_rows(tmp_path / "rec", T0 + HOUR, T0 + 2 * HOUR, ("book_snapshot",)))
     stamps = {r["received_ns"] - T0 - HOUR for _, r in rows if r["checkpoint"]}
     assert stamps and all(10 < s < 30 for s in stamps)  # after what was handled, not "now"
+
+
+def test_an_older_recording_keeps_its_books_and_a_start_forgets_the_quotes() -> None:
+    """M1.R3 merge review 3: a recording from before the watch events (v0.1.12 and earlier) must
+    still rebuild its books. Review 4: a recorded start is a new process, which knows no quote."""
+    rows = [{"received_ns": 1, "ticker": "M", "snapshot": 1, "clock": None, "checkpoint": False,
+             "side": "yes", "price_e6": 400_000, "count_e2": 100}]  # fmt: skip
+    older = KalshiState()
+    assert older.snapshot(snapshot_message(rows), 1) and older.books["M"].ready
+    newer = KalshiState()
+    newer.feed_event({"received_ns": 0, "event": "watch", "channel": "book", "detail": "N"})
+    assert not newer.snapshot(snapshot_message(rows), 1) and "M" not in newer.books
+    newer.ticker({"received_ns": 2, "ticker": "N", "price_e6": 1, "yes_bid_e6": 2, "yes_ask_e6": 3})
+    newer.feed_event({"received_ns": 3, "event": "reconnect", "channel": "book", "detail": ""})
+    assert "N" in newer.quotes  # a reconnect keeps them
+    newer.feed_event({"received_ns": 4, "event": "start", "channel": "", "detail": ""})
+    assert newer.quotes == {}

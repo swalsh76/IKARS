@@ -85,6 +85,17 @@ def test_priorities_quiet_hours_throttling_and_the_log(tmp_path: Path) -> None:
         desk.raise_alert(Alert("e", "loud", "x", "y"), NOON)
 
 
+def test_the_kept_times_are_only_those_that_still_throttle(tmp_path: Path) -> None:
+    """M1.R3 C8: a key per recommendation grew the state file for ever."""
+    desk = AlertDesk(FakeNotifier(), tmp_path, QUIET)
+    for n in range(5):
+        desk.raise_alert(Alert(f"recommendation:r{n}", NORMAL, "buy", "x"), NOON)
+    desk.raise_alert(Alert("recommendation:r9", NORMAL, "buy", "x"), NOON + timedelta(minutes=11))
+    assert list(desk.state.shown_ns) == ["recommendation:r9"]
+    again = AlertDesk(FakeNotifier(), tmp_path, QUIET)  # as saved
+    assert list(again.state.shown_ns) == ["recommendation:r9"]
+
+
 def test_the_digest_waits_for_the_hour_and_daylight(tmp_path: Path) -> None:
     toasts = FakeNotifier()
     desk = AlertDesk(toasts, tmp_path, QUIET)

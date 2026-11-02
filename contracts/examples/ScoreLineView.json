@@ -2,6 +2,7 @@
   "above_zero": 4,
   "checks": 12,
   "horizon_s": 1800,
+  "late": 1,
   "mean_e6": -42000,
   "median_e6": -28000,
   "scored": 10,

@@ -11,9 +11,11 @@ every feed:
   errors back off with jitter; a reply larger than the limit is refused; every call has a timeout.
   The User-Agent names IKARS and a contact (NWS requires one; owner, 2026-10-28: the repository's
   URL, and an email only from the local settings).
-- **Conditional GET.** The server's ``ETag`` and ``Last-Modified`` are kept in the state store, so a
-  restart asks "changed since?". Both are sent: NWS answers 304 to ``If-Modified-Since`` but its
-  weak ``ETag`` names the server that answered, so it never matches (M2.1 live probe).
+- **Conditional GET.** The server's ``ETag`` and ``Last-Modified`` are kept in the state store, and
+  every poll after a run's first asks "changed since?" (the first reads the whole reply, so the
+  poller knows what the feed lists: a "not modified" keeps those ids, however long it lasts: M1.R3
+  C3). Both are sent: NWS answers 304 to ``If-Modified-Since`` but its weak ``ETag`` names the
+  server that answered, so it never matches (M2.1 live probe).
 - **Once only.** Each feed remembers the ids it emitted (in the state store, for ``SEEN_DAYS``), so
   a restart or an overlapping page never records an item twice. Feeds that share a ``seen`` scope
   (M2.3: every news feed, by cleaned link) share those ids, so an item two of them list goes out
@@ -35,7 +37,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 import httpx
@@ -78,6 +80,16 @@ class Feed(msgspec.Struct, frozen=True, kw_only=True):
     # the source fetches what a gap missed and logs its own gaps, what it recovered and what it
     # could not, so the poller logs none for it (M2.3: GDELT's files; per-commit review)
     backfills: bool = False
+    # how far back one reply reaches (a search over the last hour); a gap longer than this lost
+    # what fell before it, so it is logged as unrecoverable (M1.R3 C7); None: the whole feed
+    reach_s: float | None = None
+
+
+class StopFeed(Protocol):
+    """Stops a feed by name; ``closed``: on purpose, as nothing it serves trades now, so the time
+    it is off is no gap (M1.R3 C7)."""
+
+    def __call__(self, name: str, *, closed: bool = False) -> None: ...
 
 
 class Found(msgspec.Struct, frozen=True, kw_only=True):
@@ -158,6 +170,8 @@ class Poller:
         # ids handed out by fresh() and not yet emitted, per scope: two feeds of one scope polled
         # at once never both send an item while the first is still going out
         self._claimed: dict[str, set[str]] = {}
+        # what each feed listed at its last full reply this run: a "not modified" lists it again
+        self._listed: dict[str, list[str]] = {}
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -181,7 +195,7 @@ class Poller:
         """The feed's reply, or None when it has not changed since the last good poll.
         ``turned``: the host's turn was already taken (``turn``)."""
         headers = {"Accept": feed.accept}
-        if feed.conditional:
+        if feed.conditional and feed.name in self._listed:  # a run's first poll reads it all
             etag, modified, _, _ = self._store.poll_feed(feed.name)
             if etag:
                 headers["If-None-Match"] = etag
@@ -268,8 +282,12 @@ class Poller:
         last_ok, healthy = health.last_ok_ns, max(feed.every_s, health.wait_s or 0.0)
         if not feed.backfills and last_ok is not None and now - last_ok > GAP_AFTER * healthy * NS:
             cause = health.last_error or "the engine was not running"
-            detail = f"no good poll ({cause}); the next one returned the feed's current items"
-            self.log_gap(feed.name, last_ok, now, "refetched", detail)
+            if feed.reach_s is not None and now - last_ok > feed.reach_s * NS:
+                detail = f"no good poll ({cause}); a reply reaches back only {feed.reach_s:.0f} s"
+                self.log_gap(feed.name, last_ok, now, "unrecoverable", detail)
+            else:
+                detail = f"no good poll ({cause}); the next one returned the feed's current items"
+                self.log_gap(feed.name, last_ok, now, "refetched", detail)
             health.gaps += 1
         if fetched is None:  # 304: the validators stay
             self._store.set_poll_ok(feed.name, now, wait_s)
@@ -326,11 +344,16 @@ class Poller:
         claimed.update(f.id for f in fresh)
         return fresh
 
-    def emitted(self, feed: Feed, ids: list[str], offered: Sequence[str] = ()) -> None:
+    def emitted(
+        self, feed: Feed, ids: list[str], offered: Sequence[str] = (), *, listed: bool = False
+    ) -> None:
         """``ids`` emitted, or still listed, by ``feed`` now; ``offered`` (what ``fresh`` handed
         out) is no longer claimed. An id another feed has claimed is not remembered here: that
-        feed may yet fail to send it (merge review 1)."""
+        feed may yet fail to send it (merge review 1). ``listed``: ``ids`` is all the reply listed,
+        kept for a later "not modified"."""
         now = self._clock.now_ns()
+        if listed:
+            self._listed[feed.name] = ids
         scope = feed.seen or feed.name
         claimed = self._claimed.get(scope, set())
         mine = set(offered)
@@ -341,6 +364,19 @@ class Poller:
         if self._pruned_ns is None or now - self._pruned_ns > 86_400 * NS:  # once a day
             self._pruned_ns = now
             self.forget_old()
+
+    def closed(self, name: str) -> None:
+        """``name`` stopped on purpose: its last good poll is forgotten, so starting it again later
+        logs no gap for the time it was off (M1.R3 C7)."""
+        self._store.clear_poll_ok(name)
+
+    def unchanged(self, feed: Feed) -> None:
+        """``feed`` answered "not modified": what it listed is still listed, so never forgotten,
+        however long it stays unchanged (an off-season feed: M1.R3 C3). Only its own ids: a scope
+        that several feeds share keeps forgetting what the others no longer list (review 2)."""
+        listed = self._listed.get(feed.name, [])
+        if listed:
+            self._store.remember(feed.seen or feed.name, listed, self._clock.now_ns())
 
     def forget_old(self) -> int:
         return self._store.forget_seen(self._clock.now_ns() - SEEN_DAYS * 86_400 * NS)
@@ -374,7 +410,7 @@ class PollingSource(PluginBase):
         ctx: PluginContext,
         poller: Poller,
         start: Callable[[Feed], None],
-        stop: Callable[[str], None],
+        stop: StopFeed,
     ) -> None:
         """Start the feeds. The default starts ``feeds()`` once; a source whose feeds come and go
         (M2.2: a city named by markets that open and close) overrides it, and calls ``start`` and
@@ -398,11 +434,13 @@ class PollingSource(PluginBase):
                     task = group.create_task(self._loop(feed, poller, ctx), name=feed.name)
                     running[feed.name] = task
 
-            def stop(name: str) -> None:
+            def stop(name: str, *, closed: bool = False) -> None:
                 task = running.pop(name, None)
                 if task is not None:
                     task.cancel()
                 poller.feeds.pop(name, None)  # a stopped feed leaves health (merge review 3)
+                if closed:
+                    poller.closed(name)
 
             await self.manage(ctx, poller, start, stop)
 
@@ -423,6 +461,7 @@ class PollingSource(PluginBase):
                 fetched = await ctx.call(poller.fetch(feed, turned=True), TIMEOUT_S * 2)
                 if fetched is None:
                     health.not_modified += 1
+                    poller.unchanged(feed)
                 else:
                     await self._emit_new(feed, fetched.body, poller, ctx, health)
                     if fetched.max_age_s is not None:
@@ -469,7 +508,7 @@ class PollingSource(PluginBase):
             # all went out: every listed id is refreshed (still listed: never forgotten); part
             # went out: those are remembered, so a retry never sends them twice (merge review 6)
             offered = [f.id for f in fresh]
-            poller.emitted(feed, [f.id for f in listed] if done else sent, offered)
+            poller.emitted(feed, [f.id for f in listed] if done else sent, offered, listed=done)
             health.emitted += len(sent)
         self.delivered(feed)
 

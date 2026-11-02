@@ -61,14 +61,16 @@ def mark_score_e6(
     fees: FeeSchedule, side: str, count_e2: int, entry_e6: int, yes_bid_e6: int | None,
     yes_ask_e6: int | None, closed: bool | None, yes_paid_e6: int | None,
 ) -> tuple[int | None, bool]:  # fmt: skip
-    """A check's score after fees, and whether it is at settlement: sold at the side's bid then;
-    with no bid because the market had stopped trading (never just an empty book) and has since
-    settled (``yes_paid_e6``: what a YES contract paid), held to its settlement; else None
-    (M1.12b)."""
+    """A check's score after fees, and whether it is at settlement. A market that had stopped
+    trading is held to its settlement (``yes_paid_e6``: what a YES contract paid; None until it
+    settles), never sold at a quote kept from before it closed (owner, M1.R3 C4); one still
+    trading, or not known to have stopped, is sold at the side's bid; with no bid, None (M1.12b)."""
+    if closed:
+        if yes_paid_e6 is None:
+            return None, False
+        paid = yes_paid_e6 if side == "yes" else E6 - yes_paid_e6
+        return settled_e6(fees, count_e2, entry_e6, paid), True
     sold = sell_price_e6(side, yes_bid_e6, yes_ask_e6)
     if sold is not None:
         return round_trip_e6(fees, count_e2, entry_e6, sold), False
-    if closed and yes_paid_e6 is not None:
-        paid = yes_paid_e6 if side == "yes" else E6 - yes_paid_e6
-        return settled_e6(fees, count_e2, entry_e6, paid), True
     return None, False

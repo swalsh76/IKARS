@@ -23,10 +23,8 @@ advised, not money that moved. It is backed up with the state.
 """
 
 import asyncio
-import contextlib
 import logging
-import sqlite3
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Literal
@@ -37,8 +35,16 @@ from msgspec import Meta
 
 from ikars_engine.model import Item, Ref
 from ikars_engine.pnl import mark_score_e6
-from ikars_engine.recommendations import CARD_DAYS, Board, Notices, ScoreLine, figures, scorecard
-from ikars_engine.store import open_store
+from ikars_engine.recommendations import (
+    CARD_DAYS,
+    QUOTE_WAIT_NS,
+    Board,
+    Notices,
+    ScoreLine,
+    figures,
+    scorecard,
+)
+from ikars_engine.store import open_store, transaction
 from ikars_engine.threads import in_daemon_thread
 
 log = logging.getLogger("ikars_engine.journal")
@@ -49,7 +55,6 @@ EVERY_S = 1.0  # how often the journal writes, expires and marks
 RECENT = 200  # the most the API lists
 DAY_NS = 86_400 * 1_000_000_000
 LONGEST_NS = 30 * DAY_NS  # the furthest a recommendation may expire or be marked after it is made
-QUOTE_WAIT_NS = 600 * 1_000_000_000  # a missing quote: the mark waits this long for one
 SETTLE_EVERY_NS = 60 * 1_000_000_000  # how often settlements are looked up
 FEES_WAIT_NS = 3_600 * 1_000_000_000  # a check whose fees are not known waits this long
 SCORE_BATCH = 500  # the most checks scored in one pass (a backlog is worked off a second at a time)
@@ -144,6 +149,12 @@ JOURNAL_MIGRATIONS = (
     ALTER TABLE settlement ADD COLUMN yes_paid_e6 INTEGER;
     UPDATE settlement SET yes_paid_e6 = CASE result WHEN 'yes' THEN 1000000 ELSE 0 END;
     """,
+    # 5 (M1.R3 C4, owner 2026-11-02): a check on a closed market is scored at its settlement only,
+    # never sold at a quote kept from before it closed; the ones scored so are scored again
+    """
+    UPDATE mark SET scored = NULL, score_e6 = NULL, at_settlement = NULL
+        WHERE closed = 1 AND scored = 1 AND at_settlement = 0;
+    """,
 )
 # an entry with its settlement and response; the WHERE and ORDER come from this module only
 _ENTRIES = (
@@ -189,20 +200,12 @@ class Journal:
         self.path = path
         self._db = open_store(path, JOURNAL_MIGRATIONS)
         self.changes = 0  # counts every change to what is active or answered (the API's cache key)
+        # the markets not settled yet, each with its newest recommendation's time: read once, then
+        # kept by add and settle (a query twice a minute cost ~95 ms at 30 days: M1.R3 C6)
+        self._unsettled: dict[str, int] | None = None
 
     def close(self) -> None:
         self._db.close()
-
-    @contextlib.contextmanager
-    def _transaction(self) -> Iterator[sqlite3.Connection]:
-        """All or nothing (the connection is in autocommit mode: the store's)."""
-        self._db.execute("BEGIN")
-        try:
-            yield self._db
-        except BaseException:
-            self._db.execute("ROLLBACK")
-            raise
-        self._db.execute("COMMIT")
 
     def add(self, item: Item) -> Recommendation | None:
         """Record a recommendation item; an earlier active one of the same strategy on the same
@@ -218,7 +221,7 @@ class Journal:
         known = "SELECT 1 FROM recommendation WHERE id = ?"
         if self._db.execute(known, (item.ref.id,)).fetchone():  # merge review 1
             return None
-        with self._transaction():
+        with transaction(self._db):
             self._db.execute(
                 "UPDATE recommendation SET state = ?, superseded_by = ?"
                 " WHERE state = ? AND strategy = ? AND ticker = ? AND id != ? AND expires_ns > ?",
@@ -243,6 +246,11 @@ class Journal:
                  for h in sorted(set(rec.horizons_s))],
             )  # fmt: skip
         self.changes += 1
+        if self._unsettled is not None:
+            settled = "SELECT 1 FROM settlement WHERE ticker = ?"
+            if self._db.execute(settled, (rec.ticker,)).fetchone() is None:
+                newest = max(self._unsettled.get(rec.ticker, item.received_ns), item.received_ns)
+                self._unsettled[rec.ticker] = newest
         return rec
 
     def expire(self, now_ns: int) -> int:
@@ -269,7 +277,11 @@ class Journal:
         return True
 
     def score(
-        self, fees: Callable[[str], FeeSchedule | None], now_ns: int, limit: int = SCORE_BATCH
+        self,
+        fees: Callable[[str], FeeSchedule | None],
+        now_ns: int,
+        limit: int = SCORE_BATCH,
+        waited_from: int = 0,
     ) -> int:
         """Keeps the score of each check not scored yet, as the API scores it (``fees`` by ticker).
         A closed market's check waits for its settlement; one whose fees are not known waits too,
@@ -283,7 +295,9 @@ class Journal:
                 "SELECT m.id, m.horizon_s, m.yes_bid_e6, m.yes_ask_e6, m.closed, r.payload,"
                 " s.yes_paid_e6, m.at_ns, m.rowid FROM mark m JOIN recommendation r ON r.id = m.id"
                 " LEFT JOIN settlement s ON s.ticker = r.ticker"
-                " WHERE m.scored IS NULL AND NOT (m.closed = 1 AND s.ticker IS NULL)"
+                # IS NOT, never NOT (... = 1 ...): a mark whose market's state was not known (NULL)
+                # is scored at its bid, never skipped for ever (M1.R3 live check)
+                " WHERE m.scored IS NULL AND (m.closed IS NOT 1 OR s.ticker IS NOT NULL)"
                 " AND (m.at_ns, m.rowid) > (?, ?) ORDER BY m.at_ns, m.rowid LIMIT ?",
                 (*after, limit),
             ).fetchall()
@@ -292,7 +306,9 @@ class Journal:
                 rec = _decode(payload)
                 schedule = fees(rec.ticker)
                 if schedule is None:  # not known now: tried again, or given up after an hour
-                    if now_ns - at >= FEES_WAIT_NS:
+                    # (from the start too: a check scored again after an upgrade is days old,
+                    # and its market is looked up first: M1.R3 merge review 1)
+                    if now_ns - max(at, waited_from) >= FEES_WAIT_NS:
                         done.append((None, 0, rid, horizon))
                     continue
                 value, at_settlement = mark_score_e6(
@@ -304,7 +320,7 @@ class Journal:
                 break
         if done:
             self.changes += 1  # a shown check's score (merge review 6)
-            with self._transaction():
+            with transaction(self._db):
                 self._db.executemany(
                     "UPDATE mark SET scored = 1, score_e6 = ?, at_settlement = ?"
                     " WHERE id = ? AND horizon_s = ?",
@@ -326,14 +342,24 @@ class Journal:
         self, rid: str, horizon_s: int, at_ns: int, bid: int | None, ask: int | None,
         closed: bool | None = None,
     ) -> None:  # fmt: skip
-        with self._transaction():
-            self._db.execute(
+        self.mark_all([(rid, horizon_s, at_ns, bid, ask, closed)])
+
+    def mark_all(
+        self, marks: list[tuple[str, int, int, int | None, int | None, bool | None]]
+    ) -> None:
+        """Each (id, horizon, at, bid, ask, closed) as a check, in one transaction (a backlog after
+        a restart is thousands: M1.R3 C2)."""
+        if not marks:
+            return
+        with transaction(self._db) as db:
+            db.executemany(
                 "INSERT OR IGNORE INTO mark (id, horizon_s, at_ns, yes_bid_e6, yes_ask_e6, closed)"
                 " VALUES (?, ?, ?, ?, ?, ?)",
-                (rid, horizon_s, at_ns, bid, ask, closed),
+                marks,
             )
-            self._db.execute(
-                "DELETE FROM pending_mark WHERE id = ? AND horizon_s = ?", (rid, horizon_s)
+            db.executemany(
+                "DELETE FROM pending_mark WHERE id = ? AND horizon_s = ?",
+                [(rid, horizon) for rid, horizon, *_ in marks],
             )
         self.changes += 1  # a shown recommendation's checks (merge review 6)
 
@@ -348,12 +374,17 @@ class Journal:
 
     def unsettled(self, since_ns: int) -> list[str]:
         """Markets recommended since ``since_ns`` whose settlement is not known yet."""
-        rows = self._db.execute(
-            "SELECT DISTINCT r.ticker FROM recommendation r LEFT JOIN settlement s"
-            " ON s.ticker = r.ticker WHERE s.ticker IS NULL AND r.received_ns >= ?",
-            (since_ns,),
-        )
-        return [ticker for (ticker,) in rows]
+        if self._unsettled is None:
+            self._unsettled = dict(
+                self._db.execute(
+                    "SELECT r.ticker, MAX(r.received_ns) FROM recommendation r LEFT JOIN settlement"
+                    " s ON s.ticker = r.ticker WHERE s.ticker IS NULL GROUP BY r.ticker"
+                ).fetchall()
+            )
+        old = [ticker for ticker, newest in self._unsettled.items() if newest < since_ns]
+        for ticker in old:  # past the window for good: the callers' window only moves on
+            del self._unsettled[ticker]
+        return list(self._unsettled)
 
     def settle(self, ticker: str, result: str, yes_paid_e6: int, at_ns: int) -> None:
         """A market's settlement: its result and what a YES contract paid (kept once)."""
@@ -362,6 +393,8 @@ class Journal:
             " VALUES (?, ?, ?, ?)",
             (ticker, result, at_ns, yes_paid_e6),
         )
+        if self._unsettled is not None:
+            self._unsettled.pop(ticker, None)
 
     def recent(self, limit: int = RECENT) -> list[Entry]:
         """The newest recommendations, newest first, with their marks and settlements."""
@@ -430,6 +463,8 @@ class JournalService:
     trading: Callable[[str], bool | None] = lambda ticker: None
     # a market's fee schedule, by ticker (None: not known)
     fees: Callable[[str], FeeSchedule | None] = lambda ticker: None
+    # markets to look up in the background (their fees: M1.R3 merge review 1)
+    want: Callable[[list[str]], None] = lambda tickers: None
     notices: Notices | None = None
     board: Board = field(default_factory=Board)
     card: list[ScoreLine] = field(default_factory=list)
@@ -441,6 +476,7 @@ class JournalService:
     rejected: int = 0
     recorded: int = 0
     failures: int = 0  # passes whose expiring or marking failed (said in health; retried next)
+    started_ns: int | None = None  # the first pass: quotes come only from then (M1.R3 C2)
 
     def listen(self, item: Item) -> None:
         if item.ref.kind != KIND:
@@ -483,23 +519,37 @@ class JournalService:
             if self._place(item.ref.id, rec, item.received_ns) and self.notices is not None:
                 self.notices.offer(item.ref.id, rec)
         now = self.now_ns()
+        if self.started_ns is None:
+            self.started_ns = now
         self.journal.expire(now)
         self.board.prune(now)
+        marks = []
         for rid, ticker, horizon, due in self.journal.due(now):
             bid, ask = self.quotes.get(ticker, (None, None))
-            if bid is None and ask is None and now - due < QUOTE_WAIT_NS:
-                continue  # no quote yet (a fresh start, a quiet market): marked when one comes
+            # no quote yet (a quiet market, or a fresh start: Kalshi sends a quote only when it
+            # changes, so the wait runs from the start too: M1.R3 C2): marked when one comes
+            if bid is None and ask is None and now - max(due, self.started_ns) < QUOTE_WAIT_NS:
+                continue
             open_now = self.trading(ticker)
-            self.journal.mark(
-                rid, horizon, now, bid, ask, None if open_now is None else not open_now
-            )
+            marks.append((rid, horizon, now, bid, ask, None if open_now is None else not open_now))
+        self.journal.mark_all(marks)
         if now - self.settled_at_ns >= SETTLE_EVERY_NS:  # once a minute, from the market index
             self.settled_at_ns = now
             for ticker in self.journal.unsettled(now - LONGEST_NS):
                 found = self.result(ticker)
                 if found is not None:
                     self.journal.settle(ticker, *found, now)
-        self.journal.score(self.fees, now)
+        missing: set[str] = set()
+
+        def fees(ticker: str) -> FeeSchedule | None:
+            found = self.fees(ticker)
+            if found is None:
+                missing.add(ticker)
+            return found
+
+        self.journal.score(fees, now, waited_from=self.started_ns)
+        if missing:  # a market that left the index (closed days ago): looked up, a few at a time
+            self.want(sorted(missing))
 
     def step(self) -> None:
         """One pass: what came is written, then expired, marked and scored (``run`` does this once

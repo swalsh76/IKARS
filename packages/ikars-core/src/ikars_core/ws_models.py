@@ -17,6 +17,7 @@ carries market data, not account data. The private channels (fills, orders, posi
 the trading client (M7); the data key never subscribes to them.
 """
 
+import functools
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -205,6 +206,7 @@ MODELS: dict[str, type[WsModel]] = {
 }
 
 
+@functools.cache  # read for every frame (M1.R3 B12)
 def known_keys(model: type[WsModel]) -> frozenset[str]:
     """Every name under which the model reads a field: its alias if it has one, else its name."""
     names: set[str] = set()

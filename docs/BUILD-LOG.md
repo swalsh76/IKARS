@@ -3669,3 +3669,194 @@ momentum v1's review (~2026-11-04), whose scorecard left these checks out.
   - The scorecard counts them. The 6 markets left waiting are Kalshi's 5 closed and 1 inactive, without a result.
   - The lookups worked off the restart's backlog at their cap (100 a minute): 1,600 settled with 0 failures, all
     done by 23:46, about 18 minutes after the start.
+
+## 1.R3 Base hardening after a fresh-eyes review (plan APPROVED 2026-11-02, all four answers as recommended; branches `m1/r3a`, then `m1/r3b`)
+
+**Why.** The owner asked for "a complete fresh-eyes sub-agent review of the project so far" (R16). Five read-only
+reviewers, one per area, read the whole code base: A money and the ledger, B the Kalshi feed, recording and
+replay, C the engine, journal, momentum and sources, D the API, security and the web terminal, E the platform,
+CI and docs. They found 55 problems, none a secret, an order path or float money; each top claim was checked
+against the code, and C2 and C4 against the live journal (read-only, counts only: 1,545 checks with no value,
+920 closed checks scored at a stale quote). **The owner approved M1.R3 as listed** (2026-11-02), then this plan with all four answers as recommended.
+
+**Two parts, two PRs, both before M2.4.** **M1.R3a** correctness and data (A, B, C), first, so the scorecard is
+right for momentum v1's review (~2026-11-04); **M1.R3b** security, release and docs (D, E). Each item gets a test
+(a script for the workflow items), the per-commit review, and a merge review with a fresh-eyes sub-agent.
+
+#### M1.R3a correctness and data
+
+| # | Problem | Fix |
+|---|---|---|
+| A1 | `ledger import` runs beside a live engine; the engine's kept book adds a fill another process committed, and later fills chain on the wrong position | Refused while the engine runs (like `restore`); the book takes only the entries `append_all` actually inserted |
+| A2 | An ACL error puts the key path into health, alerts and tracebacks | No path in `AclError`; a fixed `AuthError` message |
+| A3 | A damaged checkpoint stops every start; the CLI and engine share one fixed temp file | A damaged checkpoint is a named problem, not an exception; `write_text_atomic` uses a unique temp name |
+| A4 | A difference equal to resting orders counts as exact, though Kalshi was shown not to hold them back | Exact means a zero difference; the resting cost is kept as information |
+| A5 | Fills with one timestamp are recorded newest first (FIFO lots, M5) | A tie-break restores execution order within a time; existing records unchanged |
+| A7 | A derived settlement without a settlement time takes the archive time (can cross a tax year) | The market's settlement time, else its close time, never the archive time |
+| A8 | One failed heartbeat write leaves the state store inside a transaction | Roll back on failure, as `remember()` does |
+| A10 | Nothing stops demo fills entering the real chain | The environment and key fingerprint kept as a ledger bookmark at the next import; an import refused when either differs |
+| B1 | A snapshot lost in a second gap leaves a book broken until a reconnect | A gap clears the request; a request unanswered for 10 s is asked again (the test that enshrined the bug changes) |
+| B2 | A frame that fails to parse is dropped silently | Logged as a gap (rate-limited); on the book channel the books break and snapshots are asked |
+| B3 | Each 5 s recorder flush blocks the loop 30 to 68 ms | Buffers swapped on the loop; batches built and written by one writer thread per recorder |
+| B4 | The background lookup cap does not hold within one call (up to 200 at once) | Counted when a task is created, not when it runs |
+| B5 | The daily discovery dump blocks about 2.4 s; the index version moves on every put, re-sorting 560k markets | The dump in chunks off the loop; the version moves only on a real change; the prune every few minutes |
+| B6 | The feed queue's bound is 550 to 800 MB, minutes of backlog | 25,000 frames (about 15 s) |
+| B7 | Reading known trade ids blocks the loop about 0.5 s after a reconnect | On a worker thread |
+| B11 | A late snapshot recreates the book of an unwatched market | A snapshot makes a book only for a watched market |
+| B12 | `known_keys` rebuilt on every frame | Cached |
+| C2 | Checks taken just after a restart have no quote and stay unscored (1,545) | The quote wait runs from the later of the due time and the engine's start; checks marked more than a tolerance late are counted apart on the scorecard; the backlog in one transaction |
+| C3 | A feed answering "not modified" for 14 days re-sends its old items as new | A 304 refreshes the ids the feed last listed |
+| C4 | A closed check is scored at a stale quote instead of the settlement (920) | A closed check is scored at the settlement only (question 2); journal migration 5 clears the 920 scores so the next pass re-scores them |
+| C6 | The unsettled-markets query costs about 95 ms per pass at 30 days | A set kept in memory, updated on add and settle |
+| C7 | A false gap after a feed stopped on purpose; a GDELT DOC outage over an hour logged as recovered | The stop clears the feed's last good time; DOC windows past its timespan are `unrecoverable` |
+| C8 | The alert state file grows for ever | Entries older than the throttle are pruned |
+
+#### M1.R3b security, release and docs
+
+| # | Problem | Fix |
+|---|---|---|
+| D1 | A process holding the fixed port during a restart receives the session cookie, which still works on the fallback port | The cookie carries the port and is checked against `Host`; on a fallback the session key rotates (every window signs out) and an urgent alert says why |
+| D2 | Opening `/update?to=…` checks and installs with no click | The Update window waits for an **Install** button (the window's existing layout, one button; no new screen) |
+| D3 | A second `ikars_session` cookie locks the owner out | Any valid one is accepted |
+| D4 | Request bodies have no size limit (sign-in included) | `Content-Length` required and capped (4 KB sign-in, 64 KB otherwise) |
+| D5 | The Markets refresh asks for more than 200 subscriptions | The limit becomes 400 (twice a page) |
+| D6 | An 8-window layout uses every stream | 16 streams; the Update window opens none |
+| D7 | The headline rounds a sub-cent price | `cents()` as Copy order does |
+| D8 | Holding T, I or D toggles the answer | Key repeats ignored |
+| D9 | An older refresh hides a just-saved answer | A snapshot asked before the answer was saved keeps it |
+| E1 | The release job's write token is visible to every build step | Split: a build job with read-only rights and no stored credential, then a publish job that only uploads |
+| E2 | hatchling unpinned in the release build | Pinned, with a hashed build constraint |
+| E3 | Any `v*` tag publishes with no tests or checksums | Published only if the tagged commit's CI checks passed (question 3); a `SHA256SUMS` file and a build-provenance attestation |
+| E4 | A foreground `run` takes no engine lock | It takes `EngineLock` and refuses when the engine runs |
+| E5 | A rollback restores old data before an apply that may fail | A failed apply puts the newer data back (restore's undo list) |
+| E6 | A failed update leaves the engine down silently | An `updating` marker with a 15-minute deadline; then the watchdog restarts and alerts |
+| E7 | The watchdog task's command lacks `-I` | Added; the task is re-registered on the next start that finds the old command |
+| E8 | A legacy `portable.marker` puts data where an update wipes it | The marker is ignored inside the program folder; D12 describes `.portable` / `IKARS-data` |
+| E9 | The velopack SDK unpinned against the pinned `vpk` | Pinned `==1.2.161`; Dependabot's `nuget` watches `vpk`, grouped with it |
+| E10 | The data guard misses settings files, archives, logs, the sandbox file, `.claude/settings.local.json` | Names, folders and a content check for UNC and user-profile paths; `.claude/settings.local.json` in `.gitignore` |
+| E11 | A refused rollback leaves the stop markers behind | Cleared on refusal |
+| E12 | The code-signing privacy policy leaves out NWS, GDELT and the RSS feeds | Listed |
+| E13 | PLAN §5 and the README stale | Updated |
+| E14 | DEPENDENCIES.md stale (RSA for Ed25519, rows in use under "later", the Claude API in M2) | Corrected |
+| E15 | The 95% gate leaves out money modules | `pnl`, `ledger`, `ledger_import`, `portfolio`, `costs` added |
+
+**Not in M1.R3.** C1 (an empty side's false mid) and C5 (a window across an outage) change momentum's rule: they go
+to the Strategy review as **momentum v2** (~2026-11-04); v1 runs unchanged. Before that review a read-only replay of
+v1's week counts the recommendations that rest on a false mid, so its record is read with that in mind. C9 (the
+cost meter) stays in M2.6, before any paid plugin. Parked in PLAN §9: A6 (fee unit, question 4), A9 (restore
+fallback to older copies, M5), B8, B9, B10 (each needs a rare timing or an unconfirmed Kalshi behaviour).
+
+**Changes on the workstation.** No new packages (hatchling and velopack only pinned). Journal migration 5 re-scores
+the closed checks (question 2; backed up first). The ledger gains one bookmark (A10). The watchdog task is
+re-registered (E7). Settings unchanged. The release workflow gains `id-token` and `attestations` write rights in
+the publish job only (question 3).
+
+**Live checks** on a test release of each part:
+- R3a: upgrade clean; the scorecard counts late checks apart; no unscored check after a restart of over 10
+  minutes; the recorder's flush off the loop (the loop-lag metric); a forced parse failure logged as a gap (unit
+  only); ledger reconciles exactly; `ledger import` refused with the engine running.
+- R3b: the Update window waits for Install; a held fixed port signs the windows out with an alert (a scratch
+  listener); the watchdog task command has `-I`; the release itself built by the split workflow, with checksums.
+
+**Questions, answered by the owner (2026-11-02, all as recommended).**
+1. **Branch.** R3a touches code still in the open stack (#35 to #37: the journal, lookup, polling and GDELT).
+   Recommended: `m1/r3a` stacked on `m1/14` now, retargeted to `main` when the stack merges.
+2. **C4: closed checks.** Today a closed market's check is sold at the last bid if one was kept (the M1.12b rule).
+   Recommended: score a closed check at the settlement only, and re-score the 920 (journal migration 5).
+3. **E3: release gate.** Recommended: publish only if the tagged commit's CI checks are green (this keeps test
+   releases from PR branches), with a `SHA256SUMS` file and a build-provenance attestation.
+4. **A6: fee unit.** Kalshi charges your account at $0.0001; scores round each fee up to a cent (conservative).
+   Recommended: keep cents through v1's review, then decide with v2 (parked).
+
+#### 1.R3a built (2026-11-02)
+
+**Built** on `m1/r3a`, stacked on `m1/14`: `c2530b3` (A), `cd07cf2` (B), `0348da7` (C), merge-review fixes
+`8ead5f1`. No new packages. The API goes to 2.3 (`ScoreLineView.late`); the scorecard's "scored" cell reads
+"106 of 237 (9 late)" (the existing cell, no new screen).
+
+**What changed on the workstation when installed:** journal migration 5 (backed up first) clears the scores of
+closed checks sold at a kept quote, so they are scored again at settlement; the real ledger is bound to
+`production` at its first start (a bookmark); nothing else.
+
+**As built, against the plan:**
+- **A10 narrowed:** only the Kalshi environment is bound, not the key fingerprint. Binding the fingerprint would
+  stop every import at a routine key rotation; each start already records the fingerprint as an `app` record.
+  **Owner (2026-11-02): bind to the environment only.**
+- **A7:** the settlement time, else the market's close time (the plan); never the archive's time.
+- **B3:** the recorder's own writer thread builds and writes the batches; closing hours and reading trade ids run
+  there too, awaited off the loop. A failed write is a loss the heartbeat logs as a gap for its channel and time
+  range. The conversion holds the GIL, so it is done in 2,000-row parts (the loop runs between them).
+- **B5:** the version moves only on a real change, the dump yields every 5,000 markets, the prune runs every 10
+  minutes. Still on the loop: when volumes move, the next Markets request re-sorts the index (about 280 ms at
+  560k markets, at most once a minute). Parked in PLAN §9.
+- **B11:** a snapshot makes a book only for a watched market, once the recording has watch events (since
+  v0.1.13); an older recording keeps its books. The first subscription now watches before it asks.
+- **C2:** the scorecard counts checks taken more than 11 minutes after they fell due as `late`, apart from the
+  figures. A paused market is no longer "closed" (one `trading()` rule, live and replay).
+- **C3:** a run's first poll of a feed reads the whole reply (so the poller knows what it lists); a later 304
+  keeps those ids.
+
+**Tests:** 1,690 Python tests pass (93.5% coverage), 232 web unit tests, 20 Playwright screens; ruff, mypy
+(both runs), the data guard and gitleaks clean. Each new test was run against the old code and fails there.
+
+**Review.**
+- **Per commit** (`/code-review low`): `c2530b3` 1 fixed (the rest of a pass used a book another writer had
+  changed: rebuilt at once); `cd07cf2` none; `0348da7` none.
+- **Merge review** (`/code-review medium` and a fresh-eyes sub-agent, R16), 19 findings:
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | Migration 5 re-scores checks whose market left the index; with no fees and an old mark time they were given up at once (both reviewers; proved by the sub-agent) | The journal asks the lookup for those markets; the fees wait runs from the start; tested (`8ead5f1`) |
+  | 2 | A 304 refreshed every id of a shared scope (all news feeds), so none was ever forgotten | Only that feed's last listed ids; a run's first poll reads the whole reply; tested |
+  | 3 | The yielding dump could write a market's older details after a change made meanwhile | Each row is the market as it is when written, stamped then; tested |
+  | 4 | A7 fell back to the expiration time, which can be a scheduled date after the settlement | The settlement, else the close time (the plan) |
+  | 5 | A paused market counted as closed: its check waited for the settlement | Only ended statuses are closed; one `trading()` for live and replay; tested |
+  | 6 | A failed write was raised twice (to the waiter and to the next writer) | Losses kept for the gap log, raised only to the waiter (with 8) |
+  | 7 | A cancelled heartbeat's compaction and the shutdown's could share the pending list | `pop` guarded; two at once are safe |
+  | 8 | The unsettled set never dropped markets past the 30-day window | Dropped as the window moves; tested |
+  | 9 | `Ledger.append_all` kept its own BEGIN/ROLLBACK beside the new helper | On `transaction(immediate=True)` |
+  | 10 | A crash between write and rename leaves a uniquely named `.tmp` file | No change: a window of milliseconds on a few small files; a scan per write would cost more |
+  | 11 | (sub-agent) The batch conversion holds the GIL, so the loop still stalled per channel (27 ms measured) | Converted in 2,000-row parts |
+  | 12 | (sub-agent) Recordings before v0.1.13 have no watch events: B11 dropped all their books | Every snapshot kept until a recording names its watched markets; tested |
+  | 13 | (sub-agent) A replay across a recorded restart kept the old quotes and quote wait | A recorded start forgets the quotes; the replay restarts the journal's wait; tested |
+  | 14 | (sub-agent) A10 binds the environment only | No change: the owner chose the environment only (2026-11-02) |
+  | 15 | (sub-agent) Taking the buffer and queueing it were two lock sections: a trade-id read could pass between | One lock section; queued at once |
+  | 16 | (sub-agent) A failed write was raised into whichever caller wrote next | A loss logged by the heartbeat as a gap for its channel and times; tested |
+  | 17 | (sub-agent) A writer thread started after a close shared the stopped one's queue: the close could hang | Each thread its own queue; the join has a limit; tested |
+  | 18 | (sub-agent) Every bad book frame wrote a break event (hundreds a second) | Once per broken book; the no-ticker case clears the snapshot requests; tested |
+  | 19 | (sub-agent) A snapshot the state ignores was still handed on as an item | No item (live and replay) |
+
+**v0.1.17 published** (test pre-release from `ad44ffd`, 2026-11-02; release run green). Live checks pending the owner's install.
+
+**Live check on v0.1.17** (2026-11-02, installed by the owner; the engine started 10:48:11 MST; the API with GET
+only, the journal, ledger and state read-only, counts only):
+
+| Check | Result |
+|---|---|
+| Upgrade | journal backed up, then schema 5; API 2.3; the real ledger bound to `production` |
+| C4 re-score | every closed check sold at a kept quote is now scored at its settlement (53,584 at settlement, none left sold); none given up for want of fees (the lookups: 706, 0 failures); 7 closed checks wait for their markets' results |
+| C2 scorecard | 30 min: 107,880 checks, 0 late; 60 min: 107,506 checks, 111 late, counted apart |
+| Ledger | verified, reconciles exactly, 0 errors |
+| Feed and recorder | connected, 100 of 100 books ready, no open gaps, every channel recording, no recording losses |
+| B3 flush stall | a bench at the live rates (864 ticker, 578 delta, 145 trade rows a second), measured with `sleep(0)` (Windows' timer floors `sleep(0.001)` at ~16 ms): the loop's worst gap per flush **10 to 15 ms**, against 26 to 32 ms before |
+| B11 and the restart replay | `ikars replay --compare --check-books --warmup-min 0` from 10:48:00 to 11:00:00 (across the recorded start): **120 of 120** recommendations matched, books 9,155 of 9,333 (all 2,072 settled ones agree); from 10:48:30 (19 s after the start, so momentum's first 19 s unseen) 111 of 120, as expected |
+
+**Found by the live check, fixed** (`2537c63`): the scoring query's `NOT (m.closed = 1 AND s.ticker IS NULL)` is
+NULL, not true, for a mark whose market state was not known, so **515 checks from v0.1.7 (2026-10-28, before the
+`closed` column) were never scored**, and since merge review 5 a check on a paused market would not be either.
+Now `m.closed IS NOT 1 OR s.ticker IS NOT NULL`; tested (fails on the old code); on a scratch copy of the live
+journal the 515 are scored at their kept bid and only the 7 closed ones still wait. Its live check needs a test
+release.
+
+**Seen, not R3a's** (to R3b): `/v1/hello` reports `engine_version` 0.0.0 (the release stamps Velopack's version,
+not the package's; `program.version` says 0.1.17); an open terminal's one-second stream pass costs about 25 to 35
+ms of loop time each second (portfolio, alerts, the recommendations page), older than R3a.
+
+**v0.1.18 published** (test pre-release from `899652b`, 2026-11-02; release run green) for the scoring fix's live check.
+
+**The scoring fix's live check passed** on **v0.1.18** (2026-11-02, installed by the owner; read-only, counts
+only): no check with an unknown market state is left unscored (the 515 from v0.1.7 are scored: 495 with a value,
+24 with no price at that moment, with the few made since); only 8 closed checks wait for their markets' results.
+Journal schema 5 (no migration, so no new backup); the scorecard's checks unchanged in kind, more scored; the
+ledger verified and exact; the feed connected with 100 of 100 books ready and no open gaps; all four plugins
+running. **M1.R3a is built and checked**; PR #47 merges after #35, #36 and #37.

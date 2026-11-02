@@ -332,3 +332,8 @@ def test_a_created_market_carries_its_rules_and_tick_structure() -> None:
     assert message.additional_metadata is not None
     assert message.additional_metadata["rules_primary"] == "If so, Yes."
     assert message.close_ts == datetime(2026, 10, 27, 17, 0, tzinfo=UTC)
+
+
+def test_the_known_keys_are_worked_out_once_per_model() -> None:
+    """M1.R3 B12: they were rebuilt for every frame (a tenth of the parse)."""
+    assert known_keys(TickerMsg) is known_keys(TickerMsg)

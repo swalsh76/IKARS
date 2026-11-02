@@ -817,6 +817,7 @@ Strata server (D24) is the one new resource: a home-network service, as the NAS 
 | M1.7 Loopback API and contracts | **done** (BUILD-LOG 1.7; PR #10 merged as `0ba5d83`) |
 | M1.R Base hardening (owner, 2026-10-27) | **built** on `m1/r-hardening` (BUILD-LOG 1.R): a whole-code-base review's items 1 to 26 fixed, plus 10 merge-review findings; **done** (PR #14, `fca7941`) |
 | M1.8a-web-1a Engine side of the web terminal | **done** (PR #16, `d70cb83`; BUILD-LOG 1.8a-web-1a): file serving with the browser hardening, cookie sign-in that survives restarts, `ikars open`, contracts 2.0, `demo-api`; security review (1 finding, fixed) and merge review (8, fixed) |
+| M1.R3 Base hardening after a fresh-eyes review (owner, 2026-11-02) | **plan APPROVED** 2026-11-02, all four answers as recommended (BUILD-LOG 1.R3; `m1/r3a` stacked on `m1/14`; closed checks scored at settlement, the 920 re-scored; releases gated on green CI with checksums; fees kept in cents); **R3a built** on `m1/r3a` (`c2530b3` `cd07cf2` `0348da7`, review fixes `8ead5f1`; merge review 19: 17 fixed, 2 no change; A10 bound to the environment only, owner 2026-11-02); live checks passed on v0.1.17 and v0.1.18 (the scoring fix the first found); PR #47: five sub-agent reviewers, 55 findings; **R3a** correctness and data (23 items), **R3b** security, release and docs (24 items), both before M2.4; C1 and C5 to momentum v2 at the Strategy review; C9 in M2.6; A6, A9, B8 to B10 parked |
 | M1.14 Settled markets after a restart | **built** on `m1/14`, stacked on `m1/13` (BUILD-LOG 1.14; brought forward from §9 by the owner): every closed market at start, the last 3 days' settled in the background after the feed is live, lookups on request (Market screen, chart, titles), the journal settles what the index lacks; merge review 10 fixed; live check on a test release pending |
 | M1.13 Replay of real recordings | **built** on `m1/13`, stacked on `m2/3` (BUILD-LOG 1.13; plan approved 2026-11-01): one row one item, one path for Kalshi state with recorded feed events, a streaming reader, `ikars replay` (digest, parity, book check); ticker recorded for all markets, a `market` channel, hourly book checkpoints; merge review 18 (with a fresh-eyes sub-agent) fixed; live check on a test release pending; **G3 completes with it** |
 | M2.3 News | **built** on `m2/3` (BUILD-LOG 2.3; plan approved 2026-11-01, D23 amended): the `gdelt` plugin (GKG files with backfill, DOC searches) and the `rss` plugin (12 government feeds, defusedxml), duplicates removed by link; merge review 15 (with a fresh-eyes sub-agent, R16) fixed; live check on a test release pending |
@@ -865,6 +866,17 @@ Strata server (D24) is the one new resource: a home-network service, as the NAS 
   sets of windows instead (owner, 2026-10-27); a docking library would come back through a proposal.
 - Readable screen-reader names for list items: the terminal's lists expose each record's raw text to UI Automation
   (M1.8a live check). Natural with M1.8b's hotkeys and themes, or later.
+- The fee unit in scores and unrealised P&L (M1.R3 A6): Kalshi charges the owner's account at $0.0001, IKARS rounds
+  each leg up to a cent (conservative). Kept in cents through momentum v1's review (owner, 2026-11-02); decided
+  with v2 at the Strategy review.
+- Restore from older copies (M1.R3 A9): the drill and `restore` use only the newest daily copy; fall back to older
+  dailies, then monthlies, and restore only checkpoints at or below the restored head. With M5.
+- Rare feed and replay timings (M1.R3 B8, B9, B10): a rebalance during a refused resubscribe can open a second book
+  subscription; a lagging pump can stamp an hour's checkpoint after the hour; a checkpoint between deltas of one
+  clock makes a replay skip the second. Each needs a rare timing or an unconfirmed Kalshi behaviour.
+- The Markets list's sort (M1.R3 B5): when volumes move, the next Markets request re-sorts the whole index
+  on the loop (about 280 ms at 560k markets, at most once a minute). A sort off the loop, or by open markets
+  only, when the Markets screen is next worked on.
 - Remove the `pnpm audit` exception for GHSA-g3hv-75wg-m249 (minimatch < 11.0.1, lint tools only; owner,
   2026-11-01) in `web/pnpm-workspace.yaml` once ESLint and typescript-eslint accept minimatch 11 and that release
   passes the 7-day rule; Dependabot shows it.

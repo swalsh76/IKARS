@@ -13,6 +13,7 @@ from the same point. *Kept from KAPS:* the two cycles, the bookmark rule, reject
 the engine needs it for the watched set, the drill-down tree and tradability, not for history.
 """
 
+import asyncio
 import logging
 import re
 import time
@@ -38,7 +39,10 @@ OVERLAP_SECONDS = 120
 OPEN_STATUSES = frozenset({"active", "open"})  # Kalshi's REST and WebSocket names for trading
 CLOSED_KEPT_NS = 3 * 86_400 * 1_000_000_000  # a settled market stays in the index this long
 SETTLED_PAGE_PAUSE_S = 0.5  # between the pages of the recently settled markets (M1.14)
+DUMP_CHUNK = 5_000  # markets recorded between yields to the loop (M1.R3 B5)
 SETTLED_STATUSES = frozenset({"settled", "finalized"})  # paid out: nobody holds it any more
+# trading has ended for good (a paused or unopened market's has not: M1.R3 merge review 5)
+ENDED_STATUSES = frozenset({"closed", "determined", "disputed", "amended", *SETTLED_STATUSES})
 log = logging.getLogger("ikars_engine.kalshi.discovery")
 
 
@@ -123,6 +127,16 @@ def market_row(
     }  # fmt: skip
 
 
+def trading(info: MarketInfo | None) -> bool | None:
+    """Whether a market still trades (True), has stopped for good (False), or is not known (None:
+    not found, or paused, which is no end: M1.R3 merge review 5)."""
+    if info is None:
+        return None
+    if info.status in OPEN_STATUSES:
+        return True
+    return False if info.status in ENDED_STATUSES else None
+
+
 def _same(a: MarketInfo, b: MarketInfo) -> bool:
     """The same details, whatever the day's volume (which changes all the time and is not kept)."""
     return replace(a, volume_24h_e2=0) == replace(b, volume_24h_e2=0)
@@ -160,10 +174,10 @@ class MarketIndex:
                 self.version += 1  # a removal, so the API's sorted list is rebuilt
                 self._removed(gone)
             return
-        if not quietly:
-            self.version += 1
         before = self.markets.get(market.ticker)
         info = self.markets[market.ticker] = self.info_of(market, before)
+        if not quietly and info != before:  # an unchanged market re-sorts nothing (M1.R3 B5)
+            self.version += 1
         if self.record is not None and (before is None or not _same(before, info)):
             self.record(market_row(info, self.fee_terms.get(info.series_ticker), self.now_ns()))
             if self.cycle is not None:
@@ -197,19 +211,26 @@ class MarketIndex:
             terms = self.fee_terms.get(info.series_ticker)
             self.record(market_row(info, terms, self.now_ns(), removed=True))
 
-    def dump(self, skip: set[str] | frozenset[str] = frozenset()) -> int:
+    async def dump(self, skip: set[str] | frozenset[str] = frozenset()) -> int:
         """Every market's details into the market channel (after a full discovery), except those
         in ``skip`` (recorded during the cycle), so a replay that starts at any time finds them
-        all within a day; returns how many."""
+        all within a day; returns how many. A few thousand at a time: the loop runs between them
+        (seconds of work at half a million markets: M1.R3 B5)."""
         if self.record is None:
             return 0
         now = self.now_ns()
         count = 0
-        for info in self.markets.values():
-            if info.ticker not in skip:
+        for n, ticker in enumerate(list(self.markets), 1):
+            # read as it is now: a change while the loop ran was recorded then, and this row must
+            # not come after it with the details from before (M1.R3 merge review 3)
+            info = self.markets.get(ticker)
+            if info is not None and ticker not in skip:
                 terms = self.fee_terms.get(info.series_ticker)
                 self.record(market_row(info, terms, now, full=True))
                 count += 1
+            if n % DUMP_CHUNK == 0:
+                await asyncio.sleep(0)
+                now = self.now_ns()
         return count
 
     def climate_codes(self) -> dict[str, list[str]]:
@@ -307,7 +328,7 @@ class Discovery:
         finally:
             # even when the cycle failed part-way: every market is recorded (merge review 4)
             recorded, self.index.cycle = self.index.cycle, None
-            self.index.dump(recorded or frozenset())
+            await self.index.dump(recorded or frozenset())
         self._state.set_bookmark(BOOKMARK, began - OVERLAP_SECONDS)
         self.cycles += 1
         log.info("discovery: full cycle", extra={"markets": count, "rejects": self.index.rejects})

@@ -31,7 +31,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ikars_engine.files import write_text_atomic
-from ikars_engine.store import open_store
+from ikars_engine.store import open_store, transaction
 
 GENESIS = "0" * 64
 STREAMS = ("real", "paper")
@@ -182,8 +182,7 @@ class Ledger:
         if stream not in STREAMS:
             raise LedgerError(f"no such stream {stream!r}")
         added: list[int] = []
-        self._db.execute("BEGIN IMMEDIATE")
-        try:
+        with transaction(self._db, immediate=True):  # the CLI may write too (M1.R3 review 9)
             head = self._head(stream)
             seq, prev = head.seq, head.hash
             for entry in entries:
@@ -201,10 +200,6 @@ class Ledger:
                      entry.ticker, body, prev),
                 )  # fmt: skip
                 added.append(seq)
-            self._db.execute("COMMIT")
-        except BaseException:
-            self._db.execute("ROLLBACK")
-            raise
         return added
 
     def _body(self, stream: str, seq: int, prev: str, entry: Entry) -> dict[str, Any]:
@@ -341,10 +336,14 @@ class Ledger:
         otherwise what is wrong. This catches what :meth:`verify` cannot: newest records cut off,
         or an older copy of the file put back."""
         for path in sorted(folder.glob("*/*.json"), reverse=True):
-            point = json.loads(path.read_text(encoding="utf-8"))
-            if point.get("stream") != stream:
-                continue
-            seq, day = int(point["seq"]), point["date_utc"]
+            try:
+                point = json.loads(path.read_text(encoding="utf-8"))
+                if point.get("stream") != stream:
+                    continue
+                seq, day = int(point["seq"]), str(point["date_utc"])
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                # a damaged checkpoint is a problem to show, never a failed start (M1.R3 A3)
+                return f"the checkpoint {path.name} cannot be read"
             if seq == 0:
                 return None
             stored = self.hash_at(seq, stream)

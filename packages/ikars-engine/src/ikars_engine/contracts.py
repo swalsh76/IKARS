@@ -29,8 +29,8 @@ import msgspec
 
 from ikars_engine.settings import Layout, LayoutWindow, Skin
 
-API_VERSION = "2.2"  # 2.0: typed health, AlertView.at_local, sign-in; 2.1: ranked recommendations;
-# 2.2: POST /v1/backup (Back up now) and BackupHealth.running
+API_VERSION = "2.3"  # 2.0: typed health, AlertView.at_local, sign-in; 2.1: ranked recommendations;
+# 2.2: POST /v1/backup (Back up now) and BackupHealth.running; 2.3: ScoreLineView.late (M1.R3 C2)
 
 
 class Hello(msgspec.Struct, kw_only=True):
@@ -245,11 +245,12 @@ class ScoreLineView(msgspec.Struct, kw_only=True):
     strategy: str
     version: str
     horizon_s: int
-    checks: int  # made (scored, unscorable, or waiting for a settlement)
-    scored: int
+    checks: int  # made (scored, unscorable, late, or waiting for a settlement)
+    scored: int  # on time with a score: the figures are theirs
     above_zero: int
     mean_e6: int | None
     median_e6: int | None
+    late: int  # taken long after they fell due (the engine was down): not in the figures
 
 
 class ScoreCard(msgspec.Struct, kw_only=True):
@@ -450,6 +451,7 @@ SMALL_INTEGERS = frozenset({
     "watched_markets", "throttle_minutes", "digest_minutes", "watched_max_markets",
     "read_share_percent", "storage_budget_gb", "port", "session_days", "x", "y", "width",
     "height", "progress", "size_bytes", "horizon_s", "horizons_s", "checks", "scored", "above_zero",
+    "late",
 })  # fmt: skip
 
 CONTRACTS: tuple[type[msgspec.Struct], ...] = (
@@ -510,7 +512,8 @@ def examples() -> dict[str, Any]:
         return_e6=4_683, per_day_e6=224_784, response=None, horizons_s=[1800, 3600],
     )  # fmt: skip
     line = ScoreLineView(strategy="momentum", version="9f2ce1a0", horizon_s=1800, checks=12,
-                         scored=10, above_zero=4, mean_e6=-42_000, median_e6=-28_000)  # fmt: skip
+                         scored=10, above_zero=4, mean_e6=-42_000, median_e6=-28_000,
+                         late=1)  # fmt: skip
     window = LayoutWindow(screen="/markets?q=fed", x=-1920, y=0, width=1600, height=1000)
     second = LayoutWindow(screen="/overview", x=0, y=0, width=1280, height=800)
     layout = Layout(name="Trading", windows=[window, second])

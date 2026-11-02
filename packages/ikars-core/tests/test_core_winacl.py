@@ -92,9 +92,25 @@ def test_a_missing_file_is_reported(tmp_path: Path) -> None:
         load_private_key(tmp_path / "absent.pem")
 
 
-def test_an_unreadable_acl_is_reported(tmp_path: Path) -> None:
-    with pytest.raises(winacl.AclError):
+def test_an_unreadable_acl_is_reported_without_the_path(tmp_path: Path) -> None:
+    with pytest.raises(winacl.AclError) as caught:
         winacl.other_readers(tmp_path / "absent.pem")
+    assert str(tmp_path) not in str(caught.value)  # it may be the key's path (M1.R3 A2)
+
+
+def test_a_key_whose_acl_cannot_be_read_is_refused_without_the_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fails(path: Path) -> list[str]:
+        raise OSError(5, "Access is denied", str(path))  # an OSError naming the path
+
+    monkeypatch.setattr(winacl, "other_readers", fails)
+    path = tmp_path / "key.pem"
+    path.write_bytes(b"made up")
+    with pytest.raises(AuthError, match="cannot check who can read") as caught:
+        load_private_key(path)
+    assert str(tmp_path) not in str(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__  # nor a traceback
 
 
 def test_the_right_to_change_the_acl_counts_as_reading(private_file: Path) -> None:

@@ -129,9 +129,10 @@ def _refuse_if_shared(target: Path) -> None:
         try:
             readers = winacl.other_readers(target)
         except OSError as exc:
+            # never the error's own text: an OSError names the path, which is never shown (M1.R3 A2)
             raise AuthError(
-                f"cannot check who can read the private key file: {exc.strerror}"
-            ) from exc
+                f"cannot check who can read the private key file (error {exc.errno})"
+            ) from None
         if readers:
             raise AuthError(
                 f"the private key file is readable by other users ({', '.join(readers)}); run: "
@@ -141,7 +142,7 @@ def _refuse_if_shared(target: Path) -> None:
     try:
         mode = stat.S_IMODE(target.stat().st_mode)
     except OSError as exc:
-        raise AuthError(f"cannot read the private key file: {exc.strerror}") from exc
+        raise AuthError(f"cannot read the private key file: {exc.strerror}") from None
     if mode & 0o077:
         raise AuthError(
             f"the private key file is readable by other users (mode {mode:03o}); run: "
@@ -158,7 +159,7 @@ def load_private_key(path: Path) -> Ed25519PrivateKey:
     try:
         data = target.read_bytes()
     except OSError as exc:
-        raise AuthError(f"cannot read the private key file: {exc.strerror}") from exc
+        raise AuthError(f"cannot read the private key file: {exc.strerror}") from None
     return parse_private_key(data, "the private key file")
 
 
