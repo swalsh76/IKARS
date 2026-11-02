@@ -3622,5 +3622,6 @@ momentum v1's review (~2026-11-04), whose scorecard left these checks out.
 - **Review** (`/code-review low`): 1 finding. A replay of a recording made before the change might fail on the
   missing column. No change: Arrow parts go through `conform`, and real Parquet files from v0.1.15 read with the
   new schema give the column as null (483,999 rows checked).
-- **Live check of the fix: pending** (a test release on the owner's word): the 60 scalar markets' checks are
+- **Live check of the fix: pending** on **v0.1.16** (test pre-release from `93610d8`, published 2026-11-01
+  23:27 MST): the 60 scalar markets' checks are
   scored, the journal's migration backs up first, and the scorecard counts them.
