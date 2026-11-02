@@ -3622,6 +3622,13 @@ momentum v1's review (~2026-11-04), whose scorecard left these checks out.
 - **Review** (`/code-review low`): 1 finding. A replay of a recording made before the change might fail on the
   missing column. No change: Arrow parts go through `conform`, and real Parquet files from v0.1.15 read with the
   new schema give the column as null (483,999 rows checked).
-- **Live check of the fix: pending** on **v0.1.16** (test pre-release from `93610d8`, published 2026-11-01
-  23:27 MST): the 60 scalar markets' checks are
-  scored, the journal's migration backs up first, and the scorecard counts them.
+- **Live check of the fix passed** on **v0.1.16** (test pre-release from `93610d8`, published 2026-11-01 23:27 MST;
+  installed by the owner; the journal opened read-only, the API with GET only):
+  - The journal was backed up first (23:28:15), then migrated to version 4; the 47,551 earlier settlements were
+    backfilled exactly (27,430 no at nothing, 20,121 yes at $1, none empty).
+  - All 60 scalar markets settled (145 scalar settlements in all), and their 105 closed checks are scored, 35 at
+    settlement; each of those is the payout less the cost less a whole-cent entry fee. The other 70 had a bid
+    when marked, so they are scored as sold at it (the M1.12b rule).
+  - The scorecard counts them. The 6 markets left waiting are Kalshi's 5 closed and 1 inactive, without a result.
+  - The lookups worked off the restart's backlog at their cap (100 a minute): 1,600 settled with 0 failures, all
+    done by 23:46, about 18 minutes after the start.
