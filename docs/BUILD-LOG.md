@@ -3183,6 +3183,10 @@ M2's 7-day weather clock starts with this release.
 recommendation is not offered at all in quiet hours, so the alert log has no record for them. Since 2026-10-28, 107
 recommendation notifications were shown, with at most 3 in any hour, which is the cap.
 
+**CI before the merge (2026-11-01):** `pnpm audit` began failing on GHSA-g3hv-75wg-m249 (moderate: denial of
+service in minimatch below 11.0.1). It is reached only through the lint tools, and no parent accepts minimatch 11
+yet. **Owner:** ignore it, dated, in `web/pnpm-workspace.yaml`; its removal is parked in PLAN §9.
+
 **Review.**
 - **Per commit:** `d347239`, 3 found before committing; 2 fixed, 1 no change:
   - a lookup that failed once kept a city unmapped until a restart: it is now tried again;

@@ -818,3 +818,6 @@ Strata server (D24) is the one new resource: a home-network service, as the NAS 
   sets of windows instead (owner, 2026-10-27); a docking library would come back through a proposal.
 - Readable screen-reader names for list items: the terminal's lists expose each record's raw text to UI Automation
   (M1.8a live check). Natural with M1.8b's hotkeys and themes, or later.
+- Remove the `pnpm audit` exception for GHSA-g3hv-75wg-m249 (minimatch < 11.0.1, lint tools only; owner,
+  2026-11-01) in `web/pnpm-workspace.yaml` once ESLint and typescript-eslint accept minimatch 11 and that release
+  passes the 7-day rule; Dependabot shows it.
