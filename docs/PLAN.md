@@ -782,7 +782,7 @@ progress**, **not started**, **moved**, **retired**.
 | **M2 Sources** | **in progress** | M2 proposal | #32 |
 | M2.1 Polling-source framework | done | 2.1 | #33 |
 | M2.2 Weather | done (7-day gap check passed) | 2.2 | #34 |
-| M2.3 News | done (merged; the gap check pending) | 2.3 | #35 |
+| M2.3 News | merged (the day's gap check due 2026-11-02 evening; the 7-day news clock from 2026-11-01) | 2.3 | #35 |
 | M2.4 Rules and calendar | not started (after M1.R3) | — | — |
 | M2.5 to M2.10 | not started | — | — |
 | M3 to M7 | not started | — | — |
@@ -861,11 +861,12 @@ milestone proposal or a slice plan the owner approves.
 - Profile the engine's loop with an open terminal (M1.R3 F2): about 20 to 35 ms of loop time each second follows an
   open window, though each part of its pass measures well under a millisecond; a sampling profiler (`py-spy`, a new
   development tool) would say where. Reply p99 stays near 30 ms, inside D20 J's 33 ms.
-- The release gate (`tools/release/ci_gate.py`) counts a neutral `CodeQL` check as failed, where GitHub's required
-  checks count it as passed. On a PR commit that aggregate can finish neutral ("configurations not found") while the
-  `analyze (...)` jobs still run (seen merging #37, 2026-11-02); commits on `main` carry only the `analyze` jobs, so
-  releases are unaffected. If the gate is ever run on PR commits: accept a neutral aggregate once every `analyze`
-  job has succeeded.
+- The release gate (`tools/release/ci_gate.py`) fails at once on a neutral `CodeQL` check, where GitHub's required
+  checks count neutral as passed. On a PR commit that aggregate can first finish neutral ("configurations not found")
+  while the `analyze (...)` jobs still run, and turn to success when they end (seen merging #37, 2026-11-02). Test
+  releases are tagged on PR-branch commits (v0.1.12 to v0.1.19), so the next one can be refused; re-running the gate
+  job once CodeQL ends gets past it. The fix: a neutral aggregate waits while any `analyze` job runs and passes once
+  all have succeeded. Before the next test release, on the owner's approval.
 - Remove the `pnpm audit` exception for GHSA-g3hv-75wg-m249 (minimatch < 11.0.1, lint tools only; owner,
   2026-11-01) in `web/pnpm-workspace.yaml` once ESLint and typescript-eslint accept minimatch 11 and that release
   passes the 7-day rule; Dependabot shows it.

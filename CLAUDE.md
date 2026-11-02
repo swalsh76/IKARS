@@ -38,7 +38,8 @@ was built and verified: [BUILD-LOG](docs/BUILD-LOG.md) (the current milestone; M
   Strategy review decides v2 (with M1.R3 C1 and C5).
 - **Then:** M2.4 (settlement rules and the event calendar), plan first.
 - **Still with the owner:** the SignPath application (docs/CODE-SIGNING.md); the two-monitor layout check.
-- **Test releases** are published only on the owner's word ("publish 0.1.x"), from a commit whose CI passed.
+- **Test releases** are published only on the owner's word ("publish 0.1.x"), from a commit whose CI passed. Before
+  the next one, the release gate's neutral-CodeQL fix (PLAN §9) goes to the owner for approval.
 - **IKARS's own read-only Kalshi key** is in the User environment variables `IKARS_KALSHI_KEY_ID` and
   `IKARS_KALSHI_PRIVATE_KEY_PATH` (separate from KAPS and SPARQ's `KALSHI_*`). Never print or read the id, the path
   or the file; check with `Test-Path` only; load them into a single command's process.
