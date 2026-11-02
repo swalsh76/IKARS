@@ -8,7 +8,22 @@ time, or an item, from its future.
 
 import asyncio
 import time
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
+
+NS = 1_000_000_000
+EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def exact_ns(when: datetime) -> int:
+    """An aware time in exact nanoseconds since the epoch, never through a float."""
+    since = when - EPOCH
+    return (since.days * 86_400 + since.seconds) * NS + since.microseconds * 1_000
+
+
+def ns_time(ns: int) -> datetime:
+    """``exact_ns``'s inverse, to the microsecond (a ``datetime`` holds no finer)."""
+    return EPOCH + timedelta(microseconds=ns // 1_000)
 
 
 class EventClock(Protocol):

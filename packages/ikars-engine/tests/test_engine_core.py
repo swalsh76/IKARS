@@ -16,15 +16,18 @@ from ikars_engine.engine import MAX_DEPTH, Engine
 from ikars_engine.metrics import EDGES_NS, Histogram, Metrics, Stages
 from ikars_engine.model import Item, Ref, encode
 from ikars_engine.plugins import PluginBase, PluginContext, PluginKind, PluginSpec, PluginState
+from ikars_engine.recorder import write_items
+from ikars_engine.replay import RecordingReplay
 from ikars_engine.skew import SkewMonitor
-from ikars_engine.sources import LiveSource, ReplaySource, write_recording
+from ikars_engine.sources import LiveSource
 
 JAN_NS = 1_767_225_600_000_000_000  # 2026-01-01 UTC
 
 
-async def replay_outputs(path: Path) -> bytes:
-    clock = VirtualClock()
-    engine = Engine(clock, ReplaySource([path], clock), deterministic=True)
+async def replay_outputs(root: Path) -> bytes:
+    clock = VirtualClock(cli.START_NS)
+    end = cli.START_NS + 10**12
+    engine = Engine(clock, RecordingReplay(root, cli.START_NS, end, clock), deterministic=True)
     engine.host.add(cli.Counter())
     out: list[bytes] = []
 
@@ -37,9 +40,8 @@ async def replay_outputs(path: Path) -> bytes:
 
 
 async def test_the_same_recording_replays_to_byte_identical_output(tmp_path: Path) -> None:
-    path = tmp_path / "r.parquet"
-    write_recording(path, cli.synthetic(200))
-    first, second = await replay_outputs(path), await replay_outputs(path)
+    write_items(tmp_path, cli.synthetic(200))  # the recorder's own layout (M1.13)
+    first, second = await replay_outputs(tmp_path), await replay_outputs(tmp_path)
     assert first == second and first.count(b"\n") == 19  # 20 counts emitted
 
 

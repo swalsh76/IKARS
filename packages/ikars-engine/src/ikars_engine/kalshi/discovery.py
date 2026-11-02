@@ -17,9 +17,10 @@ import logging
 import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -28,7 +29,7 @@ from ikars_core.fees import FeeSchedule, fee_schedule
 from ikars_core.markets import is_combo, series_ticker_of
 from ikars_core.models import Market
 
-from ikars_engine.clocks import EventClock
+from ikars_engine.clocks import EventClock, exact_ns
 from ikars_engine.store import StateStore
 
 BOOKMARK = "discovery.updated_s"
@@ -82,12 +83,40 @@ def climate_code(rules: str | None) -> str | None:
     return found.group(1) if found else None
 
 
+def market_row(
+    info: MarketInfo, fee_terms: tuple[str, int] | None, at: int, *, full: bool = False
+) -> dict[str, Any]:
+    """A market's details (and its series' fee terms) as the ``market`` channel keeps them."""
+    return {
+        "received_ns": at, "ticker": info.ticker, "event_ticker": info.event_ticker,
+        "series_ticker": info.series_ticker, "category": info.category, "title": info.title,
+        "status": info.status,
+        "close_ns": None if info.close_time is None else exact_ns(info.close_time),
+        "result": info.result, "climate_code": info.climate_code,
+        "fee_type": None if fee_terms is None else fee_terms[0],
+        "fee_multiplier_e6": None if fee_terms is None else fee_terms[1],
+        "full": full,
+    }  # fmt: skip
+
+
+def _same(a: MarketInfo, b: MarketInfo) -> bool:
+    """The same details, whatever the day's volume (which changes all the time and is not kept)."""
+    return replace(a, volume_24h_e2=0) == replace(b, volume_24h_e2=0)
+
+
 class MarketIndex:
     def __init__(self, now_ns: Callable[[], int] = time.time_ns) -> None:
         self.now_ns = now_ns
         self.markets: dict[str, MarketInfo] = {}
         self.categories: dict[str, str] = {}  # series -> category
         self.fees: dict[str, FeeSchedule | None] = {}  # series -> fee terms (None: not modelled)
+        self.fee_terms: dict[
+            str, tuple[str, int]
+        ] = {}  # series -> (fee type, multiplier), as given
+        # the market channel's writer (M1.13): a row when a market's details first appear or change,
+        # and every market after a full discovery (``dump``); None: nothing recorded
+        self.record: Callable[[dict[str, Any]], None] | None = None
+        self.quiet = False  # during a full discovery: its dump records every market once
         self.rejects = 0
         self.combos_skipped = 0
         self.version = 0  # moves whenever a market is added, changed or removed
@@ -108,7 +137,7 @@ class MarketIndex:
             code = before.climate_code  # (rules that name no station clear it: merge review 6)
         event = market.event_ticker or ""
         series = series_ticker_of(event) or ""
-        self.markets[market.ticker] = MarketInfo(
+        info = self.markets[market.ticker] = MarketInfo(
             ticker=market.ticker,
             event_ticker=event,
             series_ticker=series,
@@ -120,6 +149,22 @@ class MarketIndex:
             volume_24h_e2=market.volume_24h_e2 or 0,
             climate_code=code,
         )
+        if (
+            self.record is not None
+            and not self.quiet
+            and (before is None or not _same(before, info))
+        ):
+            self.record(market_row(info, self.fee_terms.get(series), self.now_ns()))
+
+    def dump(self) -> int:
+        """Every market's details into the market channel (after a full discovery), so a replay
+        that starts at any time finds them all within a day; returns how many."""
+        if self.record is None:
+            return 0
+        now = self.now_ns()
+        for info in self.markets.values():
+            self.record(market_row(info, self.fee_terms.get(info.series_ticker), now, full=True))
+        return len(self.markets)
 
     def climate_codes(self) -> dict[str, list[str]]:
         """Each NWS climate-report code named by an open market's rules, and those markets."""
@@ -196,15 +241,22 @@ class Discovery:
             if series.category:
                 self.index.categories[series.ticker] = series.category
             self.index.fees[series.ticker] = fee_schedule(series.fee_type, series.fee_multiplier_e6)
+            if series.fee_type is not None and series.fee_multiplier_e6 is not None:
+                self.index.fee_terms[series.ticker] = (series.fee_type, series.fee_multiplier_e6)
         count = 0
-        for status in ("unopened", "open"):
-            async for page in self._data.markets(
-                status=status, mve_filter="exclude", tolerant=True
-            ):
-                for market in page.items:
-                    self.index.put(market)
-                count += len(page.items)
-                self.index.rejects += len(page.invalid)
+        self.index.quiet = True  # the dump below records every market once (M1.13)
+        try:
+            for status in ("unopened", "open"):
+                async for page in self._data.markets(
+                    status=status, mve_filter="exclude", tolerant=True
+                ):
+                    for market in page.items:
+                        self.index.put(market)
+                    count += len(page.items)
+                    self.index.rejects += len(page.invalid)
+        finally:
+            self.index.quiet = False
+        self.index.dump()
         self._state.set_bookmark(BOOKMARK, began - OVERLAP_SECONDS)
         self.cycles += 1
         log.info("discovery: full cycle", extra={"markets": count, "rejects": self.index.rejects})

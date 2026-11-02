@@ -14,8 +14,11 @@ Downtime is a loss too: at start, every channel's last heartbeat opens a gap to 
 subscriptions are live again ("stopped" after a clean shutdown, "restart" after a crash). A
 subscription the exchange refused after a reconnect is sent again with backoff until it holds, and
 the time it was missing is logged. A frame that fails to process is counted and logged as a gap (at
-most once a minute per channel); it never stops the feed. Recorded: trades for every market; ticker
-and books for the watched set; lifecycle for every market (owner, 2026-10-27).
+most once a minute per channel); it never stops the feed. Recorded: trades, ticker and lifecycle for
+every market (ticker for every market since M1.13; owner, 2026-11-01); books for the watched set,
+with an hourly checkpoint of each kept book; and the feed's events that change the kept state
+(start, reconnect, sequence gap, a market forgotten or unwatched), so a replay keeps the same state.
+Each item is built from the row recorded for it (``kalshi.rows``: one row, one item).
 
 Background loops run beside the feed, each catching and logging its own errors so one failure never
 stops the others: discovery, the exchange, the heartbeat (which also flushes the recorder, compacts
@@ -25,19 +28,16 @@ governor. Every REST call shares one token bucket (owner: a quarter of the accou
 """
 
 import asyncio
-import json
 import logging
 from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from ikars_core.auth import DataSigner
-from ikars_core.book import Applied, OrderBook
+from ikars_core.book import Applied
 from ikars_core.endpoints import MarketData
 from ikars_core.markets import is_combo
-from ikars_core.models import Trade
 from ikars_core.ws import Data, Reconnected, ResubscribeFailed, SequenceGap
 from ikars_core.ws_models import (
     ORDERBOOK_CHANNEL,
@@ -52,21 +52,32 @@ from ikars_engine.clocks import EventClock
 from ikars_engine.governor import StorageGovernor
 from ikars_engine.kalshi.discovery import Discovery
 from ikars_engine.kalshi.exchange import ExchangeWatch
+from ikars_engine.kalshi.rows import (
+    KalshiState,
+    book_snapshot,
+    delta_row,
+    item_of,
+    lifecycle_row,
+    rest_trade_row,
+    snapshot_item,
+    snapshot_rows,
+    ticker_row,
+    trade_row,
+)
 from ikars_engine.kalshi.watched import WatchedSet
 from ikars_engine.metrics import Metrics
-from ikars_engine.model import Item, Ref
+from ikars_engine.model import Item
 from ikars_engine.recorder import Recorder
 from ikars_engine.skew import SkewMonitor
 from ikars_engine.sources import LiveSource
 from ikars_engine.store import StateStore
 
 log = logging.getLogger("ikars_engine.kalshi")
-EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 FULL_BOOKMARK = "discovery.full_ns"
 MINUTE_NS = 60 * 1_000_000_000
 BACKFILL_RECENT_NS = 2 * 60 * MINUTE_NS  # earlier backfills' rows, by when they were fetched
-MILLISECOND = timedelta(milliseconds=1)
 NS = 1_000_000_000
+HOUR_NS = 3_600 * NS  # a checkpoint of every kept book this often (M1.13)
 CHANNEL_OF_TYPE = {
     "ticker": "ticker",
     "trade": "trade",
@@ -161,16 +172,17 @@ class KalshiSource:
         # designed overflow (drop the link, reconnect, log the gap) takes over (M1.R 7)
         self._out = LiveSource(maxsize=OUT_QUEUE_ITEMS)
         self._tasks: list[asyncio.Task[None]] = []
-        self.books: dict[str, OrderBook] = {}
         self.last_received: dict[str, int] = {}
-        self.last_price_e6: dict[str, int] = {}
-        self.quotes: dict[str, tuple[int | None, int | None]] = {}  # ticker -> (YES bid, YES ask)
-        # for the API's stream (M1.7): when each market's quote and book last changed (the frame's
-        # received time; kept apart so neither makes the other's latency look smaller), and each
-        # book's version, so only what changed is sent
-        self.changed_ns: dict[str, int] = {}
-        self.book_changed_ns: dict[str, int] = {}
-        self.book_version: dict[str, int] = {}
+        # the kept state, changed only from rows and feed events, as a replay changes it (M1.13);
+        # the source shows its dicts under their old names (the API and the journal read them)
+        self.state = KalshiState(keep=lambda t: not is_combo(t) or t in self.watched.current)
+        self.books = self.state.books
+        self.last_price_e6 = self.state.last_price_e6
+        self.quotes = self.state.quotes  # ticker -> (YES bid, YES ask)
+        self.changed_ns = self.state.changed_ns
+        self.book_changed_ns = self.state.book_changed_ns
+        self.book_version = self.state.book_version
+        self._checkpoint_ns = 0  # the start of the hour last checkpointed
         self._live_since = 0  # when the subscriptions went live: a loss starts here at the latest
         self._snapshots = 0
         self._snapshot_wanted: set[str] = set()  # asked for, not yet arrived
@@ -206,6 +218,7 @@ class KalshiSource:
         if self.watched.current:
             await self._feed.subscribe(ORDERBOOK_CHANNEL, sorted(self.watched.current))
         self._live_since = self._clock.now_ns()
+        self._feed_event("start", "", "the subscriptions are live")
         # every channel is missing from its last heartbeat until now, when the subscriptions are
         # live again (not when start() began: discovery takes minutes)
         self._gaps_from_downtime(*previous)
@@ -306,100 +319,68 @@ class KalshiSource:
         self.counts[frame.type] += 1
         if frame.sending_ts_ms:
             self._skew.add_frame(at // 1_000_000, frame.sending_ts_ms)
-        published: int | None = None
+        # each item is built from the row recorded for it (one row, one item: M1.13)
+        item: Item | None
         if isinstance(message, TickerMsg):
-            ticker = message.market_ticker
-            # the ticker channel carries every market, combos included: combos are never kept, and
-            # a market the index still lacks after a discovery cycle is forgotten then (M1.R 16)
-            known = not is_combo(ticker) or ticker in self.watched.current
-            before = (self.quotes.get(ticker), self.last_price_e6.get(ticker))
-            if known and message.price_e6 is not None:
-                self.last_price_e6[ticker] = message.price_e6
-            if known and (message.yes_bid_e6 is not None or message.yes_ask_e6 is not None):
-                bid, ask = self.quotes.get(ticker, (None, None))
-                self.quotes[ticker] = (
-                    bid if message.yes_bid_e6 is None else message.yes_bid_e6,
-                    ask if message.yes_ask_e6 is None else message.yes_ask_e6,
-                )
-            if (self.quotes.get(ticker), self.last_price_e6.get(ticker)) != before:
-                self.changed_ns[ticker] = at  # a volume-only frame leaves the quote's time
-            published = message.ts_ms
-            if ticker in self.watched.current:
-                self.recorder.write("ticker", self._ticker_row(message, at))
+            row = ticker_row(message, at)
+            self.state.ticker(row)
+            self.recorder.write("ticker", row)  # every market (owner, 2026-11-01)
+            item = item_of("ticker", row)
         elif isinstance(message, TradeMsg):
-            ticker = message.market_ticker
-            published = message.ts_ms
-            self.recorder.write("trade", _trade_row(message, at))
+            row = trade_row(message, at)
+            self.recorder.write("trade", row)
+            item = item_of("trade", row)
         elif isinstance(message, MarketLifecycleMsg):
-            ticker = message.market_ticker or ""
-            self.recorder.write(
-                "lifecycle",
-                {"received_ns": at, "ticker": ticker, "event_type": message.event_type,
-                 "result": message.result,
-                 "message": json.dumps(frame.raw.get("msg"), default=str)},
-            )  # fmt: skip
+            row = lifecycle_row(message, frame.raw.get("msg"), at)
+            self.recorder.write("lifecycle", row)
+            item = item_of("lifecycle", row)
         elif isinstance(message, OrderbookSnapshotMsg):
-            ticker = message.market_ticker
-            book = self.books.setdefault(ticker, OrderBook(ticker))
-            book.apply_snapshot(message)
-            self._book_changed(ticker, at)
-            self._snapshot_wanted.discard(ticker)
+            self.state.snapshot(message, at)
+            self._snapshot_wanted.discard(message.market_ticker)
             self._snapshots += 1
-            for side, levels in (("yes", message.yes), ("no", message.no)):
-                for price, count in levels:
-                    self.recorder.write(
-                        "book_snapshot",
-                        {"received_ns": at, "ticker": ticker, "snapshot": self._snapshots,
-                         "side": side, "price_e6": price, "count_e2": count},
-                    )  # fmt: skip
+            rows = snapshot_rows(message, self._snapshots, at)
+            for row in rows:
+                self.recorder.write("book_snapshot", row)
+            item = snapshot_item(rows)
         elif isinstance(message, OrderbookDeltaMsg):
             ticker = message.market_ticker
-            published = message.ts_ms
             self.watched.note_delta(ticker)
-            kept = self.books.get(ticker)  # only a snapshot makes a book (M1.R 11, 16)
-            if kept is None:
-                applied = Applied.NO_SNAPSHOT
-            else:
-                was_broken = kept.broken
-                applied = kept.apply_delta(message)
-                if applied is Applied.APPLIED or (applied is Applied.BROKEN and not was_broken):
-                    self._book_changed(ticker, at)  # only a real change is news (M1.R 13)
+            applied = self.state.delta(message, at)
             if applied is Applied.BROKEN:
                 self._metrics.count("kalshi.book.broken")
                 self._request_snapshots([ticker])
             elif applied is Applied.NO_SNAPSHOT and ticker in self.watched.current:
                 self._metrics.count("kalshi.book.no_snapshot")
                 self._request_snapshots([ticker])  # a lost snapshot is asked for again
-            self.recorder.write(
-                "book_delta",
-                {"received_ns": at, "ts_ms": message.ts_ms, "ticker": ticker, "seq": frame.seq,
-                 "side": message.side, "price_e6": message.price_e6, "delta_e2": message.delta_e2},
-            )  # fmt: skip
+            row = delta_row(message, frame.seq, at)
+            self.recorder.write("book_delta", row)
+            item = item_of("book_delta", row)
         else:
             return
-        await self._out.put(
-            Item(
-                ref=Ref(frame.type, ticker),
-                source="kalshi",
-                received_ns=at,
-                published_ns=None if published is None else published * 1_000_000,
-                payload=message.model_dump(mode="json"),
-            )
-        )
+        if item is not None:
+            await self._out.put(item)
 
-    def _book_changed(self, ticker: str, at: int) -> None:
-        self.book_version[ticker] = self.book_version.get(ticker, 0) + 1
-        self.book_changed_ns[ticker] = at
+    def _feed_event(self, event: str, channel: str, detail: str) -> None:
+        """A feed event that changes the kept state: recorded, then applied through the state, as a
+        replay applies it (M1.13)."""
+        row = {"received_ns": self._clock.now_ns(), "event": event, "channel": channel,
+               "detail": detail}  # fmt: skip
+        self.recorder.write("feed", row)
+        self.state.feed_event(row)
 
-    @staticmethod
-    def _ticker_row(message: TickerMsg, at: int) -> dict[str, Any]:
-        return {
-            "received_ns": at, "ts_ms": message.ts_ms, "ticker": message.market_ticker,
-            "price_e6": message.price_e6, "yes_bid_e6": message.yes_bid_e6,
-            "yes_ask_e6": message.yes_ask_e6, "yes_bid_size_e2": message.yes_bid_size_e2,
-            "yes_ask_size_e2": message.yes_ask_size_e2, "volume_e2": message.volume_e2,
-            "open_interest_e2": message.open_interest_e2,
-        }  # fmt: skip
+    def _checkpoint(self, now: int) -> None:
+        """Once an hour: every kept book that can be trusted, as snapshot rows marked as a
+        checkpoint, so a replay that starts in this hour has the books (M1.13)."""
+        hour = now - now % HOUR_NS
+        if hour <= self._checkpoint_ns:
+            return
+        self._checkpoint_ns = hour
+        for book in list(self.books.values()):
+            if book.ready:
+                self._snapshots += 1
+                rows = snapshot_rows(book_snapshot(book), self._snapshots, now, checkpoint=True)
+                for row in rows:
+                    self.recorder.write("book_snapshot", row)
 
     def _request_snapshots(self, tickers: list[str]) -> None:
         """Ask for fresh snapshots off the pump (a command waits for its reply, which comes through
@@ -451,7 +432,8 @@ class KalshiSource:
                 min(self._since(channel), down_from),
                 f"down {event.downtime:.1f} s",
             )
-        self.books.clear()  # every book is rebuilt from the snapshots the resubscription brings
+        # every book is rebuilt from the snapshots the resubscription brings
+        self._feed_event("reconnect", "book", f"down {event.downtime:.1f} s")
         self._snapshot_wanted.clear()
 
     def _sequence_gap(self, event: SequenceGap) -> None:
@@ -466,6 +448,8 @@ class KalshiSource:
             channel, "sequence", self._since(channel), f"expected {event.expected}, got {event.got}"
         )
         if channel == "book":
+            # every book is broken until its snapshot comes: a gap never reads as a sound book
+            self._feed_event("sequence_gap", "book", f"expected {event.expected}, got {event.got}")
             self._request_snapshots(sorted(self.watched.current))
 
     def _resubscribe_failed(self, event: ResubscribeFailed) -> None:
@@ -522,11 +506,8 @@ class KalshiSource:
     def _forget(self, tickers: list[str]) -> None:
         """Drop what is kept per market for markets the index no longer has (M1.R 16)."""
         for ticker in tickers:
-            if ticker in self.watched.current:
-                continue
-            for kept in (self.quotes, self.last_price_e6, self.changed_ns, self.books,
-                         self.book_version, self.book_changed_ns):  # fmt: skip
-                kept.pop(ticker, None)
+            if ticker not in self.watched.current:
+                self._feed_event("forget", "", ticker)
 
     async def _poll_exchange(self) -> None:
         await self.exchange.poll()
@@ -537,6 +518,7 @@ class KalshiSource:
 
     async def _heartbeat(self) -> None:
         self._heartbeat_now()
+        self._checkpoint(self._clock.now_ns())
         if self.recorder.close_finished(self._clock.now_ns()):  # flushes too
             await asyncio.to_thread(self.recorder.compact_pending)  # seconds of work: off the loop
         if self._signer is not None:
@@ -603,7 +585,7 @@ class KalshiSource:
                         if trade.trade_id in known:  # the feed had it: never stored twice
                             continue
                         known.add(trade.trade_id)
-                        self.recorder.write("trade", _rest_trade_row(trade, self._clock.now_ns()))
+                        self.recorder.write("trade", rest_trade_row(trade, self._clock.now_ns()))
                         count += 1
             if gap_id is not None:  # this slice is done: a later attempt starts after it
                 self._state.set_bookmark(done_key, high)
@@ -637,7 +619,7 @@ class KalshiSource:
             held = await self._feed.update_subscription(sid, "delete_markets", removed)
             self.watched.current = set(held)
             for ticker in removed:
-                self.books.pop(ticker, None)
+                self._feed_event("unwatch", "book", ticker)
         if added:
             held = await self._feed.update_subscription(sid, "add_markets", added)
             self.watched.current = set(held)
@@ -671,21 +653,3 @@ class KalshiSource:
             "storage": self.storage,
             "feed": {k: v for k, v in self._feed.stats().items() if not isinstance(v, dict)},
         }
-
-
-def _trade_row(message: TradeMsg, at: int) -> dict[str, Any]:
-    return {
-        "received_ns": at, "ts_ms": message.ts_ms, "ticker": message.market_ticker,
-        "trade_id": message.trade_id, "yes_price_e6": message.yes_price_e6,
-        "no_price_e6": message.no_price_e6, "count_e2": message.count_e2,
-        "taker_side": message.taker_side, "backfilled": False,
-    }  # fmt: skip
-
-
-def _rest_trade_row(trade: Trade, at: int) -> dict[str, Any]:
-    return {
-        "received_ns": at, "ts_ms": (trade.created_time - EPOCH) // MILLISECOND,
-        "ticker": trade.ticker, "trade_id": trade.trade_id, "yes_price_e6": trade.yes_price_e6,
-        "no_price_e6": trade.no_price_e6, "count_e2": trade.count_e2,
-        "taker_side": trade.taker_side, "backfilled": True,
-    }  # fmt: skip

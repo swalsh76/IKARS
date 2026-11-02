@@ -23,24 +23,30 @@ Like any hour it counts against the storage budget, and the governor prunes it o
 
 Money and counts are stored as the fixed-point integers the models give (dollar millionths,
 contract hundredths), never floats; times as integers (nanoseconds received, Kalshi's milliseconds).
+
+**Columns are only ever added** (M1.13: the books' ``clock``, the snapshots' ``checkpoint``). A file
+written before a column existed is read with that column null (``conform``), so an hour that spans
+an upgrade still compacts, and a replay reads every recording.
 """
 
 import logging
 import os
 import time
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from itertools import count
 from pathlib import Path
 from typing import Any
 
+import msgspec
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.ipc as ipc
 import pyarrow.parquet as pq
 
 from ikars_engine.files import first_free
+from ikars_engine.model import Item, Ref
 
 log = logging.getLogger("ikars_engine.recorder")
 _I64 = pa.int64()
@@ -85,6 +91,7 @@ SCHEMAS: dict[str, pa.Schema] = {
             ("message", _STR),
         ]
     ),  # fmt: skip
+    # one row per level; an empty book is one row with no side (M1.13), so a replay sees it too
     "book_snapshot": pa.schema(
         [
             ("received_ns", _I64),
@@ -93,6 +100,8 @@ SCHEMAS: dict[str, pa.Schema] = {
             ("side", _STR),
             ("price_e6", _I64),
             ("count_e2", _I64),
+            ("clock", _I64),  # Kalshi's, when it sends one (none in production on 2026-10-26)
+            ("checkpoint", pa.bool_()),  # the hourly copy of a kept book, not a feed message
         ]
     ),  # fmt: skip
     "book_delta": pa.schema(
@@ -104,6 +113,36 @@ SCHEMAS: dict[str, pa.Schema] = {
             ("side", _STR),
             ("price_e6", _I64),
             ("delta_e2", _I64),
+            ("clock", _I64),
+        ]
+    ),  # fmt: skip
+    # a market's details when they first appear or change, and every market after each full
+    # discovery (``full``), so a replay knows them as they were (M1.13; owner, 2026-11-01)
+    "market": pa.schema(
+        [
+            ("received_ns", _I64),
+            ("ticker", _STR),
+            ("event_ticker", _STR),
+            ("series_ticker", _STR),
+            ("category", _STR),
+            ("title", _STR),
+            ("status", _STR),
+            ("close_ns", _I64),
+            ("result", _STR),
+            ("climate_code", _STR),
+            ("fee_type", _STR),  # the series' fee terms then
+            ("fee_multiplier_e6", _I64),
+            ("full", pa.bool_()),
+        ]
+    ),  # fmt: skip
+    # what the live feed did to its kept state: a start, a reconnect (every book cleared), a
+    # sequence gap (the books broken until their snapshots), so a replay does the same (M1.13)
+    "feed": pa.schema(
+        [
+            ("received_ns", _I64),
+            ("event", _STR),
+            ("channel", _STR),
+            ("detail", _STR),
         ]
     ),  # fmt: skip
 }
@@ -284,12 +323,26 @@ class Recorder:
         return found
 
 
+def conform(table: pa.Table, schema: pa.Schema) -> pa.Table:
+    """``table`` in ``schema``'s columns and order; a column an older recording lacks is null."""
+    if table.schema.equals(schema):
+        return table
+    columns = [
+        table.column(f.name) if f.name in table.column_names else pa.nulls(table.num_rows, f.type)
+        for f in schema
+    ]
+    return pa.Table.from_arrays(columns, schema=schema)
+
+
 def _read_stream(path: Path, schema: pa.Schema) -> pa.Table:
-    """Every complete batch of an IPC stream; a torn tail (a crash) is left out."""
+    """Every complete batch of an IPC stream; a torn tail (a crash) is left out. A stream written
+    before a column existed is read with it null (M1.13)."""
     batches: list[pa.RecordBatch] = []
+    written = schema
     try:
         with pa.OSFile(str(path), "rb") as source:
             reader = ipc.open_stream(source)
+            written = reader.schema
             while True:
                 try:
                     batches.append(reader.read_next_batch())
@@ -297,7 +350,7 @@ def _read_stream(path: Path, schema: pa.Schema) -> pa.Table:
                     break
     except (pa.ArrowInvalid, OSError):
         pass  # truncated: keep what was read
-    return pa.Table.from_batches(batches, schema=schema)
+    return conform(pa.Table.from_batches(batches, schema=written), schema)
 
 
 def compact(path: Path, channel: str) -> Path:
@@ -368,6 +421,36 @@ def _first_of_each(table: pa.Table, key: str) -> pa.Table:
     return table.take(pa.array(keep, pa.int64())) if len(keep) != table.num_rows else table
 
 
+def item_row(item: Item) -> dict[str, Any]:
+    """An item a plugin emitted, as the ``item`` channel records it (D20 A)."""
+    return {
+        "received_ns": item.received_ns, "published_ns": item.published_ns,
+        "kind": item.ref.kind, "id": item.ref.id, "source": item.source, "hops": item.hops,
+        "payload": msgspec.json.encode(item.payload).decode(),
+    }  # fmt: skip
+
+
+def item_from_row(row: dict[str, Any]) -> Item:
+    """``item_row``'s inverse: the item as it was emitted (M1.13)."""
+    return Item(
+        ref=Ref(row["kind"], row["id"]), source=row["source"], received_ns=row["received_ns"],
+        published_ns=row["published_ns"], payload=msgspec.json.decode(row["payload"]),
+        hops=row["hops"] or 0,
+    )  # fmt: skip
+
+
+def write_items(root: Path, items: Iterable[Item]) -> int:
+    """A made-up recording of ``items`` in the ``item`` channel, compacted (the smoke run and
+    tests); returns how many were written."""
+    recorder = Recorder(root)
+    count = 0
+    for item in items:
+        recorder.write("item", item_row(item))
+        count += 1
+    recorder.close()
+    return count
+
+
 def hours(root: Path, channel: str) -> list[Path]:
     """Every compacted hour of ``channel``, oldest first."""
     return sorted((root / channel).glob("*/*.parquet"))
@@ -376,3 +459,87 @@ def hours(root: Path, channel: str) -> list[Path]:
 def read_rows(paths: Iterable[Path], channel: str) -> pa.Table:
     tables = [pq.read_table(p, schema=SCHEMAS[channel]) for p in paths]
     return pa.concat_tables(tables) if tables else SCHEMAS[channel].empty_table()
+
+
+def hour_files(root: Path, channel: str, hour: Hour) -> list[Path]:
+    """Every file holding ``channel``'s rows for ``hour``: its Parquet, its part files, and an
+    hour still open or folding in (``.arrow``, ``.arrow.merged``). Damaged files are left out."""
+    folder = root / channel / hour[0]
+    if not folder.is_dir():
+        return []
+    names = (f"{hour[1]}.parquet", f"{hour[1]}.arrow", f"{hour[1]}.arrow.merged")
+    found = [p for p in folder.iterdir() if p.name in names or _is_part(p.name, hour[1])]
+    return sorted(found, key=lambda p: p.name)
+
+
+def _is_part(name: str, hh: str) -> bool:
+    head, _, rest = name.partition(".")
+    number, _, kind = rest.partition(".")
+    return head == hh and number.isdigit() and kind in ("parquet", "arrow", "arrow.merged")
+
+
+def read_hour(root: Path, channel: str, hour: Hour, attempts: int = 5) -> pa.Table:
+    """``channel``'s rows for ``hour`` from all its files, sorted by received time (stably: ties
+    keep file order, then row order). An hour being compacted while it is read (the live engine
+    folds a stream into its Parquet) could be read twice or not at all, so the files are listed
+    before and after, and read again when they changed (per-commit review). A recording is only
+    ever read, never changed."""
+    schema = SCHEMAS[channel]
+    tables: list[pa.Table] = []
+    for _ in range(attempts):
+        before = _listing(root, channel, hour)
+        tables = []
+        for path in hour_files(root, channel, hour):
+            if path.name.endswith(".parquet"):
+                try:
+                    tables.append(pq.read_table(path, schema=schema))
+                except (pa.ArrowInvalid, OSError):
+                    continue  # being replaced, or damaged (the governor and compaction report it)
+            else:
+                tables.append(_read_stream(path, schema))
+        if _listing(root, channel, hour) == before:
+            break
+        time.sleep(0.2)  # a compaction takes about a second: read again once it is done
+    if not tables:
+        return schema.empty_table()
+    table = pa.concat_tables(tables)
+    if len(tables) > 1 or not in_order(tables[0]):
+        table = table.take(pc.sort_indices(table, sort_keys=[("received_ns", "ascending")]))
+    return table
+
+
+def _listing(root: Path, channel: str, hour: Hour) -> list[tuple[str, int]]:
+    """An hour's files by name and size: a compaction renames or rewrites one."""
+    out = []
+    for path in hour_files(root, channel, hour):
+        try:
+            out.append((path.name, path.stat().st_size))
+        except OSError:
+            out.append((path.name, -1))
+    return out
+
+
+def iter_hour(
+    root: Path, channel: str, hour: Hour, batch_rows: int = 65_536
+) -> Iterator[pa.RecordBatch]:
+    """``read_hour``'s rows in batches. A compacted hour (one sorted Parquet file, the usual case)
+    is streamed a batch at a time, so a replay holds about one batch per channel, not the hour; an
+    hour still open or in parts is read whole and sorted first."""
+    files = hour_files(root, channel, hour)
+    if len(files) == 1 and files[0].name.endswith(".parquet"):
+        try:
+            source = pq.ParquetFile(files[0])
+            if source.schema_arrow.equals(SCHEMAS[channel]):
+                yield from source.iter_batches(batch_size=batch_rows)
+                return
+        except (pa.ArrowInvalid, OSError):
+            pass  # replaced this instant, or older columns: read whole below
+    yield from read_hour(root, channel, hour).to_batches(max_chunksize=batch_rows)
+
+
+def in_order(table: pa.Table) -> bool:
+    """Whether a table's rows are already in received-time order (a compacted hour is)."""
+    column = table.column("received_ns")
+    if column.null_count or table.num_rows < 2:
+        return True
+    return bool(pc.all(pc.greater_equal(column[1:], column[:-1])).as_py())

@@ -481,6 +481,14 @@ class JournalService:
                     self.journal.settle(ticker, result, now)
         self.journal.score(self.fees, now)
 
+    def step(self) -> None:
+        """One pass: what came is written, then expired, marked and scored (``run`` does this once
+        a second; a replay once a virtual second: M1.13)."""
+        items: list[Item] = []
+        while not self.queue.empty():
+            items.append(self.queue.get_nowait())
+        self._write(items)
+
     async def refresh_card(self) -> None:
         """The scorecard, on a worker thread (its own read-only connection)."""
         now = self.now_ns()
@@ -507,11 +515,8 @@ class JournalService:
                 if not running and self.now_ns() - self.card_at_ns >= SETTLE_EVERY_NS:
                     # beside the loop: a slow query never holds up writing and marking (review 4)
                     self.card_task = asyncio.create_task(self._card(), name="scorecard")
-                items: list[Item] = []
-                while not self.queue.empty():
-                    items.append(self.queue.get_nowait())
                 try:
-                    self._write(items)
+                    self.step()
                 except Exception as exc:  # expiring or marking: never stops the engine; next second
                     self.failures += 1
                     log.warning("journal pass failed",

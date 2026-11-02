@@ -22,8 +22,9 @@ from ikars_engine.polling import (
     backoff_s,
     user_agent,
 )
+from ikars_engine.recorder import write_items
+from ikars_engine.replay import RecordingReplay
 from ikars_engine.settings import MIGRATIONS, VERSION, Settings, migrate
-from ikars_engine.sources import ReplaySource, write_recording
 from ikars_engine.store import StateStore
 
 T0 = 1_767_225_600 * NS  # 2026-01-01 00:00 UTC
@@ -282,12 +283,11 @@ def test_what_a_source_emits_replays_at_its_received_time(tmp_path: Path) -> Non
         Item(ref=i.ref, source=i.source, received_ns=T0 + n, payload=i.payload)
         for n, i in enumerate(emitted)
     ]  # the host stamps received time live; here by hand
-    path = tmp_path / "rec.parquet"
-    write_recording(path, stamped)
+    write_items(tmp_path / "rec", stamped)
     clock = VirtualClock(T0 - 1)
 
     async def read() -> list[Item]:
-        return [i async for i in ReplaySource([path], clock).items()]
+        return [i async for i in RecordingReplay(tmp_path / "rec", T0 - 1, T0 + 2, clock).items()]
 
     back = asyncio.run(read())
     assert [(i.ref.id, i.received_ns) for i in back] == [("a", T0), ("b", T0 + 1)]
