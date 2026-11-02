@@ -398,7 +398,7 @@ async def build(
         )
 
     api = ApiServer(api_context, paths.data, port=settings.terminal.port,
-                    on_fallback=port_taken_alert(paths, settings))  # fmt: skip
+                    on_fallback=lambda: notices.send(PORT_TAKEN))  # fmt: skip
     engine.health_parts["api"] = api.health
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
     return Live(
@@ -593,21 +593,26 @@ async def run(
     return health
 
 
+PORT_TAKEN = Alert(
+    "api:port-taken",
+    URGENT,
+    "The terminal's port was taken",
+    "Something held IKARS's port at the restart (another program, or the old connections), so "
+    "IKARS took another and signed every window out. If it happens again, look for a program on "
+    "that port. Run: ikars open",
+)
+
+
 def port_taken_alert(paths: Paths, settings: Settings) -> Callable[[], None]:
     """An urgent alert that the terminal's port was taken and every window signed out (M1.R3
-    D1), raised beside the loop (a notification can take a moment)."""
-    desk = desk_for(paths, settings, ENGINE_DESK)
-    alert = Alert(
-        "api:port-taken",
-        URGENT,
-        "The terminal's port was taken",
-        "Another program held IKARS's port at the restart: every window is signed out. If you "
-        "did not expect this, find that program. Run: ikars open",
-    )
+    D1), raised beside the loop (a notification can take a moment); the desk is made only then.
+    For an engine without its own Notices (setup mode); the full engine sends it through those."""
 
     def raise_it() -> None:
         try:
-            desk.raise_alert(alert, datetime.now().astimezone())
+            desk_for(paths, settings, ENGINE_DESK).raise_alert(
+                PORT_TAKEN, datetime.now().astimezone()
+            )
         except Exception as exc:  # in the log all the same: never a failed start
             log.warning("port alert not shown", extra={"error": type(exc).__name__})
 

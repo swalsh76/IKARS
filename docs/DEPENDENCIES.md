@@ -18,7 +18,7 @@ replaced) in its slice plan, with its licence checked then.
 | Node.js | 24.22.1 LTS | development and CI | MIT | Builds the web terminal; not shipped. Per user, no admin: the official `node-v24.22.1-win-x64.zip`, checked against Node's `SHASUMS256.txt`, unpacked to `%LOCALAPPDATA%\Programs\nodejs` and added to the user `PATH` (winget's package is a machine-wide MSI). CI: `actions/setup-node`. |
 | pnpm | 12.14.0 (`packageManager` in `web/package.json`) | development and CI | MIT | Through Corepack (`corepack enable`, part of Node 24). Settings in `web/pnpm-workspace.yaml`: a release is used only once 7 days old; install scripts run for none. |
 | .NET SDK | 8 or later | builds only (M1.9a) | MIT | Builds `IKARS.exe` (`tools/launcher`, for .NET Framework 4.8, which is part of Windows 11, so nothing is shipped; the reference assemblies come with the SDK) and runs `vpk`. CI's Windows runner has it. |
-| vpk (Velopack) | 1.2.161 (`dotnet-tools.json`) | builds only (M1.9a) | MIT | `dotnet tool restore` in the repository; packs `Setup.exe`, the portable zip and the update packages. |
+| vpk (Velopack) | 1.2.161 (`.config/dotnet-tools.json`) | builds only (M1.9a) | MIT | `dotnet tool restore` in the repository; packs `Setup.exe`, the portable zip and the update packages. |
 | Windows Sandbox | part of Windows 11 Pro | testing only (M1.9a) | — | The clean-machine install checks; turned on once by an admin (`Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM -All`, one restart). |
 
 ### Python packages (engine)

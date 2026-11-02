@@ -824,7 +824,7 @@ def create_app(ctx: ApiContext) -> ASGIApp:
             wanted = msgspec.json.decode(await request.body(), type=c.SessionCode)
         except msgspec.DecodeError as exc:
             return _error(400, "bad_request", str(exc))
-        value = ctx.sessions.redeem(wanted.code, ctx.port)
+        value = ctx.sessions.redeem(wanted.code, ctx.port or 0)  # as the Guard checks it
         if value is None:
             return _error(401, "unauthorised", "the code was used, expired or unknown")
         cookie = ctx.sessions.set_cookie(value).decode("ascii")

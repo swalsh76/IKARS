@@ -103,7 +103,12 @@ def test_a_machine_s_own_names_are_refused_and_placeholders_pass() -> None:
         ("a.py", f'SHARE = r"{bs * 2}fileserver{bs}ikars"'),
         ("b.md", f"see `C:{bs}Users{bs}bob{bs}keys`"),
         ("c.py", f'"C:{bs * 2}Users{bs * 2}bob{bs * 2}keys"'),
+        ("d.md", f"**{bs * 2}realnas{bs}x**"),  # Markdown's marks (merge review 9)
+        ("e.md", f"| {bs * 2}realnas{bs}x |"),
+        ("f.md", "C:" + "/Users/" + "bob/dev"),  # forward slashes
     ]
+    # the whole path from staged text: forward slashes reach the check (merge review 4)
+    assert len(named_machines([("g.md", line) for _, line in real])) == len(real)
     assert len(named_machines(real)) == len(real)
     placeholders = [
         ("docs/x.md", r"`\\<nas>\<share>`"),
@@ -112,5 +117,7 @@ def test_a_machine_s_own_names_are_refused_and_placeholders_pass() -> None:
         ("c.py", r'KEY_PATH = r"C:\Users\someone\.ssh\x.pem"'),
         ("d.py", r'"-----BEGIN-----\\nabc\\n-----END-----"'),  # an escaped newline, no path
         ("e.py", r"HKCU\\Software\\Microsoft"),  # a registry key
+        ("f.py", "pipe = r'" + "\\" * 2 + ".\\pipe\\x'"),  # Windows' own namespace (review 4)
+        ("g.md", f"C:{bs}Users{bs}Public{bs}Desktop"),  # every Windows has it
     ]
     assert named_machines(placeholders) == []

@@ -42,6 +42,7 @@ from ikars_engine.settings import Settings
 from ikars_engine.settings_api import restart_wanted
 from ikars_engine.watchdog import check, engine_command, start_engine
 
+WATCHDOG_TASK_STAMP = "watchdog-task.txt"  # the task's command as last written (M1.R3 E7)
 log = logging.getLogger("ikars_engine.serve")
 COMMANDS = (
     "serve",
@@ -114,15 +115,22 @@ def rollback(paths: Paths, version: str, managers: Any = None) -> dict[str, obje
         raise upgrades.RollbackRefused(
             "the engine did not stop in time: nothing changed, try again"
         )
-    done, undo = upgrades.restore_undoable(paths, version, current)
+    try:
+        done, undo = upgrades.restore_undoable(paths, version, current)
+    except Exception:  # refused: the engine is not left down for the update's 15 minutes (review 7)
+        runmode.clear_stop(paths.data)
+        raise
     try:
         back.wait_exit_then_apply_updates(found_release, silent=True, restart=True)
     except Exception as exc:  # the install never started: the newer data goes back (M1.R3 E5)
-        undo()
-        runmode.clear_stop(paths.data)
-        raise upgrades.RollbackRefused(
-            f"the install could not start ({exc}): the data is as it was, start IKARS again"
-        ) from exc
+        try:
+            undo()
+            said = "the data is as it was, start IKARS again"
+        except Exception as failed:  # said, never hidden behind the first failure (review 6)
+            said = f"putting the data back failed too ({failed}): see backups\\rolled-back"
+        finally:
+            runmode.clear_stop(paths.data)  # the watchdog starts the engine again
+        raise upgrades.RollbackRefused(f"the install could not start ({exc}): {said}") from exc
     return {"rolled_back": True, "installing": version, **done}
 
 
@@ -232,7 +240,8 @@ def serve(paths: Paths, settings: Settings, root: Path | None = None) -> int:
         if sys.platform == "win32":  # the watchdog's task as this version writes it (M1.R3 E7)
             try:
                 registry, python = autostart.UserRegistry(), autostart.windowless_python()
-                autostart.refresh_task(registry, autostart.run_quietly, python, root)
+                stamp = paths.data / WATCHDOG_TASK_STAMP
+                autostart.refresh_task(registry, autostart.run_quietly, python, root, stamp)
             except Exception as exc:  # never a failed start: the old task still runs
                 log.warning("watchdog task not refreshed", extra={"error": type(exc).__name__})
 

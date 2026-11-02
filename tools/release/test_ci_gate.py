@@ -37,3 +37,38 @@ def test_a_check_run_again_counts_by_its_newest_run() -> None:
     assert verdict(runs)[0] == "pass"
     runs.append(run("web", conclusion="failure", id_=9))
     assert verdict(runs)[0] == "fail"
+
+
+def test_on_main_codeql_is_every_language_s_analysis() -> None:
+    """Merge review 4: main's commits carry no "CodeQL" check, only its jobs."""
+    jobs = [run("python"), run("hygiene"), run("web")]
+    analyses = [run("analyze (python)", id_=2), run("analyze (javascript-typescript)", id_=3)]
+    assert verdict(jobs + analyses)[0] == "pass"
+    running = [run("analyze (python)", "in_progress", None, id_=2)]
+    assert verdict(jobs + running)[0] == "wait"
+    failed = [run("analyze (python)", conclusion="failure", id_=2)]
+    assert verdict(jobs + failed) == ("fail", "failed: CodeQL")
+
+
+def test_a_skipped_required_check_is_not_a_pass() -> None:
+    runs = [run(name) for name in REQUIRED[1:]] + [run("python", conclusion="skipped")]
+    assert verdict(runs)[0] == "fail"
+
+
+def test_a_failed_read_of_the_checks_is_asked_again(monkeypatch: Any) -> None:
+    """Merge review 8: one passing gh api error failed the release."""
+    import subprocess
+
+    import ci_gate
+
+    answers: list[Any] = [subprocess.CalledProcessError(1, "gh"), [run(n) for n in REQUIRED]]
+
+    def reads(repo: str, sha: str) -> list[dict[str, Any]]:
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer  # type: ignore[no-any-return]
+
+    monkeypatch.setattr(ci_gate, "check_runs", reads)
+    monkeypatch.setattr("ci_gate.time.sleep", lambda s: None)
+    assert ci_gate.main(["--repo", "o/n", "--sha", "abc", "--wait-s", "60"]) == 0

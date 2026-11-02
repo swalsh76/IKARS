@@ -13,7 +13,6 @@ Kalshi what was recorded since; the owner's annotations made since are counted f
 aside, to be entered again.
 """
 
-import contextlib
 import json
 import logging
 import secrets
@@ -236,8 +235,12 @@ def restore_undoable(
             copied.append(target)
             shutil.copytree(copy, target) if copy.is_dir() else shutil.copy2(copy, target)
     except Exception as exc:  # undo exactly what was done, nothing else (merge review 1)
-        _put_back(copied, moved)
-        problem = f"the snapshot could not be restored ({exc}); nothing changed"
+        try:
+            _put_back(copied, moved)
+            problem = f"the snapshot could not be restored ({exc}); nothing changed"
+        except OSError as failed:  # said, never "nothing changed" (M1.R3 merge review 7)
+            problem = (f"the snapshot could not be restored ({exc}), and putting the data back "
+                       f"failed ({failed}): it is in backups\\rolled-back")  # fmt: skip
         raise RollbackRefused(problem) from exc
     write_text_atomic(paths.data / VERSION_FILE, version + "\n")
 
@@ -246,16 +249,29 @@ def restore_undoable(
         write_text_atomic(paths.data / VERSION_FILE, current + "\n")
 
     head, kept = int(manifest["ledger_head"]), aside / "ledger.sqlite"
-    return {"restored": name, "set_aside": str(aside.name),
-            "annotations_to_enter_again": records_since(kept, head, "annotation"),
-            "own_records_kept_aside": records_since(kept, head, "app")}, undo  # fmt: skip
+    try:
+        counts = {"annotations_to_enter_again": records_since(kept, head, "annotation"),
+                  "own_records_kept_aside": records_since(kept, head, "app")}  # fmt: skip
+    except Exception as exc:  # after the swap: undone, never left half done (merge review 7)
+        undo()
+        problem = f"the set-aside ledger could not be read ({exc}); nothing changed"
+        raise RollbackRefused(problem) from exc
+    return {"restored": name, "set_aside": str(aside.name), **counts}, undo
 
 
 def _put_back(copied: list[Path], moved: list[tuple[Path, Path]]) -> None:
-    """Undo a swap: what the snapshot put back goes, and the data set aside returns."""
+    """Undo a swap: what the snapshot put back goes, and the data set aside returns. Every step is
+    tried; any that failed are raised together afterwards (merge review 7)."""
+    failed: list[str] = []
     for target in copied:
-        with contextlib.suppress(OSError):
+        try:
             shutil.rmtree(target) if target.is_dir() else target.unlink(missing_ok=True)
+        except OSError as exc:
+            failed.append(f"{target.name}: {exc.strerror}")
     for kept, live in reversed(moved):
-        with contextlib.suppress(OSError):
+        try:
             shutil.move(kept, live)
+        except OSError as exc:
+            failed.append(f"{live.name}: {exc.strerror}")
+    if failed:
+        raise OSError("; ".join(failed))

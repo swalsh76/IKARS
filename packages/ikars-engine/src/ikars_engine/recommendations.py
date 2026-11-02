@@ -211,6 +211,12 @@ class Notices:
         self._sent.append(now)
         return True
 
+    def send(self, alert: Alert) -> None:
+        """Another engine alert through this desk and its one thread (two desks on one state file
+        would overwrite each other's memory: M1.R3 merge review 1)."""
+        with contextlib.suppress(RuntimeError):  # closed: the engine is stopping
+            self._pool.submit(self._show, alert, self._now())
+
     def _show(self, alert: Alert, now: datetime) -> None:
         try:
             self._desk.raise_alert(alert, now)

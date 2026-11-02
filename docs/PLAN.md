@@ -878,6 +878,19 @@ Strata server (D24) is the one new resource: a home-network service, as the NAS 
 - The Markets list's sort (M1.R3 B5): when volumes move, the next Markets request re-sorts the whole index
   on the loop (about 280 ms at 560k markets, at most once a minute). A sort off the loop, or by open markets
   only, when the Markets screen is next worked on.
+- **For the security review before M7** (M1.R3b merge review, sub-agent 1): a program that takes the terminal's
+  port while the engine is down and lets it go before the engine starts again (an update, the watchdog's gap, a
+  stop with windows open) keeps any cookie the windows sent it, as the engine then gets its own port and rotates
+  nothing; a window that loads a page from it (a reload, a layout window) could also register a service worker in
+  the IKARS Edge profile that outlives a new key. Narrowing: `ikars open` clearing the profile's service workers
+  while Edge is closed, the page unregistering any at load, and an engine proof (a nonce the engine signs) before
+  any request that carries the cookie. Needs a hostile process on the workstation in that window; recommend-only.
+- A rollback whose install fails **after** IKARS has exited (Velopack's `Update.exe`, files held): the newer program
+  starts on the older data (M1.R3b merge review, sub-agent 2). A "rolling back" marker read at start, which puts the
+  set-aside data back and alerts, would cover it; with M5's restore work.
+- Profile the engine's loop with an open terminal (M1.R3 F2): about 20 to 35 ms of loop time each second follows an
+  open window, though each part of its pass measures well under a millisecond; a sampling profiler (`py-spy`, a new
+  development tool) would say where. Reply p99 stays near 30 ms, inside D20 J's 33 ms.
 - Remove the `pnpm audit` exception for GHSA-g3hv-75wg-m249 (minimatch < 11.0.1, lint tools only; owner,
   2026-11-01) in `web/pnpm-workspace.yaml` once ESLint and typescript-eslint accept minimatch 11 and that release
   passes the 7-day rule; Dependabot shows it.

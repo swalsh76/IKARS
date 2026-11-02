@@ -123,12 +123,15 @@ def _engine(python: str, root: Path | None) -> str:
     return _quoted([python, "-I", "-m", "ikars_engine", "serve", *_rooted(root)])  # isolated
 
 
-def _create_task(run: Run, python: str, root: Path | None) -> bool:
+def _watchdog(python: str, root: Path | None) -> str:
     # isolated as the engine is: a user's PYTHONPATH or PYTHONHOME (set for another project) must
     # never make the watchdog fail unseen (M1.R3 E7)
-    watchdog = _quoted([python, "-I", "-m", "ikars_engine", "watchdog", *_rooted(root)])
+    return _quoted([python, "-I", "-m", "ikars_engine", "watchdog", *_rooted(root)])
+
+
+def _create_task(run: Run, python: str, root: Path | None) -> bool:
     return run(["schtasks", "/Create", "/F", "/TN", TASK, "/SC", "MINUTE",
-                "/MO", str(EVERY_MINUTES), "/TR", watchdog]) == 0  # fmt: skip
+                "/MO", str(EVERY_MINUTES), "/TR", _watchdog(python, root)]) == 0  # fmt: skip
 
 
 def install(registry: Registry, run: Run, python: str, root: Path | None = None) -> dict[str, bool]:
@@ -140,12 +143,26 @@ def install(registry: Registry, run: Run, python: str, root: Path | None = None)
             "watchdog_task": _create_task(run, python, root)}  # fmt: skip
 
 
-def refresh_task(registry: Registry, run: Run, python: str, root: Path | None = None) -> bool:
+def refresh_task(
+    registry: Registry, run: Run, python: str, root: Path | None = None, stamp: Path | None = None
+) -> bool:
     """At an engine start: the watchdog's task written again as this version writes it (one made
-    before M1.R3 lacked ``-I``), when this program's auto-start is the one installed; True if so."""
+    before M1.R3 lacked ``-I``), when this program's auto-start is the one installed; True if it
+    was written. ``stamp`` keeps the command last written, so a start writes it only once (each
+    write is a ``schtasks`` run: M1.R3 merge review 8)."""
     if registry.get(RUN_KEY, RUN_VALUE) != _engine(python, root):
         return False
-    return _create_task(run, python, root)
+    command = _watchdog(python, root)
+    try:
+        if stamp is not None and stamp.read_text(encoding="utf-8") == command:
+            return False
+    except OSError:  # none yet: written below
+        pass
+    if not _create_task(run, python, root):
+        return False
+    if stamp is not None:
+        stamp.write_text(command, encoding="utf-8")
+    return True
 
 
 def remove(registry: Registry, run: Run) -> dict[str, bool]:

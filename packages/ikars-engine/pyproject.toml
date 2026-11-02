@@ -18,7 +18,7 @@ dependencies = [
     "tomli-w>=1.2",
     "tzdata>=2025.2",
     "uvicorn>=0.37",
-    "velopack==1.2.161",  # the same as vpk in dotnet-tools.json: they move together (M1.R3 E9)
+    "velopack==1.2.161",  # the same as vpk in .config/dotnet-tools.json: they move together (M1.R3 E9)
 ]
 
 [project.scripts]

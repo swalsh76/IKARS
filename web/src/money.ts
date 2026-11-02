@@ -63,7 +63,7 @@ export function dollars(value: E6, { places = 2, signed = false }: DollarFormat 
 
 /** A contract's price in dollars, never rounded: ``$0.46``, ``$0.465`` for a sub-cent tick (M1.R3 D7). */
 export function price(value: E6): string {
-  return dollars(value, { places: 4 }).replace(/(\.\d\d\d*?)0+$/, "$1");
+  return dollars(value, { places: 6 }).replace(/(\.\d\d\d*?)0+$/, "$1");
 }
 
 /** A price in cents, the way Kalshi shows it: ``42¢``, or ``42.5¢`` for a sub-cent tick. */

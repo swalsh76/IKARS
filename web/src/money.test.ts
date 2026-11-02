@@ -51,6 +51,7 @@ describe("cents and contracts", () => {
     expect(price(e6(465_000))).toBe("$0.465");
     expect(price(e6(1_000_000))).toBe("$1.00");
     expect(price(e6(460_100))).toBe("$0.4601");
+    expect(price(e6(460_050))).toBe("$0.46005"); // to the millionth (merge review 10)
   });
 
   it("shows counts without trailing zeros", () => {

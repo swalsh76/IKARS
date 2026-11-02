@@ -617,7 +617,9 @@ def test_an_update_s_stop_counts_as_the_owner_s_only_until_its_deadline(tmp_path
     assert runmode.stopped_by_owner(tmp_path, now_ns=10**20)
 
 
-def test_a_start_writes_the_watchdog_task_again_only_for_this_programs_autostart() -> None:
+def test_a_start_writes_the_watchdog_task_again_only_for_this_programs_autostart(
+    tmp_path: Path,
+) -> None:
     """M1.R3 E7: a task made before -I keeps running without it until it is written again."""
     registry, commands = FakeRegistry(), []
 
@@ -631,6 +633,11 @@ def test_a_start_writes_the_watchdog_task_again_only_for_this_programs_autostart
     commands.clear()
     assert autostart.refresh_task(registry, run, python) is True
     assert commands[0][commands[0].index("/TR") + 1].endswith("-I -m ikars_engine watchdog")
+    commands.clear()  # with a stamp: written once, then left alone (merge review 8)
+    stamp = tmp_path / "watchdog-task.txt"
+    assert autostart.refresh_task(registry, run, python, None, stamp) is True
+    assert autostart.refresh_task(registry, run, python, None, stamp) is False
+    assert len(commands) == 1
     commands.clear()  # another copy of IKARS (a development checkout) leaves it alone
     assert autostart.refresh_task(registry, run, r"C:\dev\.venv\pythonw.exe") is False
     assert commands == []

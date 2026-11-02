@@ -50,7 +50,9 @@ export function Recommendation({ id }: { id: string }) {
   const loaded = useSnapshot(`/v1/recommendations/${encodeURIComponent(id)}`, "RecommendationView", 15_000);
   const [answered, setAnswered] = useState<{ view: RecommendationView; at: number } | null>(null);
   const [note, setNote] = useState("");
-  const shown = answered?.view ?? (loaded.state === "ready" ? loaded.value : null);
+  // the screen is reused for the next recommendation: an answer belongs to its own (merge review 5)
+  const mine = answered !== null && answered.view.id === id ? answered.view : null;
+  const shown = mine ?? (loaded.state === "ready" ? loaded.value : null);
   const current = useRef(shown);
   useEffect(() => {
     current.current = shown;

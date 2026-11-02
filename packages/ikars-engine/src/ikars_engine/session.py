@@ -21,6 +21,7 @@ may have sent it their cookies) the key is replaced, so every cookie issued befo
 """
 
 import base64
+import contextlib
 import hashlib
 import hmac
 import logging
@@ -111,6 +112,9 @@ class Sessions:
             _save_key(self._path, self._key)
         except (OSError, NotImplementedError) as exc:  # this run's key still replaces the old one
             self.persistent = False
+            # and the old one must never come back at the next start (merge review 6)
+            with contextlib.suppress(OSError):
+                self._path.unlink(missing_ok=True)
             log.warning("new session key not saved", extra={"error": type(exc).__name__})
 
     # --- cookies -------------------------------------------------------------------------------

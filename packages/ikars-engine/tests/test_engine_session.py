@@ -187,3 +187,23 @@ def test_a_cookie_from_before_the_port_is_refused(tmp_path: Path) -> None:
     s = sessions(tmp_path)
     body = f"{int(T0)}.{int(T0) + 86_400}"
     assert s.check(f"{body}.{s._sign(body)}", PORT) == (False, None)
+
+
+def test_a_rotated_key_that_cannot_be_saved_leaves_no_old_key_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R3 merge review 6: the old key stayed on disk, so the next start trusted old cookies."""
+    s = sessions(tmp_path)
+    if not s.persistent:
+        pytest.skip("no DPAPI here")
+    cookie = s.redeem(s.issue_code(), PORT)
+    assert cookie is not None
+
+    def full(path: Path, key: bytes) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("ikars_engine.session._save_key", full)
+    s.rotate()
+    assert not (tmp_path / KEY_FILE).exists()
+    monkeypatch.undo()
+    assert not sessions(tmp_path).check(cookie, PORT)[0]  # the next start: a new key

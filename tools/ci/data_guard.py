@@ -76,12 +76,24 @@ FORBIDDEN_FOLDERS = frozenset(
 )
 # a machine's own names in text: a UNC path's host, a user profile's folder. Only these
 # placeholders may appear (the documents' and the tests'); never a real host or account
-UNC = re.compile(r"""(?:^|(?<=[\s"'`(=]))\\{2,4}([A-Za-z0-9<>._-]+)\\""")  # where a path starts
-PROFILE = re.compile(r"""[A-Za-z]:\\+users\\+([^\\\s"'`]+)""", re.IGNORECASE)
+# where a path starts: a line's start, a space, a quote, a backtick or Markdown's marks
+UNC = re.compile(r"""(?:^|(?<=[\s"'`(=*\[|]))\\{2,4}([A-Za-z0-9<>._-]+)\\""")
+PROFILE = re.compile(r"""[A-Za-z]:[\\/]+users[\\/]+([^\\/\s"'`]+)""", re.IGNORECASE)
 PLACEHOLDER_HOSTS = frozenset(
-    {"127.0.0.1", "<nas>", "host", "h", "server", "made-up", "made-up-host", "attacker.example"}
+    {
+        "127.0.0.1",
+        "<nas>",
+        "host",
+        "h",
+        "server",
+        "made-up",
+        "made-up-host",
+        "attacker.example",
+        ".",
+    }  # \\.\pipe\... is Windows' own namespace, no machine  # fmt: skip
 )
-PLACEHOLDER_USERS = frozenset({"someone", "x", "<name>", "%username%"})
+# placeholders, and the folders every Windows has
+PLACEHOLDER_USERS = frozenset({"someone", "x", "<name>", "%username%", "public", "default"})
 ENV_FILE = re.compile(r"\.env(\..+)?")  # .env, .env.local, ...: settings files that hold secrets
 # The ledger's tax-year package (PLAN D18): IKARS-<year>-summary.pdf, -form8949.csv, -6781.csv,
 # -manifest.txt, -ledger.jsonl. Only that exact shape, so ordinary files named ikars-... still pass.
@@ -127,22 +139,24 @@ def staged_lines(pattern: str) -> list[tuple[str, str]]:
     try:
         out = git("-C", top, "grep", "--cached", "-I", "-z", "-h", "--null", "-E", "-e", pattern,
                   "--name-only")  # fmt: skip
-    except subprocess.CalledProcessError:  # git grep exits 1 when nothing matches
-        return []
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode == 1:  # nothing matches; any other failure fails the guard (review 4)
+            return []
+        raise
     lines: list[tuple[str, str]] = []
     for path in filter(None, out.split("\0")):
-        for line in git("-C", top, "show", f":{path}").splitlines():
-            if re.search(r"\\\\|users\\", line, re.IGNORECASE):
+        for line in git("-C", top, "show", f":{path}", errors="replace").splitlines():
+            if UNC.search(line) or PROFILE.search(line):  # the patterns themselves (review 4)
                 lines.append((path, line))
     return lines
 
 
-def git(*args: str) -> str:
+def git(*args: str, errors: str = "strict") -> str:
     return subprocess.run(  # noqa: S603 - fixed arguments, no shell
         ["git", *args],  # noqa: S607 - git is resolved from PATH on purpose
         capture_output=True,
         check=True,
-    ).stdout.decode("utf-8")
+    ).stdout.decode("utf-8", errors)
 
 
 def indexed_sizes() -> dict[str, int]:
@@ -162,7 +176,7 @@ def main() -> int:
     size_of = indexed_sizes()
     paths = sorted(size_of)
     found = problems(paths, size_of)
-    found += named_machines(staged_lines(r"\\\\|[A-Za-z]:\\+[Uu][Ss][Ee][Rr][Ss]\\"))
+    found += named_machines(staged_lines(r"\\\\|[A-Za-z]:[\\/]+[Uu][Ss][Ee][Rr][Ss][\\/]"))
     for line in found:
         print(f"data guard: {line}", file=sys.stderr)
     print(f"data guard: {len(paths)} tracked files checked, {len(found)} problem(s)")

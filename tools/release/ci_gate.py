@@ -16,6 +16,9 @@ import time
 from typing import Any
 
 REQUIRED = ("python", "hygiene", "web", "CodeQL")  # the main protection ruleset's checks
+# CodeQL reports as one "CodeQL" check on a pull request's commits, and only as its jobs,
+# "analyze (<language>)", on main's (merge review 4)
+ANALYZE = "analyze ("
 POLL_S = 30
 
 
@@ -27,6 +30,13 @@ def verdict(runs: list[dict[str, Any]]) -> tuple[str, str]:
         name = run["name"]
         if name not in newest or run["id"] > newest[name]["id"]:
             newest[name] = run
+    analyses = [run for name, run in newest.items() if name.startswith(ANALYZE)]
+    if "CodeQL" not in newest and analyses:  # main's commits: CodeQL is its jobs together
+        pending = [run for run in analyses if run["status"] != "completed"]
+        failed_any = [run for run in analyses if run["conclusion"] not in (None, "success")]
+        status = "in_progress" if pending and not failed_any else "completed"
+        conclusion = "failure" if failed_any else None if pending else "success"
+        newest["CodeQL"] = {"name": "CodeQL", "status": status, "conclusion": conclusion}
     # only the required checks: the release workflow's own jobs are check runs on the commit too,
     # and a failed earlier attempt must not block a new tag (per-commit review); CodeQL is the
     # aggregate of every language's analysis
@@ -35,7 +45,7 @@ def verdict(runs: list[dict[str, Any]]) -> tuple[str, str]:
         for name in REQUIRED
         if name in newest
         and newest[name]["status"] == "completed"
-        and newest[name]["conclusion"] not in ("success", "skipped", "neutral")
+        and newest[name]["conclusion"] != "success"  # skipped is not passed
     ]
     if failed:
         return "fail", f"failed: {', '.join(failed)}"
@@ -63,7 +73,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     deadline = time.monotonic() + args.wait_s
     while True:
-        state, why = verdict(check_runs(args.repo, args.sha))
+        try:
+            state, why = verdict(check_runs(args.repo, args.sha))
+        except (
+            subprocess.CalledProcessError
+        ) as exc:  # GitHub answered badly: asked again (review 8)
+            state, why = "wait", f"the checks could not be read ({exc.returncode})"
         print(f"{state}: {why}", flush=True)
         if state != "wait":
             return 0 if state == "pass" else 1
