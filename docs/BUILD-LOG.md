@@ -3595,7 +3595,32 @@ Brought forward from PLAN §9 (owner, 2026-11-01). Branch `m1/14`, stacked on `m
   | 9 | Combos bumped the index's skipped count; a cached open market's "trading" can lag | Combos stay out of the index. The lag: no change. The journal's pass refreshes it every 10 minutes, and marks fall at 30 and 60 minutes |
   | 10 | A Kalshi failure read as "no such market" | 503 "try again"; tested |
 
-**Live check: pending** on **v0.1.15** (test pre-release from `4f28b12`, published 2026-11-01 23:01 MST):
-- After the restart, `KXNBATOTAL-26NOV01TORLAL-254` opens again with its chart.
-- The settled pass completes in the background.
-- The journal's lookups settle what was missed.
+**Live check passed** on **v0.1.15** (test pre-release from `4f28b12`, published 2026-11-01 23:01 MST; installed
+by the owner, engine started 23:04:37; read through the API with GET only and the journal opened read-only):
+- After the restart, `KXNBATOTAL-26NOV01TORLAL-254` opens again with its chart: `finalized`, 253 one-minute candles,
+  and the journal has its result.
+- The settled pass completes in the background: the full discovery (248,587 markets) at 23:05:40, then the
+  recently settled markets (311,016) at 23:10:31, about 4 min 51 s after the feed went live; the feed was not held
+  back.
+- The journal's lookups settle what was missed: 527 settlements learned since the restart, no lookup warnings.
+
+**Found by the check: scalar settlements were never scored.** 111 closed-market checks on 65 markets still waited:
+5 markets were still closed or inactive (correct), but **60 were finalized with result `scalar`**: binary
+markets that paid a fraction (50c a contract on a tennis walkover, 54c on an exact-match market; mostly ATP and
+ITF tennis, some golf and MLB, per Kalshi's public listing). The journal scored only yes or no, a gap from the
+M1.12b settlement scoring (`f810687`) rather than from M1.14. **Owner (2026-11-01): fix it in M1.14**, before
+momentum v1's review (~2026-11-04), whose scorecard left these checks out.
+
+- **Built** (`a6b2c44`): `MarketInfo` keeps Kalshi's settlement value, and `settlement()` gives the result with what
+  a YES contract paid ($1, nothing, or the scalar value; a scalar without a value is never guessed). The `market`
+  channel records it (older recordings read it as null). The journal keeps `yes_paid_e6` with each settlement
+  (migration 4, backed up first; earlier rows backfilled as $1 or nothing) and scores a closed check at that payout,
+  a NO check at the rest, after the entry fee. The lookup counts a scalar as settled.
+- **Tests:** a 54c scalar scored for YES (+$0.62) and NO (-$0.18) on 10 contracts bought at 46c; the journal keeps
+  and scores it; the upgrade backfill; `settlement()` for each result; a scalar found by the lookup; a replay's
+  market row. 1,654 passed, coverage 93.4%.
+- **Review** (`/code-review low`): 1 finding. A replay of a recording made before the change might fail on the
+  missing column. No change: Arrow parts go through `conform`, and real Parquet files from v0.1.15 read with the
+  new schema give the column as null (483,999 rows checked).
+- **Live check of the fix: pending** (a test release on the owner's word): the 60 scalar markets' checks are
+  scored, the journal's migration backs up first, and the scorecard counts them.
