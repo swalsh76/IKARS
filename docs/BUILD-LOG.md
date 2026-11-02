@@ -3930,3 +3930,5 @@ screens; ruff, mypy, the data guard and gitleaks clean. The workflow was parsed 
 published, `SHA256SUMS` beside the downloads); the engine reports its version in `/v1/hello`; one `ikars open`
 signs in (cookies now name the port); the Update window waits for Install; the watchdog task's command has `-I`
 and the stamp is written; a 70 KB body is refused (scratch, GET only otherwise).
+
+**v0.1.19 published** (test pre-release from `078b0ed`, 2026-11-02): the first through the four-job workflow; gate, build, attest and publish all passed; `SHA256SUMS` beside the six downloads; the installer's attestation found on GitHub. Live checks pending the owner's install.
