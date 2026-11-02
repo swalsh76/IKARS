@@ -29,7 +29,7 @@ was built and verified: [BUILD-LOG](docs/BUILD-LOG.md) (the current milestone; M
 
 - **The open stack** (each PR's base is the one before; merge in this order, only when the owner says so):
   #35 M2.3 News (`m2/3` → main) → #36 M1.13 Replay → #37 M1.14 Settled markets → #47 M1.R3a → #48 M1.R3b →
-  the docs streamlining PR (`docs/streamline`: PLAN, BUILD-LOG and this file condensed; the log split by
+  #49 the docs streamlining (`docs/streamline`: PLAN, BUILD-LOG and this file condensed; the log split by
   milestone; owner-approved 2026-11-02). When rebasing onto main, drop `6f38e5f` from `m1/14` and update the
   hashes the docs cite. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 - **Installed:** v0.1.19 (published 2026-11-02 through the four-job release workflow). After the upgrade one
