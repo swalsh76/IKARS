@@ -51,7 +51,15 @@ IKARS-*.pdf
 IKARS-*.csv
 IKARS-*.txt
 
-# secrets and local config: never commit
+# secrets and local config: never commit (also refused by the data guard: M1.R3 E10)
+settings.toml
+.claude/settings.local.json
+support/
+backups/
+*.log
+*.zip
+*.nupkg
+*.wsb
 .env
 .env.*
 *.pem

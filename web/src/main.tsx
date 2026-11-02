@@ -9,7 +9,7 @@ import "./styles.css";
 const root = document.getElementById("root");
 if (root) {
   placeFrom(window.location.hash); // a layout's window: to its place, before signing in clears it
-  startTerminal()
+  startTerminal({ streaming: window.location.pathname !== "/update" })
     .then((terminal) => {
       // another window saving a layout asks where this one is (M1.8b-2); the Update window is
       // none of them, and must not reload on its own announcement (the owner's 0.1.4 update)

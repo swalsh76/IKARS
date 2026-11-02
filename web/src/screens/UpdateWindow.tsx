@@ -15,9 +15,12 @@ const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 /** The IKARS Update window (M1.9b; the owner's approved design): the download with its bar, then
  * each step ticked as it is seen, the elapsed time, and Details (the engine's steps and this
  * window's). The engine is stopped while Velopack installs, so those steps are seen from here:
- * the engine stops answering, then the new version answers; every IKARS window then reloads. */
+ * the engine stops answering, then the new version answers; every IKARS window then reloads.
+ * Opening the window only reads: nothing is downloaded or installed until the owner clicks
+ * Install, so a page that navigates here cannot start an update (M1.R3 D2). */
 export function UpdateWindow({ to }: { to: string }) {
-  const [phase, setPhase] = useState<Phase>("download");
+  const [phase, setPhase] = useState<Phase>("confirm");
+  const [ready, setReady] = useState<UpdateView | null>(null); // read, waiting for Install
   const [failedAt, setFailedAt] = useState<(typeof PHASES)[number] | null>(null);
   const [view, setView] = useState<UpdateView | null>(null);
   const [log, setLog] = useState<string[]>([]);
@@ -44,18 +47,17 @@ export function UpdateWindow({ to }: { to: string }) {
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (started.current) return; // once, whatever React does with effects
-    started.current = true;
-    const note = (text: string) => setLog((lines) => [...lines, `${now()} ${text}`]);
-    const fail = (at: (typeof PHASES)[number], text: string) => {
-      setFailedAt(at);
-      setPhase("failed");
-      setProblem(text);
-      note(text);
-    };
-    const words = (error: unknown) => (error instanceof ApiFailure ? error.message : String(error));
+  const note = (text: string) => setLog((lines) => [...lines, `${now()} ${text}`]);
+  const fail = (at: (typeof PHASES)[number], text: string) => {
+    setFailedAt(at);
+    setPhase("failed");
+    setProblem(text);
+    note(text);
+  };
+  const words = (error: unknown) => (error instanceof ApiFailure ? error.message : String(error));
 
+  useEffect(() => {
+    // only a read: what is installed and what is offered
     void (async () => {
       let current: UpdateView;
       try {
@@ -74,6 +76,18 @@ export function UpdateWindow({ to }: { to: string }) {
         setProblem("This copy of IKARS is a development copy: it cannot update itself.");
         return;
       }
+      setReady(current);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per version asked for
+  }, [to]);
+
+  const install = (first: UpdateView) => {
+    if (started.current) return; // once, however often it is clicked
+    started.current = true;
+    setReady(null);
+    setPhase("download");
+    void (async () => {
+      let current = first;
       if (current.state !== "ready") {
         note("downloading the new version");
         const polling = window.setInterval(() => {
@@ -139,12 +153,18 @@ export function UpdateWindow({ to }: { to: string }) {
       }
       fail(stopped ? "start" : "stop", "IKARS has not come back in three minutes: open it from the Start menu");
     })();
-  }, [to]);
+  };
 
   const all = [...(view?.events ?? []), ...log].sort();
   const from = view?.current ?? "?";
   const heading =
-    phase === "done" ? "Update complete" : phase === "cannot" ? "IKARS cannot update here" : `Updating IKARS ${from} → ${view?.available ?? to}`;
+    phase === "done"
+      ? "Update complete"
+      : phase === "cannot"
+        ? "IKARS cannot update here"
+        : phase === "confirm"
+          ? `Update IKARS ${from} → ${view?.available ?? to}?`
+          : `Updating IKARS ${from} → ${view?.available ?? to}`;
   const elapsed = clock((nowMs - since) / 1000);
 
   return (
@@ -168,6 +188,16 @@ export function UpdateWindow({ to }: { to: string }) {
             </li>
           ))}
         </ol>
+      )}
+      {phase === "confirm" && ready && (
+        <div className="update-actions">
+          <button type="button" onClick={() => install(ready)}>
+            Install IKARS {ready.available ?? to}
+          </button>
+          <button type="button" onClick={() => window.close()}>
+            Cancel
+          </button>
+        </div>
       )}
       {problem && <p className={phase === "cannot" ? "muted" : "loss"}>{problem}</p>}
       {phase === "done" && (

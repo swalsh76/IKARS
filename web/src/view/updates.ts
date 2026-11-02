@@ -34,7 +34,7 @@ export function updatedTo(v: UpdateView, target: string): boolean {
 
 /** The Update window's phases, in order (each one a step on screen). */
 export const PHASES = ["download", "stop", "install", "start", "reload"] as const;
-export type Phase = (typeof PHASES)[number] | "done" | "failed" | "cannot";
+export type Phase = "confirm" | (typeof PHASES)[number] | "done" | "failed" | "cannot";
 
 export interface Step {
   label: string;
@@ -51,7 +51,14 @@ const LABELS: Record<(typeof PHASES)[number], string> = {
 
 /** The steps, each done, under way or still to come. */
 export function steps(phase: Phase, failedAt: (typeof PHASES)[number] | null = null): Step[] {
-  const at = phase === "done" ? PHASES.length : phase === "failed" || phase === "cannot" ? PHASES.indexOf(failedAt ?? "download") : PHASES.indexOf(phase);
+  const at =
+    phase === "confirm" // nothing started: every step is still to come (M1.R3 D2)
+      ? -1
+      : phase === "done"
+        ? PHASES.length
+        : phase === "failed" || phase === "cannot"
+          ? PHASES.indexOf(failedAt ?? "download")
+          : PHASES.indexOf(phase);
   return PHASES.map((p, i) => ({ label: LABELS[p], mark: i < at ? "done" : i === at ? "now" : "next" }));
 }
 

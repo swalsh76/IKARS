@@ -7,6 +7,7 @@ import pytest
 from ikars_engine.session import CODE_TTL_S, KEY_FILE, MAX_CODES, RENEW_AFTER_S, Sessions
 
 T0 = 1_767_225_600.0
+PORT = 47821
 
 
 class Clock:
@@ -24,9 +25,9 @@ def sessions(tmp_path: Path, clock: Clock | None = None, days: int = 30) -> Sess
 def test_a_code_works_once(tmp_path: Path) -> None:
     s = sessions(tmp_path)
     code = s.issue_code()
-    cookie = s.redeem(code)
-    assert cookie is not None and s.check(cookie) == (True, None)
-    assert s.redeem(code) is None
+    cookie = s.redeem(code, PORT)
+    assert cookie is not None and s.check(cookie, PORT) == (True, None)
+    assert s.redeem(code, PORT) is None
 
 
 def test_a_code_expires(tmp_path: Path) -> None:
@@ -34,11 +35,11 @@ def test_a_code_expires(tmp_path: Path) -> None:
     s = sessions(tmp_path, clock)
     code = s.issue_code()
     clock.now += CODE_TTL_S
-    assert s.redeem(code) is None
+    assert s.redeem(code, PORT) is None
 
 
 def test_an_unknown_code_is_refused(tmp_path: Path) -> None:
-    assert sessions(tmp_path).redeem("made-up") is None
+    assert sessions(tmp_path).redeem("made-up", PORT) is None
 
 
 def test_unredeemed_codes_are_capped(tmp_path: Path) -> None:
@@ -46,53 +47,54 @@ def test_unredeemed_codes_are_capped(tmp_path: Path) -> None:
     first = s.issue_code()
     for _ in range(MAX_CODES):
         s.issue_code()
-    assert s.redeem(first) is None  # the oldest made room
+    assert s.redeem(first, PORT) is None  # the oldest made room
 
 
 def test_a_cookie_is_renewed_once_a_day_old_and_ends_after_its_days(tmp_path: Path) -> None:
     clock = Clock()
     s = sessions(tmp_path, clock, days=2)
-    cookie = s.redeem(s.issue_code())
+    cookie = s.redeem(s.issue_code(), PORT)
     assert cookie is not None
     clock.now += RENEW_AFTER_S
-    valid, renewed = s.check(cookie)
+    valid, renewed = s.check(cookie, PORT)
     assert valid and renewed is not None and renewed != cookie
     clock.now += RENEW_AFTER_S  # two days after the first: it has ended, the renewed one lives
-    assert s.check(cookie) == (False, None)
-    assert s.check(renewed)[0]
+    assert s.check(cookie, PORT) == (False, None)
+    assert s.check(renewed, PORT)[0]
 
 
-@pytest.mark.parametrize("change", ["signature", "times", "shape", "non-ascii"])
+@pytest.mark.parametrize("change", ["signature", "times", "port", "shape", "non-ascii"])
 def test_a_forged_cookie_is_refused(tmp_path: Path, change: str) -> None:
     s = sessions(tmp_path)
-    cookie = s.redeem(s.issue_code())
+    cookie = s.redeem(s.issue_code(), PORT)
     assert cookie is not None
-    issued, expires, signature = cookie.split(".")
+    issued, expires, port, signature = cookie.split(".")
     forged = {
-        "signature": f"{issued}.{expires}.{signature[:-2]}AA",
-        "times": f"{issued}.{int(expires) + 10**9}.{signature}",
+        "signature": f"{issued}.{expires}.{port}.{signature[:-2]}AA",
+        "times": f"{issued}.{int(expires) + 10**9}.{port}.{signature}",
+        "port": f"{issued}.{expires}.{int(port) + 1}.{signature}",
         "shape": "x",
-        "non-ascii": f"{issued}.{expires}.{signature[:-1]}é",
+        "non-ascii": f"{issued}.{expires}.{port}.{signature[:-1]}é",
     }[change]
-    assert s.check(forged) == (False, None)
+    assert s.check(forged, PORT) == (False, None)
 
 
 def test_a_cookie_from_the_future_is_refused(tmp_path: Path) -> None:
     clock = Clock()
     s = sessions(tmp_path, clock)
     clock.now += 3_600
-    cookie = s.redeem(s.issue_code())
+    cookie = s.redeem(s.issue_code(), PORT)
     clock.now -= 7_200
-    assert cookie is not None and s.check(cookie) == (False, None)
+    assert cookie is not None and s.check(cookie, PORT) == (False, None)
 
 
 def test_a_restart_keeps_the_terminal_signed_in(tmp_path: Path) -> None:
     first = sessions(tmp_path)
     if not first.persistent:
         pytest.skip("no DPAPI here")
-    cookie = first.redeem(first.issue_code())
+    cookie = first.redeem(first.issue_code(), PORT)
     assert cookie is not None
-    assert sessions(tmp_path).check(cookie)[0]  # a new engine, the same key file
+    assert sessions(tmp_path).check(cookie, PORT)[0]  # a new engine, the same key file
 
 
 def test_the_key_on_disk_is_not_the_key(tmp_path: Path) -> None:
@@ -107,8 +109,8 @@ def test_an_unreadable_key_is_set_aside_and_replaced(tmp_path: Path) -> None:
     (tmp_path / KEY_FILE).write_text("not base64 of anything DPAPI made", encoding="ascii")
     s = sessions(tmp_path)
     assert (tmp_path / (KEY_FILE + ".unreadable")).exists()
-    cookie = s.redeem(s.issue_code())
-    assert cookie is not None and s.check(cookie)[0]
+    cookie = s.redeem(s.issue_code(), PORT)
+    assert cookie is not None and s.check(cookie, PORT)[0]
 
 
 def test_a_second_unreadable_key_never_overwrites_the_first(tmp_path: Path) -> None:
@@ -147,10 +149,61 @@ def test_without_dpapi_sessions_last_only_while_running(
     monkeypatch.setattr("ikars_core.dpapi.protect", missing)
     s = sessions(tmp_path)
     assert not s.persistent and not (tmp_path / KEY_FILE).exists()
-    cookie = s.redeem(s.issue_code())
-    assert cookie is not None and s.check(cookie)[0]
+    cookie = s.redeem(s.issue_code(), PORT)
+    assert cookie is not None and s.check(cookie, PORT)[0]
 
 
 def test_the_cookie_header_is_http_only_and_strict(tmp_path: Path) -> None:
     header = sessions(tmp_path, days=30).set_cookie("v").decode()
     assert header == "ikars_session=v; Max-Age=2592000; Path=/; HttpOnly; SameSite=Strict"
+
+
+def test_a_cookie_is_good_on_the_port_it_was_issued_on_only(tmp_path: Path) -> None:
+    """M1.R3 D1: a program holding the terminal's port during a restart received the windows'
+    cookies, which the engine still accepted on the port it fell back to."""
+    s = sessions(tmp_path)
+    cookie = s.redeem(s.issue_code(), PORT)
+    assert cookie is not None and s.check(cookie, PORT)[0]
+    assert s.check(cookie, PORT + 1) == (False, None)
+
+
+def test_a_rotated_key_makes_every_earlier_cookie_worthless(tmp_path: Path) -> None:
+    """M1.R3 D1: after a port fallback, a cookie a squatter caught must not work when the engine
+    gets its port back (in this run or the next)."""
+    s = sessions(tmp_path)
+    cookie = s.redeem(s.issue_code(), PORT)
+    assert cookie is not None
+    s.rotate()
+    assert s.check(cookie, PORT) == (False, None)
+    fresh = s.redeem(s.issue_code(), PORT)
+    assert fresh is not None and s.check(fresh, PORT)[0]
+    if s.persistent:  # the next engine reads the new key
+        assert not sessions(tmp_path).check(cookie, PORT)[0]
+        assert sessions(tmp_path).check(fresh, PORT)[0]
+
+
+def test_a_cookie_from_before_the_port_is_refused(tmp_path: Path) -> None:
+    """Cookies issued before M1.R3 named no port: one sign-in after the upgrade."""
+    s = sessions(tmp_path)
+    body = f"{int(T0)}.{int(T0) + 86_400}"
+    assert s.check(f"{body}.{s._sign(body)}", PORT) == (False, None)
+
+
+def test_a_rotated_key_that_cannot_be_saved_leaves_no_old_key_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R3 merge review 6: the old key stayed on disk, so the next start trusted old cookies."""
+    s = sessions(tmp_path)
+    if not s.persistent:
+        pytest.skip("no DPAPI here")
+    cookie = s.redeem(s.issue_code(), PORT)
+    assert cookie is not None
+
+    def full(path: Path, key: bytes) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("ikars_engine.session._save_key", full)
+    s.rotate()
+    assert not (tmp_path / KEY_FILE).exists()
+    monkeypatch.undo()
+    assert not sessions(tmp_path).check(cookie, PORT)[0]  # the next start: a new key

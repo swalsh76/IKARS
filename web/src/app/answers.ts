@@ -31,3 +31,9 @@ export async function copyOrder(r: RecommendationView, clipboard: Pick<Clipboard
     return "The clipboard refused it.";
   }
 }
+
+/** Whether a refreshed copy replaces an answer shown since ``answeredAt``: only one asked for after
+ * it was saved (one asked before would show the recommendation unanswered: M1.R3 D9). */
+export function newerThanAnswer(askedAt: number | undefined, answeredAt: number): boolean {
+  return askedAt !== undefined && askedAt >= answeredAt;
+}

@@ -133,7 +133,8 @@ export function useScreenName(): string | null {
 }
 
 /** ``stale``: a refresh failed and ``value`` is the last one that loaded (it is kept, not blanked). */
-export type Loaded<T> = { state: "loading" } | { state: "ready"; value: T; stale?: string } | { state: "failed"; message: string };
+// askedAt: when the value was asked for (ms), so a change saved meanwhile is not undone by it
+export type Loaded<T> = { state: "loading" } | { state: "ready"; value: T; stale?: string; askedAt?: number } | { state: "failed"; message: string };
 
 /** ``GET path`` while the screen shows it; leaving the screen cancels the request (behaviour 2).
  * ``path`` null: nothing to ask yet (it waits on something else). */
@@ -151,7 +152,8 @@ export function useSnapshot<K extends ContractName>(path: string | null, name: K
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       try {
-        setLoaded({ state: "ready", value: await get(path, name, { signal: controller.signal }) });
+        const askedAt = Date.now();
+        setLoaded({ state: "ready", value: await get(path, name, { signal: controller.signal }), askedAt });
       } catch (error) {
         if (controller.signal.aborted) return;
         const message = error instanceof ApiFailure ? error.message : "could not load";

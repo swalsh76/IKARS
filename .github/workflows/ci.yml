@@ -51,8 +51,9 @@ jobs:
       - name: Test and coverage
         run: uv run pytest --cov --cov-report=term
 
-      - name: Coverage gate for money and fee code (95%)
-        run: uv run coverage report --fail-under=95 --include="*/ikars_core/fixedpoint.py,*/ikars_core/fees.py"
+      - name: Coverage gate for money and fee code (95%; every module that computes money, M1.R3 E15)
+        run: >-
+          uv run coverage report --fail-under=95 --include="*/ikars_core/fixedpoint.py,*/ikars_core/fees.py,*/ikars_engine/pnl.py,*/ikars_engine/ledger.py,*/ikars_engine/ledger_import.py,*/ikars_engine/portfolio.py,*/ikars_engine/costs.py"
 
       - name: Known vulnerabilities
         run: uv run pip-audit --skip-editable --progress-spinner off

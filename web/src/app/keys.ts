@@ -24,6 +24,8 @@ export interface Press {
   typing: boolean;
   /** The focus is on a link, a button or another control: Enter activates it, so Enter is not ours. */
   onControl?: boolean;
+  /** The key is held down (the system repeating it). */
+  repeat?: boolean;
 }
 
 export const SCREENS = ["/overview", "/markets", "/ledger", "/alerts", "/health"] as const;
@@ -61,6 +63,9 @@ export function actionFor(p: Press): Action | null {
   if (p.ctrlKey && p.shiftKey) return p.key.toLowerCase() === "l" ? { kind: "theme" } : null;
   if (p.key === "Escape") return { kind: "close" };
   if (p.typing) return null;
+  // an answer or a copy once per press: a held T would take the answer back on its repeat, and
+  // back again, ending wherever the key happened to be released (M1.R3 D8)
+  if (p.repeat && "tTiIdDcC".includes(p.key) && p.key.length === 1) return null;
   switch (p.key) {
     case "?":
       return { kind: "help" };

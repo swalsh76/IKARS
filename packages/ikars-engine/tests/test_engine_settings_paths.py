@@ -87,3 +87,13 @@ def test_invalid_toml_and_bad_values_are_reported(tmp_path: Path) -> None:
     path.write_text(f"version = {VERSION}\n[budget]\nmonthly_e6 = 'lots'\n", encoding="utf-8")
     with pytest.raises(SettingsError, match="bad value"):
         load(path)
+
+
+def test_the_older_marker_never_puts_data_where_an_update_wipes_it(tmp_path: Path) -> None:
+    """M1.R3 E8: portable.marker beside an installed program's Python put the data in a folder
+    under current, which Velopack replaces at every update."""
+    python = tmp_path / "IKARS-App" / "current" / "python"
+    python.mkdir(parents=True)
+    (python / PORTABLE_MARKER).write_text("")
+    found = resolve(python, {"LOCALAPPDATA": str(tmp_path / "local")})
+    assert found.root == tmp_path / "local" / "IKARS"

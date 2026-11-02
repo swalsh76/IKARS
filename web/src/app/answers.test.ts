@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RecommendationView } from "../api/contracts";
 import { ApiFailure, change } from "../api/client";
-import { answer, copyOrder } from "./answers";
+import { answer, copyOrder, newerThanAnswer } from "./answers";
 
 vi.mock("../api/client", async (original) => ({ ...(await original<typeof import("../api/client")>()), change: vi.fn() }));
 const changed = vi.mocked(change);
@@ -35,5 +35,14 @@ describe("Copy order", () => {
     expect(await copyOrder(rec(), clipboard)).toBe("Copied: KXA YES 10 @ 46¢");
     expect(clipboard.writeText).toHaveBeenCalledWith("KXA YES 10 @ 46¢");
     expect(await copyOrder(rec(), { writeText: vi.fn().mockRejectedValue(new Error("denied")) })).toBe("The clipboard refused it.");
+  });
+});
+
+describe("a refresh after an answer", () => {
+  it("replaces it only when it was asked for after the answer was saved (M1.R3 D9)", () => {
+    expect(newerThanAnswer(1_000, 2_000)).toBe(false); // in flight before: the answer stays
+    expect(newerThanAnswer(2_000, 2_000)).toBe(true);
+    expect(newerThanAnswer(3_000, 2_000)).toBe(true);
+    expect(newerThanAnswer(undefined, 2_000)).toBe(false);
   });
 });

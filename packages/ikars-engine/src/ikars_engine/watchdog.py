@@ -263,7 +263,7 @@ def check(
     state_path = folder / STATE
     state = load_state(state_path)
     obs = Observation(
-        engine_running(folder), stopped_by_owner(folder), read_snapshot(folder), now_ns
+        engine_running(folder), stopped_by_owner(folder, now_ns), read_snapshot(folder), now_ns
     )
     restarted = False
     hour_ago = now_ns - 3_600 * NS

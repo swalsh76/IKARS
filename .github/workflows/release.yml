@@ -3,6 +3,11 @@ name: release
 # A version tag (v1.2.3 or v1.2.3-beta.1) builds IKARS's two downloads, Setup.exe and the portable
 # zip, with Velopack, and publishes them as a GitHub pre-release with the update packages the
 # installed program reads (M1.9b, PLAN D12). Pre-releases until signing is decided (M6).
+#
+# Four jobs (M1.R3 E1, E3): the gate releases only a commit whose required CI checks passed; the
+# build runs every third-party tool with a read-only token and no stored credential, and writes
+# SHA256SUMS; attest signs where those files came from; publish alone can write, checks the sums,
+# hands its token only to the two steps that upload, and makes the release live only with its sums.
 
 on:
   push:
@@ -19,18 +24,38 @@ env:
   NODE_VERSION: "24.22.1"
 
 jobs:
-  release:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read # the gate's script
+      checks: read # the tagged commit's CI results
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: The tagged commit passed CI (waits while it runs)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: python3 tools/release/ci_gate.py --repo "$REPO" --sha "$SHA" --wait-s 2400
+
+  build:
+    needs: gate
     runs-on: windows-latest
     timeout-minutes: 40
     permissions:
-      contents: write # the release and its files; nothing else
+      contents: read # the previous release, for the update's delta
     env:
       IKARS_UV: uv
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAG: ${{ github.ref_name }} # read from the environment, never pasted into a script
       REPOSITORY: https://github.com/${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # no credential left in .git for the build's tools
 
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
@@ -50,11 +75,13 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
 
-      - name: vpk (dotnet-tools.json)
+      - name: vpk (.config/dotnet-tools.json)
         run: dotnet tool restore
 
       - name: The previous release (Velopack makes the update a small delta from it)
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # read-only in this job
         run: |
           New-Item -ItemType Directory -Force build/releases | Out-Null
           dotnet vpk download github --repoUrl "$env:REPOSITORY" `
@@ -65,9 +92,93 @@ jobs:
         shell: pwsh
         run: python tools/release/build.py --version $env:TAG.Substring(1) --keep-releases
 
-      - name: Publish the pre-release
+      - name: SHA256SUMS of what this release publishes
         shell: pwsh
         run: |
+          # never the earlier release's packages that the delta was made from (merge review 3)
+          $version = $env:TAG.Substring(1)
+          New-Item -ItemType Directory -Force build/checksums | Out-Null
+          Get-ChildItem build/releases -File |
+            Where-Object { $_.Extension -ne ".nupkg" -or $_.Name -like "*-$version-*" } |
+            Sort-Object Name | ForEach-Object {
+              "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+            } | Set-Content -Encoding ascii build/checksums/SHA256SUMS
+          Get-Content build/checksums/SHA256SUMS
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: |
+            build/releases
+            build/checksums
+          retention-days: 1
+          if-no-files-found: error
+
+  attest:
+    # the build's provenance, signed in a job of its own: the token that signs it is in no step
+    # that runs a fetched tool (M1.R3 merge review 8)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # the attestation's signature
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: build
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: build/checksums/SHA256SUMS # exactly the files summed
+
+  publish:
+    needs: [build, attest]
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # the release and its files; nothing else
+    env:
+      TAG: ${{ github.ref_name }}
+      REPOSITORY: https://github.com/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: build
+
+      - name: The files are the ones the build summed
+        shell: pwsh
+        run: |
+          Get-Content build/checksums/SHA256SUMS | ForEach-Object {
+            $sum, $name = $_ -split '  ', 2
+            $found = (Get-FileHash "build/releases/$name" -Algorithm SHA256).Hash.ToLower()
+            if ($found -ne $sum) { throw "$name does not match its checksum" }
+          }
+
+      - name: vpk (.config/dotnet-tools.json)
+        run: dotnet tool restore
+
+      - name: The pre-release, as a draft
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
           dotnet vpk upload github --repoUrl "$env:REPOSITORY" `
-            --token "$env:GITHUB_TOKEN" --outputDir build/releases --pre --publish `
+            --token "$env:GITHUB_TOKEN" --outputDir build/releases --pre `
             --tag "$env:TAG" --releaseName "IKARS $env:TAG"
+
+      - name: SHA256SUMS beside the downloads, then published (never live without them)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release upload "$env:TAG" build/checksums/SHA256SUMS --repo "$env:REPO"
+          gh release edit "$env:TAG" --draft=false --repo "$env:REPO"

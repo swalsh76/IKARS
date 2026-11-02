@@ -34,6 +34,7 @@ BUILD = ROOT / "build"
 APP = BUILD / "IKARS-App"
 RELEASES = BUILD / "releases"
 PACK_ID = "IKARS-App"
+CONSTRAINTS = Path(__file__).with_name("build-constraints.txt")
 # left out of the bundled Python: its own tests, IDLE, Tk and the pip bootstrap (about 40 MB)
 # and anything installed into the machine's managed Python by hand: only locked packages ship
 LEFT_OUT = {"test", "idlelib", "tkinter", "turtledemo", "ensurepip", "tcl", "__pycache__",
@@ -96,7 +97,9 @@ def build(version: str, keep_releases: bool = False) -> None:
     install = [*uv(), "pip", "install", "--python", str(exe), "--break-system-packages"]
     run(*install, "--require-hashes", "-r", requirements)
     for package in ("ikars-core", "ikars-engine"):
-        run(*uv(), "build", "--package", package, "--wheel", "--out-dir", BUILD / "wheels")
+        # the build backend pinned with hashes, never whatever PyPI has that day (M1.R3 E2)
+        run(*uv(), "build", "--package", package, "--wheel", "--out-dir", BUILD / "wheels",
+            "--build-constraints", CONSTRAINTS, "--require-hashes")  # fmt: skip
     run(*install, "--no-deps", *sorted(str(w) for w in (BUILD / "wheels").glob("*.whl")))
     for script in (python / "Scripts").glob("*.exe"):
         script.unlink()  # pip's launchers name this build folder's Python: useless once installed

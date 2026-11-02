@@ -30,6 +30,10 @@ user or the person installing or operating it. In operation, IKARS connects to:
 
 - **Kalshi's API**, with the user's own key, to read markets and the user's own account. IKARS sends no orders.
 - **GitHub Releases**, to check for updates (the request carries no user data).
+- **Public news and weather sources**, read only, to inform its estimates: the US National Weather Service
+  (`api.weather.gov`), the GDELT Project's news files and search (`data.gdeltproject.org`,
+  `api.gdeltproject.org`), and the RSS feeds of US government agencies listed in its settings. Each request
+  names IKARS and its repository; none carries user data.
 - **A backup share**, only if the user sets one up.
 
 IKARS keeps its data in the user's own profile. It never sends logs or support bundles anywhere.

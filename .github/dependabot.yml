@@ -10,6 +10,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # vpk (.config/dotnet-tools.json, where Dependabot reads it) builds the packages the velopack SDK reads: their two PRs are merged
+  # together, to the same version (pyproject pins velopack==; M1.R3 E9)
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: npm
     directory: /web
     schedule:

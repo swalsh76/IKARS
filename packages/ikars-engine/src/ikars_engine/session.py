@@ -14,10 +14,14 @@ Deleting the key file signs every terminal out.
 
 Browsers scope cookies by host, not port: another server on 127.0.0.1 visited in the same browser
 profile would receive the cookie. The terminal's own Edge profile, which visits nothing else, is
-what confines it.
+what confines it. A cookie also names the port it was issued on and is good on that port only, and
+when the engine has to take another port (a program held its own during a restart, and open windows
+may have sent it their cookies) the key is replaced, so every cookie issued before is worthless
+(M1.R3 D1).
 """
 
 import base64
+import contextlib
 import hashlib
 import hmac
 import logging
@@ -37,6 +41,11 @@ CODE_TTL_S = 30
 RENEW_AFTER_S = 86_400
 MAX_CODES = 16  # unredeemed codes kept at once (each ``ikars open`` makes one)
 log = logging.getLogger("ikars_engine.session")
+
+
+def _save_key(path: Path, key: bytes) -> None:
+    """``key``, DPAPI-protected for this account, in ``path`` (raises when it cannot be)."""
+    write_text_atomic(path, base64.b64encode(dpapi.protect(key)).decode("ascii"))
 
 
 def _load_or_create_key(path: Path) -> tuple[bytes, bool]:
@@ -59,7 +68,7 @@ def _load_or_create_key(path: Path) -> tuple[bytes, bool]:
             ))  # fmt: skip
     key = secrets.token_bytes(32)
     try:
-        write_text_atomic(path, base64.b64encode(dpapi.protect(key)).decode("ascii"))
+        _save_key(path, key)
         return key, True
     except (OSError, NotImplementedError) as exc:
         log.warning("session key not saved: terminal sessions end when the engine stops",
@@ -69,7 +78,8 @@ def _load_or_create_key(path: Path) -> tuple[bytes, bool]:
 
 class Sessions:
     def __init__(self, folder: Path, days: int, now_s: Callable[[], float] = time.time) -> None:
-        self._key, self.persistent = _load_or_create_key(folder / KEY_FILE)
+        self._path = folder / KEY_FILE
+        self._key, self.persistent = _load_or_create_key(self._path)
         self._max_age = days * 86_400
         self._now = now_s
         self._codes: dict[bytes, float] = {}  # a code's hash -> when it expires
@@ -85,12 +95,27 @@ class Sessions:
         self._codes[hashlib.sha256(code.encode()).digest()] = now + CODE_TTL_S
         return code
 
-    def redeem(self, code: str) -> str | None:
-        """A new cookie value for a live, unused code, else None; the code is spent either way."""
+    def redeem(self, code: str, port: int) -> str | None:
+        """A new cookie value for ``port`` for a live, unused code, else None; the code is spent
+        either way."""
         expires = self._codes.pop(hashlib.sha256(code.encode()).digest(), None)
         if expires is None or expires <= self._now():
             return None
-        return self._cookie(int(self._now()))
+        return self._cookie(int(self._now()), port)
+
+    def rotate(self) -> None:
+        """A new key: every cookie issued before is worthless (the terminal's port was taken)."""
+        self._key = secrets.token_bytes(32)
+        if not self.persistent:
+            return
+        try:
+            _save_key(self._path, self._key)
+        except (OSError, NotImplementedError) as exc:  # this run's key still replaces the old one
+            self.persistent = False
+            # and the old one must never come back at the next start (merge review 6)
+            with contextlib.suppress(OSError):
+                self._path.unlink(missing_ok=True)
+            log.warning("new session key not saved", extra={"error": type(exc).__name__})
 
     # --- cookies -------------------------------------------------------------------------------
 
@@ -98,26 +123,25 @@ class Sessions:
         digest = hmac.new(self._key, body.encode(), hashlib.sha256).digest()
         return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
-    def _cookie(self, issued: int) -> str:
-        body = f"{issued}.{issued + self._max_age}"
+    def _cookie(self, issued: int, port: int) -> str:
+        body = f"{issued}.{issued + self._max_age}.{port}"
         return f"{body}.{self._sign(body)}"
 
-    def check(self, value: str) -> tuple[bool, str | None]:
-        """Whether ``value`` is a valid session cookie, and a renewed value when it is due."""
-        issued_text, _, rest = value.partition(".")
-        expires_text, _, signature = rest.partition(".")
-        body = f"{issued_text}.{expires_text}"
+    def check(self, value: str, port: int) -> tuple[bool, str | None]:
+        """Whether ``value`` is a valid session cookie for ``port``, and a renewed value when it
+        is due."""
+        body, _, signature = value.rpartition(".")
         # compare_digest raises on non-ASCII text: such a value is no cookie of ours
         if not value.isascii() or not hmac.compare_digest(signature, self._sign(body)):
             return False, None
         try:
-            issued, expires = int(issued_text), int(expires_text)
-        except ValueError:
+            issued, expires, issued_port = (int(part) for part in body.split("."))
+        except ValueError:  # not three numbers (a cookie from before M1.R3 has two)
             return False, None
         now = self._now()
-        if not issued <= now < expires:
+        if issued_port != port or not issued <= now < expires:
             return False, None
-        return True, self._cookie(int(now)) if now - issued >= RENEW_AFTER_S else None
+        return True, self._cookie(int(now), port) if now - issued >= RENEW_AFTER_S else None
 
     def set_cookie(self, value: str) -> bytes:
         """The ``Set-Cookie`` header value for ``value``."""

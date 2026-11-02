@@ -53,6 +53,7 @@ export function Hotkeys() {
         metaKey: event.metaKey,
         typing: takesText(document.activeElement),
         onControl: isControl(document.activeElement),
+        repeat: event.repeat,
       });
       if (action === null) return;
       if (action.kind === "close" && !shown.current) return; // Esc is the box's or the browser's then

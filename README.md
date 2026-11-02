@@ -9,8 +9,8 @@ It is a Python engine with a TypeScript web terminal, served by the engine on th
 and shown in an Edge app window. Its infrastructure comes from the owner's earlier projects KAPS, SPARQ and
 KalTerm3.
 
-**Status:** milestone M1 (the skeleton) is complete; M2 (news and data sources) is next. IKARS only recommends;
-it sends no orders. See [docs/PLAN.md](docs/PLAN.md)
+**Status:** milestone M1 (the skeleton) is complete; M2 (news and data sources) is under way, with a base
+hardening slice (M1.R3) after a review of the whole project. IKARS only recommends; it sends no orders. See [docs/PLAN.md](docs/PLAN.md)
 for the plan and [docs/BUILD-LOG.md](docs/BUILD-LOG.md) for how each part was built and verified.
 
 **Downloads:** test pre-releases on the [Releases](https://github.com/swalsh76/IKARS/releases) page (`Setup.exe`

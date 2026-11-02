@@ -394,6 +394,8 @@ def test_install_and_remove_are_user_space_and_symmetric() -> None:
     create = commands[0]
     assert create[:3] == ["schtasks", "/Create", "/F"] and "/RU" not in create  # the user's own
     assert create[create.index("/MO") + 1] == "5"
+    # isolated, as the engine is (M1.R3 E7)
+    assert create[create.index("/TR") + 1] == f'"{python}" -I -m ikars_engine watchdog'
     assert autostart.installed(registry, run) == {
         "autostart": True, "notification_name": True, "watchdog_task": True,
     }  # fmt: skip
@@ -587,3 +589,55 @@ def test_every_watchdog_problem_has_its_own_recovered_text() -> None:
 
     names = set(re.findall(r'Problem\(\s*"([a-z-]+)"', inspect.getsource(watchdog)))
     assert names and names <= set(watchdog.RECOVERED)  # a new problem says how it is fixed too
+
+
+def test_a_foreground_run_is_refused_while_the_engine_runs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """M1.R3 E4: python -m ikars_engine run took no lock, so two engines shared one data folder."""
+    from ikars_engine.__main__ import main
+    from ikars_engine.kalshi.runner import default_paths
+    from ikars_engine.runmode import EngineLock
+
+    held = EngineLock(default_paths(tmp_path).data)
+    held.acquire()
+    try:
+        assert main(["python -m ikars_engine", "run", "--root", str(tmp_path)]) == 1
+        assert "already running" in capsys.readouterr().out
+    finally:
+        held.release()
+
+
+def test_an_update_s_stop_counts_as_the_owner_s_only_until_its_deadline(tmp_path: Path) -> None:
+    """M1.R3 E6: an update that failed to start IKARS again left the engine down, unseen."""
+    runmode.request_stop(tmp_path, until_ns=2_000)
+    assert runmode.stopped_by_owner(tmp_path, now_ns=1_999)
+    assert not runmode.stopped_by_owner(tmp_path, now_ns=2_000)  # the watchdog takes over
+    runmode.request_stop(tmp_path)  # the owner's own stop: for good
+    assert runmode.stopped_by_owner(tmp_path, now_ns=10**20)
+
+
+def test_a_start_writes_the_watchdog_task_again_only_for_this_programs_autostart(
+    tmp_path: Path,
+) -> None:
+    """M1.R3 E7: a task made before -I keeps running without it until it is written again."""
+    registry, commands = FakeRegistry(), []
+
+    def run(argv: list[str]) -> int:
+        commands.append(argv)
+        return 0
+
+    python = r"C:\IKARS\current\python\pythonw.exe"
+    assert autostart.refresh_task(registry, run, python) is False and commands == []  # none
+    autostart.install(registry, run, python)
+    commands.clear()
+    assert autostart.refresh_task(registry, run, python) is True
+    assert commands[0][commands[0].index("/TR") + 1].endswith("-I -m ikars_engine watchdog")
+    commands.clear()  # with a stamp: written once, then left alone (merge review 8)
+    stamp = tmp_path / "watchdog-task.txt"
+    assert autostart.refresh_task(registry, run, python, None, stamp) is True
+    assert autostart.refresh_task(registry, run, python, None, stamp) is False
+    assert len(commands) == 1
+    commands.clear()  # another copy of IKARS (a development checkout) leaves it alone
+    assert autostart.refresh_task(registry, run, r"C:\dev\.venv\pythonw.exe") is False
+    assert commands == []

@@ -175,6 +175,11 @@ async def test_the_gap_log_by_days(ctx: ApiContext, tmp_path: Path) -> None:
 async def test_hello_health_and_recommendations(ctx: ApiContext) -> None:
     hello = await get(ctx, "/v1/hello", c.Hello)
     assert hello.api_version == c.API_VERSION and hello.schema_sha256 == c.schema_sha256()
+    from ikars_engine.updates import Updater
+
+    ctx.updates = Updater(version="0.1.19")  # installed: Velopack's version (M1.R3 F1)
+    assert (await get(ctx, "/v1/hello", c.Hello)).engine_version == "0.1.19"
+    ctx.updates = None
     health = await get(ctx, "/v1/health", c.HealthView)
     assert health.feed.open_gaps == 0 and health.detail == {"kalshi": {"open_gaps": 0}}
     assert (await get(ctx, "/v1/recommendations", c.RecommendationPage)).items == []
@@ -297,7 +302,9 @@ async def test_subscriptions_are_set_over_http(ctx: ApiContext) -> None:
     assert (await call(ctx, "PUT", path, body={"quotes": 5})).status_code == 400
     unknown = await call(ctx, "PUT", path, body={"trades": ["KXA"]})
     assert unknown.status_code == 400  # an unknown field is refused
-    many = {"quotes": [f"T{n}" for n in range(201)]}
+    from ikars_engine.api import MAX_SUBSCRIPTIONS
+
+    many = {"quotes": [f"T{n}" for n in range(MAX_SUBSCRIPTIONS + 1)]}
     assert (await call(ctx, "PUT", path, body=many)).status_code == 400
 
 
@@ -671,6 +678,35 @@ async def test_signing_in_and_using_the_session(web: ApiContext) -> None:
     ).status_code == 401
 
 
+async def test_any_valid_session_cookie_is_accepted_and_only_on_its_port(web: ApiContext) -> None:
+    """M1.R3 D3: a second ikars_session cookie (another 127.0.0.1 server can set one with a
+    narrower path, which the browser sends first) locked the owner out. D1: a cookie is good only
+    on the port it was issued on."""
+    cookie = (await signed_in(web))["Cookie"]
+    both = {"Cookie": f"ikars_session=planted; {cookie}"}
+    assert (await call(web, "GET", "/v1/hello", headers=both)).status_code == 200
+    web.port += 1  # the same cookie, on another port
+    assert (await call(web, "GET", "/v1/hello", headers={"Cookie": cookie})).status_code == 401
+
+
+async def test_a_large_or_unmeasured_body_is_refused_before_it_is_read(web: ApiContext) -> None:
+    """M1.R3 D4: the sign-in read a body of any size before any credential was checked."""
+    from ikars_engine.api import SIGNIN_BODY_MAX
+
+    transport = httpx.ASGITransport(app=create_app(web))
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as http:
+        big = await http.post("/v1/session", headers=PAGE, content=b"x" * (SIGNIN_BODY_MAX + 1))
+        assert big.status_code == 413
+
+        async def chunks() -> Any:
+            yield b'{"code": "x"}'
+
+        chunked = await http.post("/v1/session", headers=PAGE, content=chunks())
+        assert chunked.status_code == 413  # no length: never read
+    small = await call(web, "POST", "/v1/session", headers=PAGE, body={"code": "x"})
+    assert small.status_code == 401  # within the limit: read, and the code refused
+
+
 async def test_a_code_is_only_for_the_command_line_and_works_once(web: ApiContext) -> None:
     cookie = await signed_in(web)
     by_cookie = await call(web, "POST", "/v1/session/code", headers={**cookie, **PAGE})
@@ -723,12 +759,19 @@ async def test_the_fixed_port_and_its_fallback(
     holder.bind(("127.0.0.1", 0))
     taken = holder.getsockname()[1]
     holder.listen()
+    from ikars_engine.session import Sessions
+
+    told: list[bool] = []
+    ctx.sessions = sessions = Sessions(tmp_path / "keys", 30)
+    before = sessions.redeem(sessions.issue_code(), taken)
     try:
         monkeypatch.setattr("ikars_engine.api.PORT_RETRY_S", 0.0)
-        server = ApiServer(context_for, tmp_path, port=taken)
+        server = ApiServer(context_for, tmp_path, port=taken, on_fallback=lambda: told.append(True))
         await server.start()
         assert server.port != taken and server.health()["port_fallback"] is True
         assert ctx.port == server.port  # the guard's own origin follows the real port
+        assert told == [True]  # the owner is told (M1.R3 D1)
+        assert before is not None and not sessions.check(before, taken)[0]  # worthless now
         await server.stop()
     finally:
         holder.close()

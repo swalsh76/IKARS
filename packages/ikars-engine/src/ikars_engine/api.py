@@ -74,10 +74,10 @@ from ikars_engine.webserve import SECURITY_HEADERS, files_route
 log = logging.getLogger("ikars_engine.api")
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
 MAX_PAGE = 500
-MAX_SUBSCRIPTIONS = 200
+MAX_SUBSCRIPTIONS = 400  # twice a Markets page: a refresh adds the new before it drops the old
 HEALTH_EVERY_S = 5.0  # also keeps an idle stream alive
 PORTFOLIO_EVERY_S = 1.0
-MAX_STREAMS = 8  # a terminal needs one or two
+MAX_STREAMS = 16  # one a window: a full layout (8) leaves room for New window (M1.R3 D6)
 DROPPED = -1  # a stream's sent book version for a book the engine no longer keeps
 MAX_CANDLE_HOURS = 24 * 7
 CANDLE_CACHE_S = 60.0  # a chart reopened within a minute costs no request
@@ -86,6 +86,8 @@ SHUTDOWN_S = 3  # open streams end at stop; the server waits at most this long
 NS = 1_000_000_000
 SESSION_PATH = "/v1/session"
 READS = frozenset({"GET", "HEAD"})
+BODY_MAX = 64 * 1024  # the largest request body (a layout, the settings: a few kilobytes)
+SIGNIN_BODY_MAX = 4 * 1024  # a sign-in's (read before any credential is checked)
 PORT_TRIES = 10  # the fixed port, tried this many times half a second apart (a restart's old
 PORT_RETRY_S = 0.5  # socket may still hold it), before a free port is taken instead
 
@@ -175,6 +177,7 @@ class Guard:
         self._app = app
         self._expected = f"Bearer {ctx.token}".encode()
         self._sessions = ctx.sessions
+        self._port = ctx.port or 0  # a cookie is good on the port it was issued on (M1.R3 D1)
         self._own = {f"http://{host}:{ctx.port}".encode() for host in LOOPBACK_HOSTS}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -202,6 +205,14 @@ class Guard:
             await _deny(secured, 403, "forbidden", "the engine answers its own terminal only")
             return
         method = scope["method"]
+        if api and method not in READS:
+            # every body is small, and it is read only up to its stated length: a body without
+            # one (chunked) or past the limit is refused before anything reads it (M1.R3 D4)
+            limit = SIGNIN_BODY_MAX if scope["path"] == SESSION_PATH else BODY_MAX
+            length = headers.get(b"content-length", b"0")
+            if b"transfer-encoding" in headers or not length.isdigit() or int(length) > limit:
+                await _deny(secured, 413, "bad_request", f"a body of at most {limit} bytes")
+                return
         if not api:  # the terminal's files: public, read only
             if method not in READS:
                 await _deny(secured, 405, "bad_request", "the terminal's files are read only")
@@ -217,7 +228,7 @@ class Guard:
                 return
             auth = "signin"
         else:
-            valid, renewed = self._cookie(headers.get(b"cookie", b""))
+            valid, renewed = self._cookie(headers.get(b"cookie", b""), self._port)
             if not valid:
                 await _deny(secured, 401, "unauthorised", "sign in with: ikars open")
                 return
@@ -230,13 +241,17 @@ class Guard:
         scope.setdefault("state", {})["auth"] = auth
         await self._app(scope, receive, secured)
 
-    def _cookie(self, header: bytes) -> tuple[bool, str | None]:
+    def _cookie(self, header: bytes, port: int) -> tuple[bool, str | None]:
+        """Whether any ``ikars_session`` cookie is valid here: another server on 127.0.0.1 can set
+        one of the same name with a narrower path, which the browser sends first (M1.R3 D3)."""
         if self._sessions is None:
             return False, None
         for part in header.decode("latin-1").split(";"):
             name, _, value = part.strip().partition("=")
             if name == COOKIE:
-                return self._sessions.check(value)
+                valid, renewed = self._sessions.check(value, port)
+                if valid:
+                    return valid, renewed
         return False, None
 
 
@@ -622,7 +637,10 @@ def read_alerts(index: AlertIndex, after: int | None, limit: int) -> list[c.Aler
 
 def create_app(ctx: ApiContext) -> ASGIApp:
     async def hello(request: Request) -> Response:
-        return _json(c.Hello(api_version=c.API_VERSION, engine_version=engine_version(),
+        # the installed program's version (Velopack's), never the packages' own 0.0.0 (M1.R3 F1)
+        installed = None if ctx.updates is None else ctx.updates.current()
+        return _json(c.Hello(api_version=c.API_VERSION,
+                             engine_version=installed or engine_version(),
                              schema_sha256=c.schema_sha256()))  # fmt: skip
 
     async def health(request: Request) -> Response:
@@ -806,7 +824,7 @@ def create_app(ctx: ApiContext) -> ASGIApp:
             wanted = msgspec.json.decode(await request.body(), type=c.SessionCode)
         except msgspec.DecodeError as exc:
             return _error(400, "bad_request", str(exc))
-        value = ctx.sessions.redeem(wanted.code)
+        value = ctx.sessions.redeem(wanted.code, ctx.port or 0)  # as the Guard checks it
         if value is None:
             return _error(401, "unauthorised", "the code was used, expired or unknown")
         cookie = ctx.sessions.set_cookie(value).decode("ascii")
@@ -906,7 +924,8 @@ def create_app(ctx: ApiContext) -> ASGIApp:
         if not config.restartable:  # nothing would start it again (as for a restart)
             return _json(c.Done(done=False, detail="this engine runs in the foreground: stop it "
                                 "and start IKARS from the Start menu to update"))  # fmt: skip
-        return _json(updater().apply(lambda: runmode.request_stop(config.paths.data)))
+        until = runmode.update_deadline()  # a failed update: restarted, not left down (M1.R3 E6)
+        return _json(updater().apply(lambda: runmode.request_stop(config.paths.data, until)))
 
     async def layouts(request: Request) -> Response:
         try:
@@ -1108,8 +1127,15 @@ class ApiServer:
     a free one too when the fixed port stays taken, reported in health). The port and the per-start
     token go to ``api.json`` (the owner's alone), removed at stop."""
 
-    def __init__(self, ctx_for: Callable[[str], ApiContext], folder: Path, port: int = 0) -> None:
+    def __init__(
+        self,
+        ctx_for: Callable[[str], ApiContext],
+        folder: Path,
+        port: int = 0,
+        on_fallback: Callable[[], None] | None = None,
+    ) -> None:
         self._ctx_for = ctx_for
+        self._on_fallback = on_fallback  # the owner is told (an urgent alert: M1.R3 D1)
         self._file = folder / API_FILE
         self._wanted = port
         self._server: Any = None
@@ -1151,6 +1177,14 @@ class ApiServer:
         token = secrets.token_urlsafe(32)
         self.ctx = self._ctx_for(token)
         self.ctx.port = self.port
+        if self.port_fallback:
+            # a program held the terminal's port: open windows may have sent it their cookies, so
+            # every cookie issued before is made worthless, here and on the port when it is ours
+            # again (M1.R3 D1)
+            if self.ctx.sessions is not None:
+                self.ctx.sessions.rotate()
+            if self._on_fallback is not None:
+                self._on_fallback()
         config = uvicorn.Config(
             create_app(self.ctx), log_level="warning", access_log=False, lifespan="off",
             server_header=False, date_header=False, timeout_graceful_shutdown=SHUTDOWN_S,

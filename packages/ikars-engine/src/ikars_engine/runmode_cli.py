@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -41,6 +42,7 @@ from ikars_engine.settings import Settings
 from ikars_engine.settings_api import restart_wanted
 from ikars_engine.watchdog import check, engine_command, start_engine
 
+WATCHDOG_TASK_STAMP = "watchdog-task.txt"  # the task's command as last written (M1.R3 E7)
 log = logging.getLogger("ikars_engine.serve")
 COMMANDS = (
     "serve",
@@ -106,13 +108,29 @@ def rollback(paths: Paths, version: str, managers: Any = None) -> dict[str, obje
     if found_release is None or str(found_release.TargetFullRelease.Version) != version:
         raise upgrades.RollbackRefused(f"release v{version} was not found on GitHub")
     back.download_updates(found_release)
-    launcher.stop_engine(paths)
+    launcher.stop_engine(paths, until_ns=runmode.update_deadline())
     if runmode.engine_running(paths.data):  # never a swap under a running engine (merge review 2)
+        # nothing changed, so the engine is not left down: the stop marks go (M1.R3 E11)
+        runmode.clear_stop(paths.data)
         raise upgrades.RollbackRefused(
             "the engine did not stop in time: nothing changed, try again"
         )
-    done = upgrades.restore(paths, version, current)
-    back.wait_exit_then_apply_updates(found_release, silent=True, restart=True)
+    try:
+        done, undo = upgrades.restore_undoable(paths, version, current)
+    except Exception:  # refused: the engine is not left down for the update's 15 minutes (review 7)
+        runmode.clear_stop(paths.data)
+        raise
+    try:
+        back.wait_exit_then_apply_updates(found_release, silent=True, restart=True)
+    except Exception as exc:  # the install never started: the newer data goes back (M1.R3 E5)
+        try:
+            undo()
+            said = "the data is as it was, start IKARS again"
+        except Exception as failed:  # said, never hidden behind the first failure (review 6)
+            said = f"putting the data back failed too ({failed}): see backups\\rolled-back"
+        finally:
+            runmode.clear_stop(paths.data)  # the watchdog starts the engine again
+        raise upgrades.RollbackRefused(f"the install could not start ({exc}): {said}") from exc
     return {"rolled_back": True, "installing": version, **done}
 
 
@@ -219,6 +237,13 @@ def serve(paths: Paths, settings: Settings, root: Path | None = None) -> int:
     try:
         runmode.clear_stop(paths.data)
         runmode.write_snapshot(paths.data, runmode.starting_snapshot(time.time_ns()))
+        if sys.platform == "win32":  # the watchdog's task as this version writes it (M1.R3 E7)
+            try:
+                registry, python = autostart.UserRegistry(), autostart.windowless_python()
+                stamp = paths.data / WATCHDOG_TASK_STAMP
+                autostart.refresh_task(registry, autostart.run_quietly, python, root, stamp)
+            except Exception as exc:  # never a failed start: the old task still runs
+                log.warning("watchdog task not refreshed", extra={"error": type(exc).__name__})
 
         def snapshot(health: dict[str, object]) -> None:
             try:

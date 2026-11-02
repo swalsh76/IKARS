@@ -25,9 +25,11 @@ server on made-up data, for the terminal's tests (:mod:`ikars_engine.demo_api`).
 
 import argparse
 import asyncio
+import contextlib
 import json
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -141,15 +143,35 @@ def main(argv: list[str]) -> int:
         print(json.dumps(report, indent=2, default=str))
         return 0
     if args.command == "run":
+        from ikars_engine import runmode
         from ikars_engine.kalshi.runner import default_paths, run
         from ikars_engine.settings import load
 
         paths = default_paths(args.root)
-        before_start(paths)
+        lock = runmode.EngineLock(paths.data)  # never two engines on one data folder (M1.R3 E4)
         try:
-            health = asyncio.run(run(paths, load(paths.settings), args.minutes))
+            lock.acquire(wait_s=3.0)
+        except runmode.AlreadyRunning:
+            print(json.dumps({"refused": "the engine is already running: ikars stop first"}))
+            return 1
+
+        def snapshot(health: dict[str, object]) -> None:  # the watchdog sees it alive
+            with contextlib.suppress(OSError):
+                runmode.write_snapshot(paths.data, runmode.snapshot_of(health, time.time_ns()))
+
+        try:
+            runmode.clear_stop(paths.data)
+            before_start(paths)
+            # holding the lock, it answers ikars stop and keeps the health snapshot as the
+            # background engine does (M1.R3 merge review, sub-agent 3)
+            health = asyncio.run(run(paths, load(paths.settings), args.minutes,
+                                     should_stop=lambda: runmode.stop_requested(paths.data),
+                                     on_minute=snapshot))  # fmt: skip
         except KeyboardInterrupt:
             return 0
+        finally:
+            (paths.data / runmode.STOP).unlink(missing_ok=True)
+            lock.release()
         print(json.dumps(health.get("kalshi"), indent=2, default=str))
         return 0
     if args.command == "demo-api":

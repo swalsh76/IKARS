@@ -18,9 +18,11 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import msgspec
@@ -42,7 +44,7 @@ from ikars_core.rest import (
 from ikars_core.ws import FeedConfig, KalshiFeed
 
 from ikars_engine import gpu, taxzone
-from ikars_engine.alerts import ALERT_LOG
+from ikars_engine.alerts import ALERT_LOG, URGENT, Alert
 from ikars_engine.api import ApiContext, ApiServer, engine_version, market_fees, market_title
 from ikars_engine.backup_service import BackupService
 from ikars_engine.clocks import WallClock
@@ -395,7 +397,8 @@ async def build(
             recommendations=journal_service,
         )
 
-    api = ApiServer(api_context, paths.data, port=settings.terminal.port)
+    api = ApiServer(api_context, paths.data, port=settings.terminal.port,
+                    on_fallback=lambda: notices.send(PORT_TAKEN))  # fmt: skip
     engine.health_parts["api"] = api.health
     engine.health_parts["request_budget"] = lambda: requests_used(budget, bucket, client)
     return Live(
@@ -590,6 +593,35 @@ async def run(
     return health
 
 
+PORT_TAKEN = Alert(
+    "api:port-taken",
+    URGENT,
+    "The terminal's port was taken",
+    "Something held IKARS's port at the restart (another program, or the old connections), so "
+    "IKARS took another and signed every window out. If it happens again, look for a program on "
+    "that port. Run: ikars open",
+)
+
+
+def port_taken_alert(paths: Paths, settings: Settings) -> Callable[[], None]:
+    """An urgent alert that the terminal's port was taken and every window signed out (M1.R3
+    D1), raised beside the loop (a notification can take a moment); the desk is made only then.
+    For an engine without its own Notices (setup mode); the full engine sends it through those."""
+
+    def raise_it() -> None:
+        try:
+            desk_for(paths, settings, ENGINE_DESK).raise_alert(
+                PORT_TAKEN, datetime.now().astimezone()
+            )
+        except Exception as exc:  # in the log all the same: never a failed start
+            log.warning("port alert not shown", extra={"error": type(exc).__name__})
+
+    def alert_now() -> None:
+        threading.Thread(target=raise_it, name="ikars-alert", daemon=True).start()
+
+    return alert_now
+
+
 def signer_environment(
     settings: Settings, environ: Mapping[str, str] | None = None
 ) -> dict[str, str]:
@@ -678,7 +710,8 @@ async def run_setup(
             config=TerminalConfig(paths, settings, root, restartable=restartable), updates=updates,
         )  # fmt: skip
 
-    api = ApiServer(api_context, paths.data, port=settings.terminal.port)
+    api = ApiServer(api_context, paths.data, port=settings.terminal.port,
+                    on_fallback=port_taken_alert(paths, settings))  # fmt: skip
     servers.append(api)
     checking = asyncio.create_task(updates.keep_checking(), name="updates")
     try:

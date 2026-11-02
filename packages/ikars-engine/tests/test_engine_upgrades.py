@@ -162,7 +162,7 @@ def test_a_rollback_downloads_first_then_stops_restores_and_installs(
     upgrades.before_start(paths, "0.1.0")
     upgrades.before_start(paths, "0.1.1")
     managers = Managers()
-    monkeypatch.setattr(launcher, "stop_engine", lambda p: managers.steps.append("stop"))
+    monkeypatch.setattr(launcher, "stop_engine", lambda p, **_: managers.steps.append("stop"))
     done = rollback(paths, "0.1.0", managers)
     assert managers.steps == ["download", "stop", "apply 0.1.0 True True"]
     assert done["rolled_back"] is True and done["installing"] == "0.1.0"
@@ -184,7 +184,7 @@ def test_a_rollback_that_cannot_be_done_changes_nothing(
     paths = engine_data(tmp_path)
     upgrades.before_start(paths, "0.1.0")
     upgrades.before_start(paths, "0.1.1")
-    monkeypatch.setattr(launcher, "stop_engine", lambda p: managers.steps.append("stop"))
+    monkeypatch.setattr(launcher, "stop_engine", lambda p, **_: managers.steps.append("stop"))
     with pytest.raises(RollbackRefused, match=says):
         rollback(paths, version, managers)
     assert "stop" not in managers.steps and upgrades.last_version(paths) == "0.1.1"
@@ -265,8 +265,37 @@ def test_a_rollback_never_swaps_data_under_a_running_engine(
     upgrades.before_start(paths, "0.1.0")
     upgrades.before_start(paths, "0.1.1")
     managers = Managers()
-    monkeypatch.setattr(launcher, "stop_engine", lambda p: managers.steps.append("stop"))
+    monkeypatch.setattr(launcher, "stop_engine", lambda p, **_: managers.steps.append("stop"))
     monkeypatch.setattr(runmode, "engine_running", lambda folder: True)  # it would not stop
+    runmode.request_stop(paths.data)  # as the real stop_engine marks it
     with pytest.raises(RollbackRefused, match="did not stop"):
         rollback(paths, "0.1.0", managers)
     assert upgrades.last_version(paths) == "0.1.1" and "apply" not in " ".join(managers.steps)
+    # nothing changed: the engine is not left down for the watchdog to ignore (M1.R3 E11)
+    assert not runmode.stopped_by_owner(paths.data) and not runmode.stop_requested(paths.data)
+
+
+def test_an_install_that_cannot_start_puts_the_newer_data_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R3 E5: the snapshot was restored before the install was handed over; when that failed,
+    the newer program started on the older data."""
+    from ikars_engine import runmode
+
+    paths = engine_data(tmp_path)
+    upgrades.before_start(paths, "0.1.0")
+    upgrades.before_start(paths, "0.1.1")
+    ledger(paths.ledger / "ledger.sqlite", [(3, "fill")])  # 0.1.1 recorded more
+    newer = (paths.ledger / "ledger.sqlite").read_bytes()
+    managers = Managers()
+
+    def broken(found: Found, silent: bool, restart: bool) -> None:
+        raise OSError("Update.exe is missing")
+
+    monkeypatch.setattr(Back, "wait_exit_then_apply_updates", lambda self, *a, **k: broken(*a, **k))
+    monkeypatch.setattr(launcher, "stop_engine", lambda p, **_: runmode.request_stop(p.data))
+    with pytest.raises(RollbackRefused, match="could not start"):
+        rollback(paths, "0.1.0", managers)
+    assert upgrades.last_version(paths) == "0.1.1"
+    assert (paths.ledger / "ledger.sqlite").read_bytes() == newer
+    assert not runmode.stopped_by_owner(paths.data)  # the watchdog starts it again

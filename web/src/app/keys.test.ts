@@ -27,6 +27,10 @@ describe("hotkeys", () => {
     expect(actionFor(press("I"))).toEqual({ kind: "respond", answer: "ignored" });
     expect(actionFor(press("d"))).toEqual({ kind: "respond", answer: "dismissed" });
     expect(actionFor(press("C"))).toEqual({ kind: "copy" });
+    // held down, an answer or a copy is not repeated (M1.R3 D8); moving the highlight is
+    expect(actionFor(press("t", { repeat: true }))).toBeNull();
+    expect(actionFor(press("C", { repeat: true }))).toBeNull();
+    expect(actionFor(press("ArrowDown", { repeat: true }))).toEqual({ kind: "move", by: 1 });
     expect(actionFor(press("ArrowDown"))).toEqual({ kind: "move", by: 1 });
     expect(actionFor(press("ArrowUp"))).toEqual({ kind: "move", by: -1 });
     expect(actionFor(press("ArrowDown", { typing: true }))).toBeNull(); // a text box keeps its arrows

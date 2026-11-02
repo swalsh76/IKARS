@@ -693,7 +693,7 @@ requires-dist = [
     { name = "tomli-w", specifier = ">=1.2" },
     { name = "tzdata", specifier = ">=2025.2" },
     { name = "uvicorn", specifier = ">=0.37" },
-    { name = "velopack", specifier = ">=1.2.161" },
+    { name = "velopack", specifier = "==1.2.161" },
 ]
 
 [[package]]
