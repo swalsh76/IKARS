@@ -327,11 +327,14 @@ class KalshiSource:
         message = frame.raw.get("msg")
         ticker = message.get("market_ticker") if isinstance(message, dict) else None
         if isinstance(ticker, str):
-            self._feed_event("break", "book", ticker)
+            book = self.state.books.get(ticker)
+            if book is not None and not book.broken:  # once, not per bad frame (review 9)
+                self._feed_event("break", "book", ticker)
             if ticker in self.watched.current:
                 self._request_snapshots([ticker])
         else:
             self._feed_event("sequence_gap", "book", "a frame failed to parse")
+            self._snapshot_wanted.clear()  # as for a sequence gap
             self._request_snapshots(sorted(self.watched.current))
 
     async def _recent_settled(self) -> None:
@@ -377,12 +380,13 @@ class KalshiSource:
             self.recorder.write("lifecycle", row)
             item = item_of("lifecycle", row)
         elif isinstance(message, OrderbookSnapshotMsg):
-            self.state.snapshot(message, at)
+            kept = self.state.snapshot(message, at)
             self._snapshot_wanted.pop(message.market_ticker, None)
             self._snapshots += 1
             for row in snapshot_rows(message, self._snapshots, at):
                 self.recorder.write("book_snapshot", row)
-            item = snapshot_item(message, self._snapshots, at)
+            # an unwatched market's (late) snapshot is recorded, never handed on (review 10)
+            item = snapshot_item(message, self._snapshots, at) if kept else None
         elif isinstance(message, OrderbookDeltaMsg):
             ticker = message.market_ticker
             self.watched.note_delta(ticker)
@@ -585,6 +589,8 @@ class KalshiSource:
 
     async def _heartbeat(self) -> None:
         self._heartbeat_now()
+        for channel, start, _, error in self.recorder.take_losses():  # rows never written
+            self._gap(channel, "recording failed", start, error)
         self._checkpoint(self._clock.now_ns())
         # both waits on the recorder's writer thread: off the loop (M1.R3 B3)
         if await asyncio.to_thread(self.recorder.close_finished, self._clock.now_ns()):

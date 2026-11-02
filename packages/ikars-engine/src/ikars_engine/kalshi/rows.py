@@ -183,6 +183,9 @@ class KalshiState:
     replay alike). A market's quote is kept unless it is a combo that is not watched."""
 
     watched: set[str] = field(default_factory=set)  # the markets whose books are subscribed
+    # whether the recording says which markets are watched (``watch`` events, since M1.13): until
+    # then every snapshot is kept, so an older recording still replays its books (review 3)
+    watch_known: bool = False
     books: dict[str, OrderBook] = field(default_factory=dict)
     last_price_e6: dict[str, int] = field(default_factory=dict)
     quotes: dict[str, tuple[int | None, int | None]] = field(default_factory=dict)
@@ -210,15 +213,16 @@ class KalshiState:
         if (self.quotes.get(ticker), self.last_price_e6.get(ticker)) != before:
             self.changed_ns[ticker] = at  # a volume-only frame leaves the quote's time
 
-    def snapshot(self, message: OrderbookSnapshotMsg, at: int) -> None:
+    def snapshot(self, message: OrderbookSnapshotMsg, at: int) -> bool:
         """A snapshot makes or replaces the book of a watched market only: a late one (a reply to a
         request made before the market was unwatched) never brings back a book no delta will keep
-        current (M1.R3 B11)."""
+        current (M1.R3 B11). Returns whether it was kept (an ignored one is no item either)."""
         ticker = message.market_ticker
-        if ticker not in self.watched:
-            return
+        if self.watch_known and ticker not in self.watched:
+            return False
         self.books.setdefault(ticker, OrderBook(ticker)).apply_snapshot(message)
         self._book_changed(ticker, at)
+        return True
 
     def delta(self, message: OrderbookDeltaMsg, at: int) -> Applied:
         """Apply a delta; the result says whether the book needs a snapshot (``NO_SNAPSHOT``,
@@ -244,14 +248,19 @@ class KalshiState:
                          self.book_version, self.book_changed_ns):  # fmt: skip
                 kept.pop(row["detail"], None)
         elif event == "watch":
+            self.watch_known = True
             self.watched.add(row["detail"])
         elif event == "unwatch":
+            self.watch_known = True
             self.watched.discard(row["detail"])
             self.books.pop(row["detail"], None)
         elif event in ("start", "reconnect"):
             for ticker in list(self.books):
                 self._book_changed(ticker, at)
             self.books.clear()
+            if event == "start":  # a new process knows no quote until one comes (review 4)
+                self.quotes.clear()
+                self.last_price_e6.clear()
         elif event == "sequence_gap" and row["channel"] == "book":
             for ticker, book in self.books.items():
                 if not book.broken:

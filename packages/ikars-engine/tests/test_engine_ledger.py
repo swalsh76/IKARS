@@ -533,9 +533,9 @@ class FakeMarkets:
         self,
         result: str,
         settled: datetime | None = datetime(2026, 1, 1, 12, tzinfo=UTC),
-        expires: datetime | None = None,
+        closes: datetime | None = None,
     ) -> None:
-        self.result, self.settled, self.expires = result, settled, expires
+        self.result, self.settled, self.closes = result, settled, closes
 
     async def market(self, ticker: str) -> Any:
         from ikars_core.rest import KalshiAPIError
@@ -547,8 +547,7 @@ class FakeMarkets:
 
         return SimpleNamespace(ticker=ticker, status="finalized", result=self.result,
                                title="Made up", event_ticker="KXT-26JAN01",
-                               settlement_ts=self.settled, expiration_time=self.expires,
-                               close_time=None)  # fmt: skip
+                               settlement_ts=self.settled, close_time=self.closes)  # fmt: skip
 
 
 def archived(realized: str) -> dict[str, Any]:
@@ -882,25 +881,25 @@ async def test_fills_of_one_time_are_recorded_in_the_order_made(tmp_path: Path) 
 
 
 @pytest.mark.parametrize(
-    ("expires", "derived"),
+    ("closes", "derived"),
     [(datetime(2026, 1, 1, 6, tzinfo=UTC), True), (None, False)],  # no time: left a difference
 )
 async def test_a_derived_settlement_never_takes_the_archive_time(
-    tmp_path: Path, expires: datetime | None, derived: bool
+    tmp_path: Path, closes: datetime | None, derived: bool
 ) -> None:
     """A7: without a settlement time the archive's time was used, which can be the next year."""
     ledger, account = ledger_at(tmp_path), account_with_history()
     account.held, account.archived = [], [archived("4.20")]
     account.archived[0]["last_updated_ts"] = "2026-01-03T00:00:00Z"
     account.balance_cents = 9_816 + 600
-    markets = FakeMarkets("yes", None, expires)
+    markets = FakeMarkets("yes", None, closes)
     report = await AccountImporter(ledger, account, VirtualClock(T0), markets=markets).run_once()  # type: ignore[arg-type]
     body = ledger.last("settlement")
     if not derived:
         assert body is None and "settlement" not in report.added
     else:
-        assert expires is not None and body is not None
-        assert body["at_ns"] == int(expires.timestamp()) * 10**9
+        assert closes is not None and body is not None
+        assert body["at_ns"] == int(closes.timestamp()) * 10**9
     ledger.close()
 
 

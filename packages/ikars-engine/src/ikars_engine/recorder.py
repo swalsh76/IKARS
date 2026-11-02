@@ -56,6 +56,8 @@ _I64 = pa.int64()
 _STR = pa.string()
 HOUR_NS = 3_600 * 1_000_000_000
 GRACE_NS = 120 * 1_000_000_000  # an hour stays open this long after it ends, for late frames
+CONVERT_ROWS = 2_000  # rows made into one Arrow batch at a time (the loop runs between them)
+CLOSE_WAIT_S = 30.0  # the longest a close waits for the writer thread to end
 
 SCHEMAS: dict[str, pa.Schema] = {
     "trade": pa.schema(
@@ -177,22 +179,39 @@ def hour_start_ns(hour: Hour) -> int:
     return int(moment.timestamp()) * 1_000_000_000
 
 
+_Job = tuple[Callable[..., Any], tuple[Any, ...], Future[Any]]
+Loss = tuple[str, int, int, str]  # a failed write: channel, first and last received time, error
+
+
+def _serve(jobs: queue.SimpleQueue[_Job | None]) -> None:
+    """A writer thread: its queue's jobs in order, each result or failure to whoever waits."""
+    while (job := jobs.get()) is not None:
+        work, args, done = job
+        try:
+            done.set_result(work(*args))
+        except BaseException as exc:  # handed to whoever waits
+            done.set_exception(exc)
+
+
 class Recorder:
     """Rows are buffered on the caller's thread (the event loop) and handed, every few seconds, to
     the recorder's own writer thread, which builds the Arrow batches and writes them: the loop never
     waits on that work (M1.R3 B3). Everything that touches the open hours (closing them, reading
     the trades already recorded) runs on that thread too, in order after the writes handed to it.
-    A failed write is logged and raised by the next ``write``, so the caller records the loss."""
+    A write that fails is a loss of those rows: kept for the caller to log as a gap
+    (``take_losses``), and raised to whoever waited for it (merge review 7)."""
 
     def __init__(self, root: Path, *, flush_seconds: float = 5.0, batch_rows: int = 50_000) -> None:
         self.root = root
         self._flush_seconds = flush_seconds
         self._batch_rows = batch_rows
         self._rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        self._lock = threading.Lock()  # the buffers, and starting the writer thread
+        # the buffers, the losses, and the writer thread with its own queue (a thread started
+        # after a close never takes another's stop: merge review 8)
+        self._lock = threading.Lock()
         self._jobs: queue.SimpleQueue[_Job | None] = queue.SimpleQueue()
         self._thread: threading.Thread | None = None
-        self._failed: BaseException | None = None  # a write that failed, raised by the next write
+        self._losses: list[Loss] = []
         # the writer thread's own
         self._open: dict[tuple[str, Hour], tuple[Any, Any, Path]] = {}  # -> (writer, sink, path)
         self._closed_through: dict[str, int] = {}  # channel -> start of its newest closed hour
@@ -208,9 +227,6 @@ class Recorder:
     def write(self, channel: str, row: dict[str, Any]) -> None:
         if channel not in SCHEMAS:
             raise ValueError(f"no such channel {channel!r}")
-        if self._failed is not None:
-            failed, self._failed = self._failed, None
-            raise failed
         with self._lock:
             rows = self._rows[channel]
             rows.append(row)
@@ -222,40 +238,52 @@ class Recorder:
         """Every buffered row written (waits for the writer thread)."""
         self._hand_over().result()
 
+    def take_losses(self) -> list[Loss]:
+        """The writes that failed since the last call: (channel, first and last received time,
+        the error), one per channel, for the caller's gap log."""
+        with self._lock:
+            losses, self._losses = self._losses, []
+        return losses
+
     def _hand_over(self) -> Future[None]:
-        """The buffered rows to the writer thread; the caller does not wait."""
+        """The buffered rows to the writer thread, taken and queued at once (a read queued from
+        another thread never comes between: merge review 6); the caller does not wait."""
         with self._lock:
             rows, self._rows = self._rows, defaultdict(list)
-        self._last_flush = time.monotonic()
-        return self._run(self._write_rows, rows)
+            self._last_flush = time.monotonic()
+            return self._queue(self._write_rows, rows)
 
     def _run[T](self, work: Callable[..., T], *args: Any) -> Future[T]:
         """``work`` on the writer thread, after everything handed to it before."""
-        done: Future[T] = Future()
         with self._lock:
-            if self._thread is None or not self._thread.is_alive():
-                self._thread = threading.Thread(
-                    target=self._serve, name="ikars-recorder", daemon=True
-                )
-                self._thread.start()
-            self._jobs.put((work, args, done))
+            return self._queue(work, *args)
+
+    def _queue[T](self, work: Callable[..., T], *args: Any) -> Future[T]:
+        done: Future[T] = Future()  # (the lock is held)
+        if self._thread is None or not self._thread.is_alive():
+            self._jobs = queue.SimpleQueue()
+            self._thread = threading.Thread(
+                target=_serve, args=(self._jobs,), name="ikars-recorder", daemon=True
+            )
+            self._thread.start()
+        self._jobs.put((work, args, done))
         return done
 
-    def _serve(self) -> None:
-        while (job := self._jobs.get()) is not None:
-            work, args, done = job
-            try:
-                done.set_result(work(*args))
-            except BaseException as exc:  # handed to whoever waits; a write's goes to the next
-                done.set_exception(exc)
-                if work == self._write_rows:
-                    self.write_failures += 1
-                    self._failed = exc
-                    log.error("recording failed", extra={"error": repr(exc)})
-
     def _write_rows(self, rows: dict[str, list[dict[str, Any]]]) -> None:
+        """Each channel's rows; one that fails is a loss, and the rest are still written."""
+        failed: Exception | None = None
         for channel, batch in rows.items():
-            self._write_channel(channel, batch)
+            try:
+                self._write_channel(channel, batch)
+            except Exception as exc:
+                failed = failed or exc
+                self.write_failures += 1
+                times = [row["received_ns"] for row in batch]
+                with self._lock:
+                    self._losses.append((channel, min(times), max(times), repr(exc)[:300]))
+                log.error("recording failed", extra={"channel": channel, "error": repr(exc)})
+        if failed is not None:
+            raise failed
 
     def _write_channel(self, channel: str, rows: list[dict[str, Any]]) -> None:
         by_hour: dict[Hour, list[dict[str, Any]]] = defaultdict(list)
@@ -270,7 +298,11 @@ class Recorder:
             by_hour[hour_of(at)].append(row)
         for hour, batch in sorted(by_hour.items()):
             writer, sink, _ = self._writer(channel, hour)
-            writer.write_batch(pa.RecordBatch.from_pylist(batch, schema=SCHEMAS[channel]))
+            # in parts: the conversion holds the GIL, and the loop gets it back between them
+            # (a whole flush at once was tens of ms: merge review, sub-agent 2)
+            for start in range(0, len(batch), CONVERT_ROWS):
+                part = batch[start : start + CONVERT_ROWS]
+                writer.write_batch(pa.RecordBatch.from_pylist(part, schema=SCHEMAS[channel]))
             sink.flush()
             self.rows_written[channel] += len(batch)
 
@@ -311,12 +343,15 @@ class Recorder:
         return closed
 
     def compact_pending(self) -> int:
-        """Compact every queued hour (run this in a worker thread); returns how many succeeded."""
+        """Compact every queued hour (run this in a worker thread); returns how many succeeded.
+        Two at once (a cancelled heartbeat's and the shutdown's) share the list safely."""
         done = 0
-        while self._pending:
-            path, channel = self._pending.pop(0)
+        while True:
+            try:
+                path, channel = self._pending.pop(0)
+            except IndexError:
+                return done
             done += self._compact_now(path, channel)
-        return done
 
     def _compact_now(self, path: Path, channel: str) -> int:
         try:
@@ -335,10 +370,10 @@ class Recorder:
         self._hand_over()
         self._run(self._close_all).result()
         with self._lock:
-            thread, self._thread = self._thread, None
-            self._jobs.put(None)
+            thread, jobs, self._thread = self._thread, self._jobs, None
         if thread is not None:
-            thread.join()
+            jobs.put(None)  # its own queue: a thread started later has another
+            thread.join(CLOSE_WAIT_S)
         self.compact_pending()
 
     def _close_all(self) -> None:
@@ -390,9 +425,6 @@ class Recorder:
                 found.update(_read_stream(stream, SCHEMAS["trade"])["trade_id"].to_pylist())
             hour += HOUR_NS
         return found
-
-
-_Job = tuple[Callable[..., Any], tuple[Any, ...], Future[Any]]
 
 
 def conform(table: pa.Table, schema: pa.Schema) -> pa.Table:

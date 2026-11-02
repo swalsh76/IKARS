@@ -960,3 +960,86 @@ async def test_the_index_is_pruned_every_ten_minutes_not_every_cycle(
         await rig.source._discover()
     assert len(scans) == 2  # the first cycle, then ten minutes on
     await rig.source.stop()
+
+
+def test_only_a_market_whose_trading_ended_counts_as_closed() -> None:
+    """M1.R3 merge review 5: a paused market was held to its settlement like a closed one."""
+    from dataclasses import replace
+
+    from ikars_core.models import Market
+    from ikars_engine.kalshi.discovery import trading
+
+    index = MarketIndex(now_ns=lambda: T0)
+    index.put(Market.model_validate(market("M1")))
+    info = index.markets["M1"]
+    assert trading(None) is None and trading(info) is True
+    assert trading(replace(info, status="paused")) is None  # sold at its bid, if any
+    assert trading(replace(info, status="closed")) is False
+    assert trading(replace(info, status="finalized")) is False
+
+
+async def test_a_dump_row_is_the_market_as_it_is_when_written(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """M1.R3 merge review 3: a change while the dump yielded was followed by the dump's older row,
+    so a replay ended with the market as it was before the change."""
+    from ikars_core.models import Market
+    from ikars_engine.kalshi import discovery
+
+    rows: list[dict[str, Any]] = []
+    clock = [T0]
+    index = MarketIndex(now_ns=lambda: clock[0])
+    for ticker in ("A", "B"):
+        index.put(Market.model_validate(market(ticker)))
+    index.record = rows.append
+    rows.clear()
+    monkeypatch.setattr(discovery, "DUMP_CHUNK", 1)
+    real_sleep = asyncio.sleep
+
+    async def meanwhile(delay: float) -> None:  # the loop runs: B closes
+        if rows[-1]["ticker"] != "A":
+            return
+        clock[0] += 1
+        index.put(Market.model_validate(market("B", status="closed")))
+        await real_sleep(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", meanwhile)
+    await index.dump()
+    last_b = [r for r in rows if r["ticker"] == "B"][-1]
+    assert last_b["status"] == "closed" and last_b["received_ns"] >= T0 + 1
+
+
+async def test_a_run_of_bad_book_frames_breaks_the_book_once(tmp_path: Path) -> None:
+    """M1.R3 merge review 9: every bad frame wrote a break event (hundreds a second)."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    sid = rig.feed.book_sid()
+    await rig.feed.queue.put(frame("orderbook_snapshot", SNAPSHOT_MSG, T0 + 1, seq=1, sid=sid))
+    await rig.items(1)
+    events: list[str] = []
+    real = rig.source.recorder.write
+
+    def spy(channel: str, row: dict[str, Any]) -> None:
+        if channel == "feed":
+            events.append(row["event"])
+        real(channel, row)
+
+    rig.source.recorder.write = spy  # type: ignore[method-assign]
+    bad = {**DELTA_MSG, "delta_fp": "-1.005"}
+    for n in range(3):
+        await rig.feed.queue.put(frame("orderbook_delta", bad, T0 + 2 + n, seq=2 + n, sid=sid))
+    await rig.feed.queue.put(frame("ticker", TICKER_MSG, T0 + 9, sid=1))
+    await rig.items(1)
+    assert events.count("break") == 1
+    await rig.source.stop()
+
+
+async def test_a_write_the_recorder_lost_is_a_gap(tmp_path: Path) -> None:
+    """M1.R3 merge review 7: a failed write went to whichever caller wrote next, or nowhere."""
+    rig = Rig(tmp_path, [market("M1")])
+    await rig.source.start()
+    rig.recorder._losses.append(("ticker", T0, T0 + 5, "OSError('disk full')"))
+    await rig.source._heartbeat()
+    gap = rig.state.gaps()[-1]
+    assert (gap.channel, gap.reason, gap.start_ns) == ("ticker", "recording failed", T0)
+    await rig.source.stop()

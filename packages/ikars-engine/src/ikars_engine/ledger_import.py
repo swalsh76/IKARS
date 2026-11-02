@@ -388,7 +388,7 @@ class AccountImporter:
         if book.traded_e6.get(position.ticker, 0) + payout != position.realized_pnl_e6:
             return None
         # never the archive time, which can fall in the next tax year (M1.R3 A7)
-        moment = market.settlement_ts or market.expiration_time or market.close_time
+        moment = market.settlement_ts or market.close_time
         if moment is None:
             return None
         settled_at = None if market.settlement_ts is None else market.settlement_ts.isoformat()

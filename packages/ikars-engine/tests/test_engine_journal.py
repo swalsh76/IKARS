@@ -340,8 +340,34 @@ def test_the_unsettled_markets_are_kept_as_recommendations_come_and_settle(tmp_p
     journal.add(item("r2", T0 + S, rec("KXB-1", expires_ns=T0 + 1800 * S)))
     journal.settle("KXA-1", "yes", 1_000_000, T0 + 2 * S)
     journal.add(item("r3", T0 + 3 * S, rec("KXA-1", expires_ns=T0 + 1800 * S)))  # settled: no
-    assert journal.unsettled(T0) == ["KXB-1"] and journal.unsettled(T0 + 2 * S) == []
+    assert journal.unsettled(T0) == ["KXB-1"]
     fresh = Journal(path)  # what the query says
-    assert fresh.unsettled(T0) == journal.unsettled(T0)
+    assert fresh.unsettled(T0) == ["KXB-1"]
     fresh.close()
+    assert journal.unsettled(T0 + 2 * S) == []  # past the window: dropped (merge review 8)
+    assert journal._unsettled == {}
+    journal.close()
+
+
+def test_a_check_whose_market_left_the_index_is_looked_up_then_scored(tmp_path: Path) -> None:
+    """M1.R3 merge review 1: a check scored again after the upgrade is days old and its market
+    has left the index: given up at once for want of fees, instead of looked up and scored."""
+    from ikars_core.fees import fee_schedule
+
+    ticker = "KXDEMO-26JAN01-T50"
+    clock = VirtualClock(T0 + 5 * 86_400 * S)  # five days on
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.add(item("r1", T0, rec()))
+    journal.mark("r1", 1800, T0 + 1800 * S, 400_000, 410_000, True)
+    journal.settle(ticker, "yes", 1_000_000, T0 + 3600 * S)
+    known: dict[str, Any] = {}
+    asked: list[str] = []
+    service = JournalService(journal, {}, clock.now_ns, fees=known.get, want=asked.extend)
+    service._write([])
+    assert asked == [ticker] and journal.recent()[0].marks[0].scored is False  # waits for it
+    known[ticker] = fee_schedule("quadratic", 70_000)  # the lookup came back
+    clock.advance_to(clock.now_ns() + 2 * S)
+    service._write([])
+    mark = journal.recent()[0].marks[0]
+    assert mark.at_settlement and mark.score_e6 is not None
     journal.close()

@@ -277,7 +277,11 @@ class Journal:
         return True
 
     def score(
-        self, fees: Callable[[str], FeeSchedule | None], now_ns: int, limit: int = SCORE_BATCH
+        self,
+        fees: Callable[[str], FeeSchedule | None],
+        now_ns: int,
+        limit: int = SCORE_BATCH,
+        waited_from: int = 0,
     ) -> int:
         """Keeps the score of each check not scored yet, as the API scores it (``fees`` by ticker).
         A closed market's check waits for its settlement; one whose fees are not known waits too,
@@ -300,7 +304,9 @@ class Journal:
                 rec = _decode(payload)
                 schedule = fees(rec.ticker)
                 if schedule is None:  # not known now: tried again, or given up after an hour
-                    if now_ns - at >= FEES_WAIT_NS:
+                    # (from the start too: a check scored again after an upgrade is days old,
+                    # and its market is looked up first: M1.R3 merge review 1)
+                    if now_ns - max(at, waited_from) >= FEES_WAIT_NS:
                         done.append((None, 0, rid, horizon))
                     continue
                 value, at_settlement = mark_score_e6(
@@ -373,7 +379,10 @@ class Journal:
                     " s ON s.ticker = r.ticker WHERE s.ticker IS NULL GROUP BY r.ticker"
                 ).fetchall()
             )
-        return [ticker for ticker, newest in self._unsettled.items() if newest >= since_ns]
+        old = [ticker for ticker, newest in self._unsettled.items() if newest < since_ns]
+        for ticker in old:  # past the window for good: the callers' window only moves on
+            del self._unsettled[ticker]
+        return list(self._unsettled)
 
     def settle(self, ticker: str, result: str, yes_paid_e6: int, at_ns: int) -> None:
         """A market's settlement: its result and what a YES contract paid (kept once)."""
@@ -452,6 +461,8 @@ class JournalService:
     trading: Callable[[str], bool | None] = lambda ticker: None
     # a market's fee schedule, by ticker (None: not known)
     fees: Callable[[str], FeeSchedule | None] = lambda ticker: None
+    # markets to look up in the background (their fees: M1.R3 merge review 1)
+    want: Callable[[list[str]], None] = lambda tickers: None
     notices: Notices | None = None
     board: Board = field(default_factory=Board)
     card: list[ScoreLine] = field(default_factory=list)
@@ -526,7 +537,17 @@ class JournalService:
                 found = self.result(ticker)
                 if found is not None:
                     self.journal.settle(ticker, *found, now)
-        self.journal.score(self.fees, now)
+        missing: set[str] = set()
+
+        def fees(ticker: str) -> FeeSchedule | None:
+            found = self.fees(ticker)
+            if found is None:
+                missing.add(ticker)
+            return found
+
+        self.journal.score(fees, now, waited_from=self.started_ns)
+        if missing:  # a market that left the index (closed days ago): looked up, a few at a time
+            self.want(sorted(missing))
 
     def step(self) -> None:
         """One pass: what came is written, then expired, marked and scored (``run`` does this once

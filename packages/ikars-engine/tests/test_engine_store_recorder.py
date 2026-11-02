@@ -435,22 +435,41 @@ def test_rows_are_written_on_the_recorders_own_thread(tmp_path: Path) -> None:
     assert read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist() == ["a"]
 
 
-def test_a_failed_write_is_raised_by_the_next_write(
+def test_a_failed_write_is_a_loss_for_the_gap_log(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """M1.R3 B3: off the loop, a failed write must still reach the caller, which logs the loss."""
+    """M1.R3 B3 and merge review 7: off the loop, a failed write is kept as a loss of its channel's
+    rows (for the gap log) and raised only to whoever waited; other channels are still written."""
     recorder = Recorder(tmp_path)
+    real = recorder._write_channel
 
     def broken(channel: str, rows: list[dict[str, object]]) -> None:
-        raise OSError("disk full")
+        if channel == "trade":
+            raise OSError("disk full")
+        real(channel, rows)
 
     monkeypatch.setattr(recorder, "_write_channel", broken)
     recorder.write("trade", trade(T0, "a"))
+    recorder.write("trade", trade(T0 + 5, "b"))
+    recorder.write("feed", {"received_ns": T0, "event": "start", "channel": "", "detail": ""})
     with pytest.raises(OSError):
-        recorder.flush()
-    with pytest.raises(OSError, match="disk full"):
-        recorder.write("trade", trade(T0 + 1, "b"))
-    assert recorder.write_failures == 1
+        recorder.flush()  # its caller waited: told there
+    recorder.write("trade", trade(T0 + 6, "c"))  # never raised into the next writer
+    assert recorder.take_losses() == [("trade", T0, T0 + 5, "OSError('disk full')")]
+    assert recorder.take_losses() == [] and recorder.write_failures == 1
+    assert recorder.rows_written["feed"] == 1
     monkeypatch.undo()
-    recorder.write("trade", trade(T0 + 2, "c"))  # raised once; recording goes on
     recorder.close()
+
+
+def test_a_recorder_used_after_its_close_closes_again(tmp_path: Path) -> None:
+    """M1.R3 merge review 8: a writer thread started after a close shared the stopped one's queue,
+    so the close could hang waiting for a thread that took no stop."""
+    recorder = Recorder(tmp_path)
+    recorder.write("trade", trade(T0, "a"))
+    recorder.close()
+    recorder.write("trade", trade(T0 + 1, "b"))  # a late writer (a cancelled heartbeat's work)
+    recorder.flush()
+    recorder.close()
+    rows = read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist()
+    assert sorted(rows) == ["a", "b"]

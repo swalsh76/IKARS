@@ -41,6 +41,8 @@ CLOSED_KEPT_NS = 3 * 86_400 * 1_000_000_000  # a settled market stays in the ind
 SETTLED_PAGE_PAUSE_S = 0.5  # between the pages of the recently settled markets (M1.14)
 DUMP_CHUNK = 5_000  # markets recorded between yields to the loop (M1.R3 B5)
 SETTLED_STATUSES = frozenset({"settled", "finalized"})  # paid out: nobody holds it any more
+# trading has ended for good (a paused or unopened market's has not: M1.R3 merge review 5)
+ENDED_STATUSES = frozenset({"closed", "determined", "disputed", "amended", *SETTLED_STATUSES})
 log = logging.getLogger("ikars_engine.kalshi.discovery")
 
 
@@ -123,6 +125,16 @@ def market_row(
         "fee_multiplier_e6": None if fee_terms is None else fee_terms[1],
         "full": full, "removed": removed,
     }  # fmt: skip
+
+
+def trading(info: MarketInfo | None) -> bool | None:
+    """Whether a market still trades (True), has stopped for good (False), or is not known (None:
+    not found, or paused, which is no end: M1.R3 merge review 5)."""
+    if info is None:
+        return None
+    if info.status in OPEN_STATUSES:
+        return True
+    return False if info.status in ENDED_STATUSES else None
 
 
 def _same(a: MarketInfo, b: MarketInfo) -> bool:
@@ -208,13 +220,17 @@ class MarketIndex:
             return 0
         now = self.now_ns()
         count = 0
-        for n, info in enumerate(list(self.markets.values()), 1):
-            if info.ticker not in skip:
+        for n, ticker in enumerate(list(self.markets), 1):
+            # read as it is now: a change while the loop ran was recorded then, and this row must
+            # not come after it with the details from before (M1.R3 merge review 3)
+            info = self.markets.get(ticker)
+            if info is not None and ticker not in skip:
                 terms = self.fee_terms.get(info.series_ticker)
                 self.record(market_row(info, terms, now, full=True))
                 count += 1
             if n % DUMP_CHUNK == 0:
                 await asyncio.sleep(0)
+                now = self.now_ns()
         return count
 
     def climate_codes(self) -> dict[str, list[str]]:

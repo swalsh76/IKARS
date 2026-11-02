@@ -11,9 +11,11 @@ every feed:
   errors back off with jitter; a reply larger than the limit is refused; every call has a timeout.
   The User-Agent names IKARS and a contact (NWS requires one; owner, 2026-10-28: the repository's
   URL, and an email only from the local settings).
-- **Conditional GET.** The server's ``ETag`` and ``Last-Modified`` are kept in the state store, so a
-  restart asks "changed since?". Both are sent: NWS answers 304 to ``If-Modified-Since`` but its
-  weak ``ETag`` names the server that answered, so it never matches (M2.1 live probe).
+- **Conditional GET.** The server's ``ETag`` and ``Last-Modified`` are kept in the state store, and
+  every poll after a run's first asks "changed since?" (the first reads the whole reply, so the
+  poller knows what the feed lists: a "not modified" keeps those ids, however long it lasts: M1.R3
+  C3). Both are sent: NWS answers 304 to ``If-Modified-Since`` but its weak ``ETag`` names the
+  server that answered, so it never matches (M2.1 live probe).
 - **Once only.** Each feed remembers the ids it emitted (in the state store, for ``SEEN_DAYS``), so
   a restart or an overlapping page never records an item twice. Feeds that share a ``seen`` scope
   (M2.3: every news feed, by cleaned link) share those ids, so an item two of them list goes out
@@ -168,6 +170,8 @@ class Poller:
         # ids handed out by fresh() and not yet emitted, per scope: two feeds of one scope polled
         # at once never both send an item while the first is still going out
         self._claimed: dict[str, set[str]] = {}
+        # what each feed listed at its last full reply this run: a "not modified" lists it again
+        self._listed: dict[str, list[str]] = {}
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -191,7 +195,7 @@ class Poller:
         """The feed's reply, or None when it has not changed since the last good poll.
         ``turned``: the host's turn was already taken (``turn``)."""
         headers = {"Accept": feed.accept}
-        if feed.conditional:
+        if feed.conditional and feed.name in self._listed:  # a run's first poll reads it all
             etag, modified, _, _ = self._store.poll_feed(feed.name)
             if etag:
                 headers["If-None-Match"] = etag
@@ -340,11 +344,16 @@ class Poller:
         claimed.update(f.id for f in fresh)
         return fresh
 
-    def emitted(self, feed: Feed, ids: list[str], offered: Sequence[str] = ()) -> None:
+    def emitted(
+        self, feed: Feed, ids: list[str], offered: Sequence[str] = (), *, listed: bool = False
+    ) -> None:
         """``ids`` emitted, or still listed, by ``feed`` now; ``offered`` (what ``fresh`` handed
         out) is no longer claimed. An id another feed has claimed is not remembered here: that
-        feed may yet fail to send it (merge review 1)."""
+        feed may yet fail to send it (merge review 1). ``listed``: ``ids`` is all the reply listed,
+        kept for a later "not modified"."""
         now = self._clock.now_ns()
+        if listed:
+            self._listed[feed.name] = ids
         scope = feed.seen or feed.name
         claimed = self._claimed.get(scope, set())
         mine = set(offered)
@@ -363,8 +372,11 @@ class Poller:
 
     def unchanged(self, feed: Feed) -> None:
         """``feed`` answered "not modified": what it listed is still listed, so never forgotten,
-        however long it stays unchanged (an off-season feed: M1.R3 C3)."""
-        self._store.touch_seen(feed.seen or feed.name, self._clock.now_ns())
+        however long it stays unchanged (an off-season feed: M1.R3 C3). Only its own ids: a scope
+        that several feeds share keeps forgetting what the others no longer list (review 2)."""
+        listed = self._listed.get(feed.name, [])
+        if listed:
+            self._store.remember(feed.seen or feed.name, listed, self._clock.now_ns())
 
     def forget_old(self) -> int:
         return self._store.forget_seen(self._clock.now_ns() - SEEN_DAYS * 86_400 * NS)
@@ -496,7 +508,7 @@ class PollingSource(PluginBase):
             # all went out: every listed id is refreshed (still listed: never forgotten); part
             # went out: those are remembered, so a retry never sends them twice (merge review 6)
             offered = [f.id for f in fresh]
-            poller.emitted(feed, [f.id for f in listed] if done else sent, offered)
+            poller.emitted(feed, [f.id for f in listed] if done else sent, offered, listed=done)
             health.emitted += len(sent)
         self.delivered(feed)
 

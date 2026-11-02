@@ -49,7 +49,8 @@ from ikars_engine.clocks import WallClock
 from ikars_engine.engine import Engine
 from ikars_engine.governor import GB, StorageGovernor
 from ikars_engine.journal import LONGEST_NS, Journal, JournalService
-from ikars_engine.kalshi.discovery import OPEN_STATUSES, Discovery, MarketIndex
+from ikars_engine.kalshi.discovery import Discovery, MarketIndex
+from ikars_engine.kalshi.discovery import trading as market_trading
 from ikars_engine.kalshi.exchange import ExchangeWatch
 from ikars_engine.kalshi.lookup import MarketLookup
 from ikars_engine.kalshi.source import KalshiSource
@@ -325,14 +326,13 @@ async def build(
         return None if found is None else found.settlement()
 
     def trading(ticker: str) -> bool | None:  # whether the market still trades, likewise
-        found = lookup.info(ticker)
-        return None if found is None else found.status in OPEN_STATUSES
+        return market_trading(lookup.info(ticker))
 
     # the strongest recommendations notify (M1.12c), through the engine's own alert desk
     notices = Notices(desk_for(paths, settings, ENGINE_DESK), market_title(index, lookup))
     journal_service = JournalService(
         journal, source.quotes, clock.now_ns, result=result, trading=trading,
-        fees=market_fees(index, lookup), notices=notices,
+        fees=market_fees(index, lookup), want=lookup.want, notices=notices,
     )  # fmt: skip
     engine.health_parts["lookups"] = lookup.health
     engine.listeners += [journal_service.listen, recording(recorder)]

@@ -31,7 +31,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ikars_engine.files import write_text_atomic
-from ikars_engine.store import open_store
+from ikars_engine.store import open_store, transaction
 
 GENESIS = "0" * 64
 STREAMS = ("real", "paper")
@@ -182,8 +182,7 @@ class Ledger:
         if stream not in STREAMS:
             raise LedgerError(f"no such stream {stream!r}")
         added: list[int] = []
-        self._db.execute("BEGIN IMMEDIATE")
-        try:
+        with transaction(self._db, immediate=True):  # the CLI may write too (M1.R3 review 9)
             head = self._head(stream)
             seq, prev = head.seq, head.hash
             for entry in entries:
@@ -201,10 +200,6 @@ class Ledger:
                      entry.ticker, body, prev),
                 )  # fmt: skip
                 added.append(seq)
-            self._db.execute("COMMIT")
-        except BaseException:
-            self._db.execute("ROLLBACK")
-            raise
         return added
 
     def _body(self, stream: str, seq: int, prev: str, entry: Entry) -> dict[str, Any]:

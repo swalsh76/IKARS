@@ -26,10 +26,13 @@ class StoreError(RuntimeError):
 
 
 @contextlib.contextmanager
-def transaction(connection: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+def transaction(
+    connection: sqlite3.Connection, *, immediate: bool = False
+) -> Iterator[sqlite3.Connection]:
     """All or nothing on an autocommit connection (the stores'): any failure, the commit's
-    included, rolls back, so the connection is never left inside a transaction (M1.R3 A8)."""
-    connection.execute("BEGIN")
+    included, rolls back, so the connection is never left inside a transaction (M1.R3 A8).
+    ``immediate``: the write lock is taken at the start (the ledger, which two processes write)."""
+    connection.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
     try:
         yield connection
         connection.execute("COMMIT")
@@ -287,11 +290,6 @@ class StateStore:
                 " ON CONFLICT (feed, id) DO UPDATE SET at_ns = excluded.at_ns",
                 [(feed, one, at_ns) for one in ids],
             )
-
-    def touch_seen(self, feed: str, at_ns: int) -> None:
-        """Every id remembered for ``feed`` seen again now: the feed answered "not modified", so
-        all it listed is still listed (M1.R3 C3)."""
-        self._db.execute("UPDATE poll_seen SET at_ns = ? WHERE feed = ?", (at_ns, feed))
 
     def forget_seen(self, before_ns: int) -> int:
         """Drop remembered ids older than ``before_ns`` (feeds list only recent items)."""

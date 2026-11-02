@@ -728,3 +728,20 @@ async def test_a_checkpoint_lands_between_the_frames_the_pump_really_handled(
     rows = list(merged_rows(tmp_path / "rec", T0 + HOUR, T0 + 2 * HOUR, ("book_snapshot",)))
     stamps = {r["received_ns"] - T0 - HOUR for _, r in rows if r["checkpoint"]}
     assert stamps and all(10 < s < 30 for s in stamps)  # after what was handled, not "now"
+
+
+def test_an_older_recording_keeps_its_books_and_a_start_forgets_the_quotes() -> None:
+    """M1.R3 merge review 3: a recording from before the watch events (v0.1.12 and earlier) must
+    still rebuild its books. Review 4: a recorded start is a new process, which knows no quote."""
+    rows = [{"received_ns": 1, "ticker": "M", "snapshot": 1, "clock": None, "checkpoint": False,
+             "side": "yes", "price_e6": 400_000, "count_e2": 100}]  # fmt: skip
+    older = KalshiState()
+    assert older.snapshot(snapshot_message(rows), 1) and older.books["M"].ready
+    newer = KalshiState()
+    newer.feed_event({"received_ns": 0, "event": "watch", "channel": "book", "detail": "N"})
+    assert not newer.snapshot(snapshot_message(rows), 1) and "M" not in newer.books
+    newer.ticker({"received_ns": 2, "ticker": "N", "price_e6": 1, "yes_bid_e6": 2, "yes_ask_e6": 3})
+    newer.feed_event({"received_ns": 3, "event": "reconnect", "channel": "book", "detail": ""})
+    assert "N" in newer.quotes  # a reconnect keeps them
+    newer.feed_event({"received_ns": 4, "event": "start", "channel": "", "detail": ""})
+    assert newer.quotes == {}
