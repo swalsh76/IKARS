@@ -3510,6 +3510,27 @@ made-up frames and replays its recording to the very same items and state. Cover
   - ticker rows for every market.
 - **Pending:** an hour of recording, then the momentum parity and the book check.
 
+**The live check: passed** (2026-11-02, read only; counts only). The engine restarted at 21:47, 22:03 (v0.1.14),
+23:05 and 23:29 MST (the `feed` channel's `start` events), so the window is the one uninterrupted hour,
+**22:02:59 to 23:05:00 MST**, with no warm-up (`ikars replay --compare --check-books --warmup-min 0`, 1 m 40 s):
+- **Replayed:** 6.08 million rows (3.11 million ticker, 2.08 million book deltas, 521,000 trades, 352,000 market
+  rows), no late rows, digest `21d9b3b7cf74b56b`.
+- **Books:** 29,617 comparisons, 98.3% agree; **7,060 of 7,060 settled (100%)**.
+- **Momentum, as the command runs it:** 239 live, 249 replayed, 179 matched. Agreement grew through the hour (36 of
+  63 in the first 10 minutes, 42 of 45 in the last 12). Every mismatch traced to the restart at 22:03, which the
+  replay does not reproduce:
+  - the replay's plugins start at the hour's start (22:00), so momentum carried three minutes of memory across the
+    restart. Its "last mid before the window" (a quiet market's price) lasts until a market is idle for an hour;
+  - the live journal held recommendations from before the restart, still valid (30 minutes) and holding repeats
+    back; the replay's scratch journal did not;
+  - one recommendation made at a different time moves every later one on that market (one at a time, 30 minutes).
+- **Momentum, with both sides starting equal** (a scratch run: momentum sees nothing before the window's start, and
+  the scratch journal starts with the 74 live recommendations still valid then): **239 live, 239 replayed, 239
+  matched**, the same digest.
+- **Found:** the replay does not reproduce a restart. Proposed to the owner: a recorded `start` restarts the signal
+  plugins, plugins see items only from the warm-up's start, and `--compare` starts the scratch journal with the live
+  recommendations valid at the window's start.
+
 **Fixed during the live check (owner, 2026-11-01).** On a settled market's screen, the price chart grew without
 bound. The cause: with nothing taller beside it (an empty book), the chart's box took its height from the chart,
 which sizes itself to its box, so each resize grew the next.
