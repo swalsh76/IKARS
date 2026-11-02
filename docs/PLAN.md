@@ -776,7 +776,7 @@ progress**, **not started**, **moved**, **retired**.
 | M1.R Base hardening | done | 1.R | #14 |
 | M1.R2 Platform review | done (items placed) | 1.R2 | — |
 | M1.R3a Correctness and data | open (stacked on M1.14) | 1.R3 | #47 |
-| M1.R3b Security, release and docs | built (live checks pending; stacked on M1.R3a) | 1.R3 | #48 |
+| M1.R3b Security, release and docs | open (built and checked; stacked on M1.R3a) | 1.R3 | #48 |
 | Candidate family R recorded (not approved) | done | Candidate family R | #38 |
 | **M2 Sources** | **in progress** | M2 proposal | #32 |
 | M2.1 Polling-source framework | done | 2.1 | #33 |
@@ -792,7 +792,6 @@ progress**, **not started**, **moved**, **retired**.
 - M2.3's news gap check (due 2026-11-02 evening), then the stack's merges in order: #35 → #36 → #37 → #47 → #48.
 - Momentum v1's week ends about 2026-11-04, then the Strategy review: whether to register a v2 (M1.R3 C1 and C5; the
   fee unit, §9).
-- M1.R3b's live checks on its test release (published 2026-11-02).
 
 ## 9. Parking lot
 

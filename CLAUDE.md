@@ -33,8 +33,8 @@ was built and verified: [BUILD-LOG](docs/BUILD-LOG.md) (the current milestone; M
   milestone; owner-approved 2026-11-02). When rebasing onto main, drop `6f38e5f` from `m1/14` and update the
   hashes the docs cite. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 - **Installed:** v0.1.19 (published 2026-11-02 through the four-job release workflow). After the upgrade one
-  `ikars open` signs in again (cookies now name their port). **Next:** the M1.R3b live checks on it (BUILD-LOG
-  1.R3b, "Live checks").
+  `ikars open` signs in again (cookies now name their port). The M1.R3b live check passed on it (BUILD-LOG
+  1.R3b); the Update window's Install click is seen on the next update.
 - **Due:** the M2.3 news gap check (2026-11-02 evening), then the merges above; momentum v1's week ends about
   2026-11-04, then the Strategy review decides v2 (with M1.R3 C1 and C5).
 - **Then:** M2.4 (settlement rules and the event calendar), plan first.
