@@ -1006,3 +1006,19 @@ async def test_candles_come_from_the_historical_store_past_the_cutoff() -> None:
     rows = await candles_of(MarketData(client), "KXDEMO", "T", 0, 3_600, 1)
     assert len(rows) == 1 and any("/historical/markets/T/" in p for p in asked)
     await client.aclose()
+
+
+async def test_kalshi_failing_answers_503_not_no_such_market(ctx: ApiContext) -> None:
+    from ikars_engine.kalshi.lookup import MarketLookup
+    from kalshi_fakes import FakeKalshi
+
+    kalshi = FakeKalshi()
+    ctx.lookup = MarketLookup(kalshi.data(), ctx.index, ctx.now_ns)
+
+    async def broken(ticker: str) -> Any:
+        raise RuntimeError("Kalshi is down")
+
+    ctx.lookup.get = broken  # type: ignore[method-assign]
+    assert (await call(ctx, "GET", "/v1/markets/GONE")).status_code == 503
+    assert (await call(ctx, "GET", "/v1/markets/GONE/candles")).status_code == 503
+    assert ctx.lookup.failures == 2
