@@ -29,11 +29,10 @@ Values are kept as NWS gives them, with their units. Every request is a public G
 import json
 import re
 from collections.abc import Callable
-from datetime import UTC, datetime
 from typing import Any
 
 from ikars_engine.plugins import PluginContext, PluginKind, PluginSpec
-from ikars_engine.polling import Feed, Found, Poller, PollError, PollingSource
+from ikars_engine.polling import Feed, Found, Poller, PollError, PollingSource, iso_ns
 
 API = "https://api.weather.gov"
 GEO = "application/geo+json"
@@ -51,24 +50,6 @@ NS = 1_000_000_000
 def station_of(code: str) -> str:
     """CLINYC -> KNYC: the climate report's location with the K of a US station."""
     return "K" + code.removeprefix("CLI")
-
-
-_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
-
-
-def _ns(text: str | None) -> int | None:
-    """An NWS time in exact nanoseconds; None when it has no offset (never guessed as local
-    time: merge review 9)."""
-    if not text:
-        return None
-    try:
-        when = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if when.tzinfo is None:
-        return None
-    since = when - _EPOCH
-    return (since.days * 86_400 + since.seconds) * NS + since.microseconds * 1_000
 
 
 def _value(field: Any) -> dict[str, Any] | None:
@@ -96,7 +77,7 @@ def parse_observation(station: str, body: bytes) -> list[Found]:
             )
         },
     }  # fmt: skip
-    return [Found(id=f"{station}@{stamp}", published_ns=_ns(stamp), payload=payload)]
+    return [Found(id=f"{station}@{stamp}", published_ns=iso_ns(stamp), payload=payload)]
 
 
 def parse_forecast(station: str, which: str, body: bytes) -> list[Found]:
@@ -118,7 +99,7 @@ def parse_forecast(station: str, which: str, body: bytes) -> list[Found]:
         for p in (props.get("periods") or [])[: HOURS_KEPT if which == "hourly" else None]
     ]
     payload = {"station": station, "which": which, "updated": updated, "periods": periods}
-    return [Found(id=f"{station}:{which}@{updated}", published_ns=_ns(updated), payload=payload)]
+    return [Found(id=f"{station}:{which}@{updated}", published_ns=iso_ns(updated), payload=payload)]
 
 
 _SUMMARY = re.compile(r"CLIMATE SUMMARY FOR ([A-Z]+ \d{1,2} \d{4})")
@@ -178,7 +159,7 @@ def parse_climate(code: str, body: bytes) -> list[Found]:
         "snow_in": _row(text, span.upper(), snow.end()) if snow and span else None,
         "text": text,
     }
-    return [Found(id=pid, published_ns=_ns(product.get("issuanceTime")), payload=payload)]
+    return [Found(id=pid, published_ns=iso_ns(product.get("issuanceTime")), payload=payload)]
 
 
 class NwsWeather(PollingSource):

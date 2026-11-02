@@ -3208,3 +3208,145 @@ yet. **Owner:** ignore it, dated, in `web/pnpm-workspace.yaml`; its removal is p
   | 10 | Codes were checked only hourly, so feeds started up to an hour late | Every 10 minutes |
 
 **M2.2 built and checked live (0.1.11; gap check and quiet hours passed 2026-11-01).** It waits for the owner's merge.
+
+## 2.3 News (plan APPROVED 2026-11-01)
+
+**Probes while planning (2026-11-01, public GETs):**
+- **GDELT's DOC 2.0 API** answered every query with 429 ("one request every 5 seconds"), even 90 seconds apart, and
+  a 15-minute span was refused as too short. A query returns at most 250 articles.
+- **GDELT's raw files over HTTPS work.** `lastupdate.txt` names the newest 15-minute files. The GKG file was 2.5 MB
+  zipped (7.5 MB unzipped) with `max-age=3600` and an ETag. It held 551 articles from 150 sources, every one with
+  its title. That is about 240 MB a day to download.
+- **Government feeds** answer, most with ETag or Last-Modified: the Fed, BEA, Census, EIA, the National Hurricane
+  Center, the White House, SEC, FDA and USGS. BLS refuses the User-Agent (403), and Treasury's feed address needs
+  finding.
+
+**Owner, 2026-11-01:** approved as proposed.
+- **GDELT:** both. The GKG files are the main stream, and DOC API topic queries are added when it answers, with
+  duplicates removed between them (D23 amended).
+- **RSS:** government feeds only to start. Publisher feeds come only by the owner's decision, feed by feed.
+- **Parser:** `defusedxml` and a small parser of our own.
+- **The rest as shown:**
+  - a feed without a recorded terms note is not polled;
+  - duplicates are removed by cleaned link across all news feeds;
+  - settings version 7 holds the starting list;
+  - no terminal change until M2.7;
+  - a dry run, then a test release on the owner's word.
+
+**The plan:**
+- **`gdelt` plugin:**
+  - `lastupdate.txt` is checked every 2 minutes, and each new GKG file is fetched once.
+  - The zip is opened safely: one member only, with caps on the unzipped size and the ratio.
+  - Kept: the title, link, source, GDELT's time, the publisher's time, and the themes, places, people,
+    organisations and tone. Quotations and article text are never kept.
+  - Missed files are fetched by name, up to 24 hours back, with their true (late) received time, and logged as
+    backfilled.
+  - DOC API topic queries from the settings run every 15 minutes, at most one GDELT API request every 10 seconds.
+- **`rss` plugin:**
+  - RSS 2.0 and Atom, read with `defusedxml`.
+  - Kept: the headline, link, publisher time, and the feed's summary as text, cut to 1,000 characters.
+  - Each feed's interval is in the settings, 5 minutes by default.
+- **Duplicates:** the id is the cleaned link (tracking parameters, `www.` and the fragment dropped). It is shared
+  across every news feed through a "seen" scope in the polling base. The first source to deliver a link wins.
+- **Settings version 7:** `[news]` with the GDELT switch, the topic queries and the feeds. Each feed has a `terms`
+  note; without one it is not polled, and health says why.
+- **Docs:** a terms row per feed in `docs/research/sources.md`, plus DEPENDENCIES.
+- **New package:** `defusedxml` 0.7.1 (PSF-2.0, no dependencies; already in the lock for development).
+
+#### 2.3 built (2026-11-01)
+
+**Built** on `m2/3`:
+
+| Commit | What |
+|---|---|
+| `7c0d40d` | the slice |
+| `a19a332` | merge-review fixes |
+
+After M2.2 (PR #34, `436bef2`).
+
+- **The `gdelt` plugin (entry point `gdelt`):**
+  - **GKG files.** The index is read every 2 minutes, and each new file is fetched once.
+    - Files missed are fetched by name, up to a day back, four per read. Older ones are logged as unrecoverable.
+    - A file is unpacked and read in a worker thread: one member only, with caps on the unzipped size and the
+      ratio. The newest file is checked against the index's MD5.
+    - The bookmark moves on, and gaps are logged, only once a read's items have gone out.
+    - A backlog's start is kept across restarts. Once caught up, it is logged once as `backfill`, leaving out any
+      window already logged as lost.
+    - A damaged or missing file at least two slots older than the newest is logged and passed. The network, a
+      busy server and the newest file are retried.
+  - **DOC 2.0 searches** from the settings, every 15 minutes. GDELT's API gets one request every 10 seconds at
+    most, and a poll waits for its turn before its timed call.
+  - **Kept:** title, link, source, GDELT's time, the publisher's time (only when GDELT has it), themes, places,
+    people, organisations and tone (as text). Never quotations or the article's text.
+- **The `rss` plugin (entry point `rss`):**
+  - RSS 2.0, RSS 1.0 and Atom, read with `defusedxml`.
+  - Kept: the headline, link, publisher time and summary, as plain text cut to 1,000 characters. Times are exact,
+    and a time with no zone is never guessed.
+  - Ids are by cleaned link, or by guid for a feed that reuses links (Census). A feed on link ids whose reply
+    repeats a link is flagged in health.
+  - Feeds without a terms note, with a bad or duplicate name, or not on HTTPS are refused, and health says why.
+- **Duplicates:** every news item's id is its cleaned link, in one seen scope shared by all news feeds. Claims keep
+  two feeds from both sending one item, and an id is remembered only by the feed that sent it.
+- **Settings version 7:** `[news]` with 12 US government feeds (Fed ×2, BEA, Census, EIA ×2, NHC ×2, White House ×2,
+  FDA, USGS) and five GDELT searches. BLS and SEC wait for a contact email (`docs/research/sources.md`).
+- **The polling base:**
+  - index feeds read whole every time; a per-host rate; the HTTP status on errors;
+  - `read` and `delivered` hooks for sources;
+  - a source that backfills logs its own gaps;
+  - `iso_ns` and `exact_ns` shared with NWS.
+- **New package:** `defusedxml` 0.7.1 (PSF-2.0). Type stubs were not added: one targeted `type: ignore`.
+
+**Dry run against the real sources** (2026-11-01 about 20:00 MST, a scratch store):
+- **GKG:** one file gave 1,101 to 1,178 articles from 280 to 293 sources, all but a handful with a title, and about
+  half with the publisher's time.
+- **RSS:** the 12 feeds gave 233 items with no errors; 232 had a time and all had a summary.
+- **Overall:** ids all unique, no gaps; payloads average 1.2 KB (about 120 MB a day of payload before compression).
+- **DOC searches:** answered 429 again, with one exception that returned nothing new.
+
+**Verified.** Python: 1,612 tests (27 for news), with made-up feeds, GKG rows and zips. Coverage: `gdelt.py` 92%,
+`rss.py` 97%, `polling.py` 95%. Lint, types and the data guard are clean.
+
+**Review.**
+- **Per commit:** `7c0d40d`, 1 found before committing, fixed. After a day-long outage, the poller logged the whole
+  window as backfilled while GDELT also logged its oldest part as unrecoverable. Now a backfilling source logs its
+  own gaps.
+- **Merge review:** `/code-review medium`, 10 findings, plus a fresh-eyes reviewer sub-agent (PLAN R16), 9 findings.
+  Five were found by both. All fixed in `a19a332` unless marked:
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | A feed remembered every id it listed, including one another feed had claimed but then failed to send: that item was lost | Only ids it sent or no one holds are remembered; tested (both reviews) |
+  | 2 | GKG unzip and parse ran on the event loop, about 50 ms a file and 4 files a read during a catch-up, against the 33 ms screen target | A worker thread (both) |
+  | 3 | Any non-404 failure on one file (a damaged zip, too large) stalled the GKG stream for up to a day | A damaged or missing old file is logged and passed; tested |
+  | 4 | Gaps were logged before delivery: a failed read logged its window again each retry, and the backfill entry was "done" before any file came | Logged at delivery, once; tested (both) |
+  | 5 | Waiting for GDELT's API turn counted against the 60 s call timeout: the fifth search waited 40 s, a seventh always timed out | The turn is taken before the timed call (both) |
+  | 6 | A 404 on a file just behind the newest was written off, though GDELT may still be publishing it | Only from two slots back; tested |
+  | 7 | Titles were decoded twice, so `&lt;script&gt;` became markup and was dropped | Decoded once |
+  | 8 | A store error in `emitted` left ids claimed until a restart | Released in `finally` (both) |
+  | 9 | `Feed.max_bytes` was never used | Removed |
+  | 10 | A redundant condition in the gap rule | One condition |
+  | 11 | A backfill window that held a lost file was logged as both recovered and lost; a restart mid-catch-up logged an overlapping second backfill | The backlog's start is kept in the state store; the backfill leaves out lost windows; tested (sub-agent) |
+  | 12 | GDELT's crawl time was recorded as the publisher's time | The publisher's time only; GDELT's stays in `gdelt_time` (sub-agent) |
+  | 13 | The missed-file count divided as a float | Integer division (sub-agent) |
+  | 14 | Only the newest file has an MD5 in the index | No change: documented; a backfilled file is checked by unzipping (sub-agent) |
+  | 15 | `max_bytes or default` read 0 as the default | `is None` (sub-agent) |
+
+**Live check: pending** (test release **v0.1.12**, published on the owner's word 2026-11-01 from `b2548b5`):
+- settings version 7 upgrades cleanly;
+- both plugins record;
+- after a day, no unlogged gaps.
+
+The 7-day news clock starts then.
+
+**Live check on v0.1.12** (installed 2026-11-01 about 20:39 MST; read only, counts and states):
+- **The upgrade:** settings version 7, the version 6 file kept beside it first, plus the installer's pre-upgrade copy.
+- **Plugins:** `gdelt`, `momentum`, `nws` and `rss` are running.
+- **RSS:** all 12 feeds polled with no errors and none refused; 235 items. No feed is flagged for repeated links.
+- **GKG:** two index reads, one file recorded (521 articles), with the bookmark on the newest file and nothing
+  behind.
+- **DOC searches:** all five answered 429, as expected; GDELT is still refusing them.
+- **Where to see it:** the terminal's Health screen shows only each plugin's state. The per-feed cards are M2.7's
+  (D29, mock-up first).
+
+**Pending:** a day of recording with no unlogged gaps. M2's 7-day news clock starts with this release
+(2026-11-01).

@@ -175,10 +175,13 @@ slice still needs its own approved plan before code.
   10 fixed); PR #34 open, CI green; **v0.1.11 published** (from `f0e5b10`):
   installed 00:32 2026-10-29: migrations OK ($20), 24/24 stations, 96 feeds, 0 errors, recording. **Gap check
   passed** 2026-11-01 (91.8 h, no restart, 39,670 polls, 1 logged gap, no unlogged gaps); **quiet hours passed**
-  (4 nights, none shown). PR #34 waits for the owner's merge. M2 weather 7-day clock started 2026-10-29. Next: the
-  M2.3 News slice plan (for approval); M1.13 after M2.3; momentum v1's week ends ~2026-11-04. **Candidate family R. Reversion / fade** (owner
-  2026-11-01: the manual in-play Bengals trade) recorded under D13 as *not approved* and in §9, for the M3 proposal;
-  the trade's figures stay out of the repository. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+  (4 nights, none shown). **M2.2 done** (PR #34 merged as `436bef2`; a dated `pnpm audit` exception for
+  minimatch GHSA-g3hv-75wg-m249, owner 2026-11-01, removal parked in PLAN §9). M2 weather 7-day clock started
+  2026-10-29. **M2.3 News: plan APPROVED** (owner 2026-11-01; BUILD-LOG 2.3: GDELT both = GKG files + DOC topic queries; government RSS only; defusedxml + own parser; rest as shown); **built** on `m2/3` (`7c0d40d`, review fixes `a19a332`; BUILD-LOG 2.3: settings v7, gdelt +
+  rss plugins, 12 gov feeds; merge review 15 fixed incl. a fresh-eyes sub-agent per **R16**; dry run clean, DOC API
+  still 429). PR #35 open, CI green; **v0.1.12 published** (test pre-release from `b2548b5`, 2026-11-01). Installed ~20:39 2026-11-01: settings v7 (v6 backed up), 4 plugins running, 12/12 feeds OK, GKG recording, DOC 429. News 7-day clock started 2026-11-01. Next: ~2026-11-02 evening the gap check; then the owner's merge. M1.13 after M2.3; momentum v1's week ends ~2026-11-04. The owner allows `gh pr merge` by a local permission rule; merge only when asked. **Candidate family R. Reversion / fade** (owner 2026-11-01: the manual in-play trade) recorded under D13 as
+  *not approved* and in §9, for the M3 proposal; the trade's figures stay out of the repository. The owner allows
+  `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 
@@ -201,6 +204,9 @@ slice still needs its own approved plan before code.
 - **Show the merge review as an itemized list (owner, 2026-10-27).** When reporting a merge review to the owner,
   list every finding, one per line: what was wrong, and what was done (fixed, with the commit; parked; or no change,
   with why). Never only a count.
+- **Use sub-agents whenever they help (owner, 2026-11-01; PLAN R16, D11):** parallel read-only research,
+  a fresh-eyes reviewer at each merge, worktree spikes, separable background work. Not for a slice's sequential
+  build, live workstation checks or step-by-step approved work. Briefs carry the non-negotiables; check results.
 - **Scope is frozen at D1 to D21 (owner, 2026-10-26).** New ideas go to PLAN §9 by default and come back only
   through a milestone proposal the owner approves. Name scope creep explicitly when it appears.
 - Machines by role (workstation, server host, analytics node); real host names and paths stay out of the repository.

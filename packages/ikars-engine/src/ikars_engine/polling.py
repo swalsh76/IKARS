@@ -15,7 +15,9 @@ every feed:
   restart asks "changed since?". Both are sent: NWS answers 304 to ``If-Modified-Since`` but its
   weak ``ETag`` names the server that answered, so it never matches (M2.1 live probe).
 - **Once only.** Each feed remembers the ids it emitted (in the state store, for ``SEEN_DAYS``), so
-  a restart or an overlapping page never records an item twice.
+  a restart or an overlapping page never records an item twice. Feeds that share a ``seen`` scope
+  (M2.3: every news feed, by cleaned link) share those ids, so an item two of them list goes out
+  once, from whichever delivered it first.
 - **Gaps.** A feed unreachable for more than ``GAP_AFTER`` times its interval (owner, 2026-10-28),
   or across an engine stop that long, gets an entry in the engine's gap log for the window it
   missed, once it answers again. Shorter blips are retried quietly and counted in health.
@@ -29,7 +31,7 @@ import copy
 import logging
 import random
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -71,6 +73,11 @@ class Feed(msgspec.Struct, frozen=True, kw_only=True):
     every_s: float
     accept: str = "*/*"
     kind: str | None = None  # the item kind for this feed; None: the source's item_kind
+    seen: str | None = None  # the scope of the ids remembered; None: the feed's own (M2.3)
+    conditional: bool = True  # False: always the whole reply (a small index read every time)
+    # the source fetches what a gap missed and logs its own gaps, what it recovered and what it
+    # could not, so the poller logs none for it (M2.3: GDELT's files; per-commit review)
+    backfills: bool = False
 
 
 class Found(msgspec.Struct, frozen=True, kw_only=True):
@@ -85,11 +92,17 @@ class PollError(Exception):
     """A poll that failed; ``retry_after_s`` when the server said when to come back."""
 
     def __init__(
-        self, reason: str, retry_after_s: float | None = None, *, throttled: bool = False
+        self,
+        reason: str,
+        retry_after_s: float | None = None,
+        *,
+        throttled: bool = False,
+        status: int | None = None,
     ) -> None:
         super().__init__(reason)
         self.retry_after_s = retry_after_s
         self.throttled = throttled  # 429 or 503: the server asked IKARS to slow down
+        self.status = status  # the HTTP status, when the server answered
 
 
 @dataclass(slots=True)
@@ -142,6 +155,9 @@ class Poller:
         self.feeds: dict[str, FeedHealth] = {}
         self.notes: dict[str, dict[str, Any]] = {}  # a source's own state (M2.2: its stations)
         self._pruned_ns: int | None = None
+        # ids handed out by fresh() and not yet emitted, per scope: two feeds of one scope polled
+        # at once never both send an item while the first is still going out
+        self._claimed: dict[str, set[str]] = {}
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -155,51 +171,81 @@ class Poller:
             "notes": copy.deepcopy(dict(sorted(self.notes.items()))),
         }
 
-    async def fetch(self, feed: Feed) -> Fetched | None:
-        """The feed's reply, or None when it has not changed since the last good poll."""
-        etag, modified, _, _ = self._store.poll_feed(feed.name)
-        headers = {"Accept": feed.accept}
-        if etag:
-            headers["If-None-Match"] = etag
-        if modified:
-            headers["If-Modified-Since"] = modified
-        return await self._get(feed.url, headers)
+    async def turn(self, url: str) -> None:
+        """Wait for ``url``'s host to allow one more request. A poll waits here before its timed
+        call, so a queue of feeds on a slow host never runs out its timeout waiting (merge review
+        5); the request that follows uses this turn."""
+        await self._host(url).acquire(1.0)
 
-    async def once(self, url: str, accept: str = "*/*") -> bytes:
-        """One lookup (a station, a forecast grid), with the same rules as a poll but nothing
-        kept: HTTPS, the host's budget, the size limit."""
-        fetched = await self._get(url, {"Accept": accept})
+    async def fetch(self, feed: Feed, *, turned: bool = False) -> Fetched | None:
+        """The feed's reply, or None when it has not changed since the last good poll.
+        ``turned``: the host's turn was already taken (``turn``)."""
+        headers = {"Accept": feed.accept}
+        if feed.conditional:
+            etag, modified, _, _ = self._store.poll_feed(feed.name)
+            if etag:
+                headers["If-None-Match"] = etag
+            if modified:
+                headers["If-Modified-Since"] = modified
+        return await self._get(feed.url, headers, turned=turned)
+
+    async def once(self, url: str, accept: str = "*/*", max_bytes: int | None = None) -> bytes:
+        """One lookup (a station, a forecast grid, a file an index names), with the same rules as
+        a poll but nothing kept: HTTPS, the host's budget, the size limit."""
+        fetched = await self._get(url, {"Accept": accept}, max_bytes)
         if fetched is None:  # never asked "changed since?", so never 304
-            raise PollError("HTTP 304")
+            raise PollError("HTTP 304", status=304)
         return fetched.body
 
-    async def _get(self, url: str, headers: dict[str, str]) -> Fetched | None:
+    def limit_host(self, host: str, per_second: float) -> None:
+        """A host that asks for fewer requests than the default (M2.3: GDELT's API, one every 5
+        seconds), across every feed and lookup on it."""
+        self._buckets[host] = self._bucket(per_second)
+
+    def _bucket(self, per_second: float) -> TokenBucket:
+        return TokenBucket(
+            per_second,
+            1.0,
+            clock=lambda: self._clock.monotonic_ns() / NS,  # the engine's clock, as everywhere
+            sleep=self._clock.sleep,
+        )
+
+    def _host(self, url: str) -> TokenBucket:
         parts = urlsplit(url)
         if parts.scheme != "https" or not parts.hostname:
             raise PollError("only https feeds are polled")
         bucket = self._buckets.get(parts.hostname)
         if bucket is None:
-            bucket = self._buckets[parts.hostname] = TokenBucket(
-                self._host_rate,
-                1.0,
-                clock=lambda: self._clock.monotonic_ns() / NS,  # the engine's clock, as everywhere
-                sleep=self._clock.sleep,
-            )
-        await bucket.acquire(1.0)
+            bucket = self._buckets[parts.hostname] = self._bucket(self._host_rate)
+        return bucket
+
+    async def _get(
+        self,
+        url: str,
+        headers: dict[str, str],
+        max_bytes: int | None = None,
+        *,
+        turned: bool = False,
+    ) -> Fetched | None:
+        limit = self._max_bytes if max_bytes is None else max_bytes  # 0 is a limit too
+        bucket = self._host(url)
+        if not turned:
+            await bucket.acquire(1.0)
         try:
             async with self._client.stream("GET", url, headers=headers) as reply:
                 if reply.status_code == 304:
                     return None
-                if reply.status_code in (429, 503):
+                code = reply.status_code
+                if code in (429, 503):
                     retry = _retry_after(reply.headers, self._clock.now_ns())
-                    raise PollError(f"HTTP {reply.status_code}", retry, throttled=True)
-                if reply.status_code != 200:
-                    raise PollError(f"HTTP {reply.status_code}")
+                    raise PollError(f"HTTP {code}", retry, throttled=True, status=code)
+                if code != 200:
+                    raise PollError(f"HTTP {code}", status=code)
                 body = bytearray()
                 async for chunk in reply.aiter_bytes():
                     body += chunk
-                    if len(body) > self._max_bytes:
-                        raise PollError(f"the reply is larger than {self._max_bytes} bytes")
+                    if len(body) > limit:
+                        raise PollError(f"the reply is larger than {limit} bytes", status=code)
                 etag, modified = reply.headers.get("etag"), reply.headers.get("last-modified")
         except httpx.HTTPError as exc:
             raise PollError(type(exc).__name__) from exc
@@ -220,11 +266,10 @@ class Poller:
         server's max-age when longer: merge review 3)."""
         now = self._clock.now_ns()
         last_ok, healthy = health.last_ok_ns, max(feed.every_s, health.wait_s or 0.0)
-        if last_ok is not None and now - last_ok > GAP_AFTER * healthy * NS:
+        if not feed.backfills and last_ok is not None and now - last_ok > GAP_AFTER * healthy * NS:
             cause = health.last_error or "the engine was not running"
             detail = f"no good poll ({cause}); the next one returned the feed's current items"
-            gap = self._store.add_gap(feed.name, "unreachable", last_ok, now, "refetched", now)
-            self._store.finish_gap(gap, "done", detail)
+            self.log_gap(feed.name, last_ok, now, "refetched", detail)
             health.gaps += 1
         if fetched is None:  # 304: the validators stay
             self._store.set_poll_ok(feed.name, now, wait_s)
@@ -234,17 +279,65 @@ class Poller:
         health.failing_since_ns = None
         health.last_error = None
 
+    def bookmark(self, name: str) -> int | None:
+        """Where a source got to (M2.3: GDELT's last file read), kept across restarts."""
+        return self._store.bookmark(name)
+
+    def set_bookmark(self, name: str, value: int) -> None:
+        self._store.set_bookmark(name, value)
+
+    def clear_bookmark(self, name: str) -> None:
+        self._store.delete_bookmarks(name)
+
+    def log_gap(self, channel: str, start_ns: int, end_ns: int, recovery: str, detail: str) -> None:
+        """A window a source missed, in the engine's gap log: recovered (``refetched``,
+        ``backfill``) or not (``unrecoverable``)."""
+        now = self._clock.now_ns()
+        gap = self._store.add_gap(channel, "unreachable", start_ns, end_ns, recovery, now, detail)
+        if recovery != "unrecoverable":
+            self._store.finish_gap(gap, "done", detail)
+
+    def log_backfill(self, channel: str, start_ns: int, end_ns: int, detail: str) -> None:
+        """A window a source fetched afterwards, logged as ``backfill`` apart from the parts it
+        already logged as lost, so no window is ever logged both ways (merge review)."""
+        lost = sorted(
+            (g.start_ns, g.end_ns)
+            for g in self._store.gaps("unrecoverable")
+            if g.channel == channel and g.end_ns > start_ns and g.start_ns < end_ns
+        )
+        at = start_ns
+        for a, b in lost:
+            if a > at:
+                self.log_gap(channel, at, a, "backfill", detail)
+            at = max(at, b)
+        if at < end_ns:
+            self.log_gap(channel, at, end_ns, "backfill", detail)
+
     def fresh(self, feed: Feed, found: list[Found]) -> list[Found]:
-        """The items ``feed`` has not emitted before, each once, in their order."""
+        """The items ``feed``'s scope has not emitted before and no other feed is sending now,
+        each once, in their order. They stay claimed until ``emitted``."""
+        scope = feed.seen or feed.name
+        claimed = self._claimed.setdefault(scope, set())
         first: dict[str, Found] = {}
         for f in found:
-            first.setdefault(f.id, f)
-        return [first[i] for i in self._store.unseen(feed.name, list(first))]
+            if f.id not in claimed:
+                first.setdefault(f.id, f)
+        fresh = [first[i] for i in self._store.unseen(scope, list(first))]
+        claimed.update(f.id for f in fresh)
+        return fresh
 
-    def emitted(self, feed: Feed, ids: list[str]) -> None:
-        """``ids`` emitted, or still listed, by ``feed`` now."""
+    def emitted(self, feed: Feed, ids: list[str], offered: Sequence[str] = ()) -> None:
+        """``ids`` emitted, or still listed, by ``feed`` now; ``offered`` (what ``fresh`` handed
+        out) is no longer claimed. An id another feed has claimed is not remembered here: that
+        feed may yet fail to send it (merge review 1)."""
         now = self._clock.now_ns()
-        self._store.remember(feed.name, ids, now)
+        scope = feed.seen or feed.name
+        claimed = self._claimed.get(scope, set())
+        mine = set(offered)
+        try:
+            self._store.remember(scope, [i for i in ids if i in mine or i not in claimed], now)
+        finally:
+            claimed.difference_update(mine)  # released even when the store fails (merge review 8)
         if self._pruned_ns is None or now - self._pruned_ns > 86_400 * NS:  # once a day
             self._pruned_ns = now
             self.forget_old()
@@ -265,6 +358,16 @@ class PollingSource(PluginBase):
 
     def parse(self, feed: Feed, body: bytes, ctx: PluginContext) -> list[Found]:
         raise NotImplementedError
+
+    async def read(
+        self, feed: Feed, body: bytes, poller: Poller, ctx: PluginContext
+    ) -> list[Found]:
+        """The items a reply holds. The default parses it; a source whose reply names more to
+        fetch overrides this (M2.3: GDELT's index names its newest files)."""
+        return self.parse(feed, body, ctx)
+
+    def delivered(self, feed: Feed) -> None:
+        """Every item of ``feed``'s last reply went out (M2.3: GDELT moves its bookmark on)."""
 
     async def manage(
         self,
@@ -316,7 +419,8 @@ class PollingSource(PluginBase):
             health.polls += 1
             wait_s = feed.every_s
             try:
-                fetched = await ctx.call(poller.fetch(feed), TIMEOUT_S * 2)
+                await poller.turn(feed.url)  # outside the timeout (merge review 5)
+                fetched = await ctx.call(poller.fetch(feed, turned=True), TIMEOUT_S * 2)
                 if fetched is None:
                     health.not_modified += 1
                 else:
@@ -344,11 +448,12 @@ class PollingSource(PluginBase):
     async def _emit_new(
         self, feed: Feed, body: bytes, poller: Poller, ctx: PluginContext, health: FeedHealth
     ) -> None:
-        listed = self.parse(feed, body, ctx)
+        listed = await self.read(feed, body, poller, ctx)
         sent: list[str] = []
         done = False
+        fresh = poller.fresh(feed, listed)
         try:
-            for one in poller.fresh(feed, listed):
+            for one in fresh:
                 await ctx.emit(
                     Item(
                         ref=Ref(feed.kind or self.item_kind, one.id),
@@ -363,8 +468,33 @@ class PollingSource(PluginBase):
         finally:
             # all went out: every listed id is refreshed (still listed: never forgotten); part
             # went out: those are remembered, so a retry never sends them twice (merge review 6)
-            poller.emitted(feed, [f.id for f in listed] if done else sent)
+            offered = [f.id for f in fresh]
+            poller.emitted(feed, [f.id for f in listed] if done else sent, offered)
             health.emitted += len(sent)
+        self.delivered(feed)
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def iso_ns(text: str | None) -> int | None:
+    """An ISO 8601 time in exact nanoseconds; None when it has no offset (never guessed as local
+    time: M2.2 merge review 9) or does not parse."""
+    if not text:
+        return None
+    try:
+        when = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        return None
+    return exact_ns(when)
+
+
+def exact_ns(when: datetime) -> int:
+    """An aware time in exact nanoseconds, never through a float."""
+    since = when - _EPOCH
+    return (since.days * 86_400 + since.seconds) * NS + since.microseconds * 1_000
 
 
 async def _sleep_until(clock: EventClock, due_ns: int) -> None:

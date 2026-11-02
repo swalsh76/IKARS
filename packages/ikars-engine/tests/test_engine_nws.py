@@ -278,7 +278,7 @@ def test_a_record_high_and_a_blank_row_are_read_as_they_are() -> None:
 
 def test_times_are_exact_and_never_guessed() -> None:
     # merge review 9
-    from ikars_engine.nws import _ns
+    from ikars_engine.polling import iso_ns as _ns
 
     assert _ns("2026-01-01T15:51:00.123456+00:00") == 1_767_282_660_123_456_000
     assert _ns("2026-01-01T15:51:00") is None  # no offset: not read as local time
@@ -302,10 +302,10 @@ def test_a_slow_lookup_leaves_the_city_unmapped_not_the_source_crashed(tmp_path:
     poller = Poller(store, clock, user_agent("9.9"), transport=httpx.MockTransport(nws))
     real_once = poller.once
 
-    async def once(url: str, accept: str = "*/*") -> bytes:
+    async def once(url: str, accept: str = "*/*", max_bytes: int | None = None) -> bytes:
         if "/stations/KNOP" in url:
             raise TimeoutError
-        return await real_once(url, accept)
+        return await real_once(url, accept, max_bytes)
 
     poller.once = once  # type: ignore[method-assign]
     emitted: list[Item] = []

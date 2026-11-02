@@ -30,6 +30,7 @@ Requirements from the owner (2026-10-26):
 | R13 | Anything SPARQ has produced (code, findings, data) may be used to augment IKARS (D17). |
 | R14 | Besides unit tests and CI, a **mini code review on every commit and merge**, so fewer large periodic reviews are needed (D11). |
 | R15 | An **audit log** kept so that, if needed, it can be stored alongside a **Form 1040** tax return (D18). |
+| R16 | **Sub-agents are used whenever they help the plan's development** (owner, 2026-11-01): parallel research, fresh-eyes reviews and isolated spikes (D11). |
 
 ### 1.1 Direction: beat the humans, not the bots (owner, 2026-10-26)
 
@@ -458,6 +459,20 @@ arithmetic. For each recommendation:
   - **Findings:** each finding is fixed in the same branch or parked in §9 with its reason. The BUILD-LOG slice
     entry gets a **Review** heading listing the findings and what was done about each.
   - A full-codebase review is still held at each milestone's close-out, and should then be short.
+- **Sub-agents (R16, owner 2026-11-01):** the development makes full use of sub-agents wherever they are an
+  advantage, and keeps work in the main session where they are not.
+  - **Used for:**
+    - read-only research that splits into independent parts, such as how KAPS and SPARQ handled something, or
+      the terms checks for many sources at once;
+    - a fresh-eyes reviewer at each merge, beside `/code-review`, that never saw the slice's reasoning;
+    - spikes tried in their own worktree, so the slice's branch is untouched;
+    - long, separable work run in the background while the main session carries on.
+  - **Not used for:** a slice's sequential build, live checks on the workstation (keys, the installed engine), or
+    any step the owner approves one at a time.
+  - **Every brief carries the non-negotiables:** no secrets, key paths, real host names or paths; Kalshi GET only;
+    nothing fetched is committed.
+  - **Results are checked by the main session before use.** A review agent's findings go under the slice's
+    **Review** heading like any other.
 
 ### D12. Deployment: portable zip and user-space installer (APPROVED 2026-10-26: Velopack)
 
@@ -740,7 +755,7 @@ Strata server (D24) is the one new resource: a home-network service, as the NAS 
 | # | Decision |
 |---|---|
 | **D22 Weather** | NWS `api.weather.gov`, which is free and public domain (a contact User-Agent is required). It covers the stations Kalshi's weather markets settle on, found from each market's rules, not a hand-made list. It records **hourly forecasts**, **observations every 5 min** and the **daily climate report (CLI)**. *Noted in M2.2 (owner, 2026-10-28): Kalshi settles on The Weather Company's value from the same government station. The Weather Company has no free feed or automated-access terms, so the NWS climate report is recorded as the proxy, and M2.4 measures how close it is.* |
-| **D23 News** | GDELT DOC 2.0 (free, every 15 min) and a **curated list of public RSS/Atom feeds** kept in Settings. Each feed's terms are checked before it is added (G17). Kept: headline, link, source, publisher time, received time, and the feed's own summary. Full articles are never fetched in M2. Nothing fetched is ever committed. |
+| **D23 News** | GDELT DOC 2.0 (free, every 15 min) and a **curated list of public RSS/Atom feeds** kept in Settings. Each feed's terms are checked before it is added (G17). Kept: headline, link, source, publisher time, received time, and the feed's own summary. Full articles are never fetched in M2. Nothing fetched is ever committed. *Amended in M2.3 (owner, 2026-11-01): the DOC API answered every query with 429 that day and caps a query at 250 articles, so GDELT's **GKG 15-minute files** (every article GDELT sees, with its title) are the main stream, plus DOC API topic queries when it answers. The starting RSS list is US government feeds (public domain); publisher feeds only by the owner's decision per feed.* |
 | **D24 LLM backends (amended: local only)** | One provider interface (D9), so a backend can be added without rework. **M2 uses only the owner's Strata server** on the home network: OpenAI-compatible, reached through the HTTP client IKARS already has, its key in the user variable named in the owner's local notes, never in the repository. Its quality is measured on a labelled sample in M2. **Whether to add Claude** (for linking and probability estimates) **is decided at the start of M3**, from those results. When Strata is away, items are still recorded and are classified when it returns. |
 | **D25 First LLM use** | First-pass classification of news items: relevance, categories and urgency. Every verdict is journalled with its provider and model, and cached by input hash (D20 B). Only items that the embedding pre-filter places near a live market are classified. No recommendations are made from it. |
 | **D26 Settlement rules and calendar (G8)** | Each market's rules text is stored and its resolution source parsed (for weather, the station). A calendar of close times and scheduled reports. Signals get a "settles soon, by fine print" guard. Shown on the Market screen and a Calendar panel. |
@@ -802,7 +817,8 @@ Strata server (D24) is the one new resource: a home-network service, as the NAS 
 | M1.7 Loopback API and contracts | **done** (BUILD-LOG 1.7; PR #10 merged as `0ba5d83`) |
 | M1.R Base hardening (owner, 2026-10-27) | **built** on `m1/r-hardening` (BUILD-LOG 1.R): a whole-code-base review's items 1 to 26 fixed, plus 10 merge-review findings; **done** (PR #14, `fca7941`) |
 | M1.8a-web-1a Engine side of the web terminal | **done** (PR #16, `d70cb83`; BUILD-LOG 1.8a-web-1a): file serving with the browser hardening, cookie sign-in that survives restarts, `ikars open`, contracts 2.0, `demo-api`; security review (1 finding, fixed) and merge review (8, fixed) |
-| M2.2 Weather | **built** on `m2/2` (BUILD-LOG 2.2): stations from the markets' rules (24 of 24 mapped), the `nws` plugin (observations, forecasts, the climate report as the proxy for The Weather Company's settlement value); merge review 10 fixed; live on 0.1.11 since 2026-10-29, the gap check passed 2026-11-01 (no unlogged gaps); PR #34 waits for the owner's merge |
+| M2.3 News | **built** on `m2/3` (BUILD-LOG 2.3; plan approved 2026-11-01, D23 amended): the `gdelt` plugin (GKG files with backfill, DOC searches) and the `rss` plugin (12 government feeds, defusedxml), duplicates removed by link; merge review 15 (with a fresh-eyes sub-agent, R16) fixed; live check on a test release pending |
+| M2.2 Weather | **done** (PR #34, `436bef2`; BUILD-LOG 2.2): stations from the markets' rules (24 of 24 mapped), the `nws` plugin (observations, forecasts, the climate report as the proxy for The Weather Company's settlement value); merge review 10 fixed; live on 0.1.11 since 2026-10-29, the gap check passed 2026-11-01 (no unlogged gaps) |
 | M2.1 Polling-source framework | **done** (PR #33, `86726d7`; BUILD-LOG 2.1): `PollingSource` and the shared `Poller`, the gap rule, per-feed health, state migration 3, settings version 6 ($20 ceiling), the NWS and GDELT terms; merge review 10 fixed |
 | M2 Sources proposal | **approved 2026-10-28** (§4.3): D22 to D30, slices M2.1 to M2.10, M1.13 after M2.3; **the local LLM only** (Strata; Claude deferred to an M3 decision; amended); a $20 monthly ceiling; GDELT and curated RSS |
 | M1.11 Close-out | **done** (PR #31, `14fb25d`): **M1 complete** (BUILD-LOG 1.11): the M1 gate evidence (a clean-account install of v0.1.9, the runbook end to end with an exact reconcile, the drill), `ikars backup restore` and `docs/RUNBOOK.md`, the network wait at start, **Back up now** (approved addition); milestone review 8 + 1 fixed, merge review 10 fixed; Back up now live on v0.1.10; **its merge closes M1** |
