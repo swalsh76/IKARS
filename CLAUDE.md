@@ -173,9 +173,10 @@ slice still needs its own approved plan before code.
   (BUILD-LOG 2.1; merge review 10 fixed); **M2.1 done** (PR #33 merged as `86726d7`). **M2.2 plan APPROVED**
   (owner 2026-10-29; NWS = proxy for TWC settlement; all codes) and **built** on `m2/2` (BUILD-LOG 2.2; merge review
   10 fixed); PR #34 open, CI green; **v0.1.11 published** (from `f0e5b10`):
-  installed 00:32 2026-10-29: migrations OK ($20), 24/24 stations, 96 feeds, 0 errors, recording. Pending: a day
-  later (~2026-10-30) check no unlogged gaps; then the owner's merge. M2 weather 7-day clock started 2026-10-29. Morning: overnight quiet hours in alerts.jsonl. Morning: check overnight quiet hours in alerts.jsonl. Then M1.11 (M1.13 any time
-  before M3). The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+  installed 00:32 2026-10-29: migrations OK ($20), 24/24 stations, 96 feeds, 0 errors, recording. **Gap check
+  passed** 2026-11-01 (91.8 h, no restart, 39,670 polls, 1 logged gap, no unlogged gaps); **quiet hours passed**
+  (4 nights, none shown). PR #34 waits for the owner's merge. M2 weather 7-day clock started 2026-10-29. Next: the
+  M2.3 News slice plan (for approval); M1.13 after M2.3; momentum v1's week ends ~2026-11-04. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 

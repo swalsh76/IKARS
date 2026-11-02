@@ -3160,7 +3160,28 @@ After M2.1 (PR #33, `86726d7`). **No new packages.**
 - **Recorded in `recordings\item`:** 24 observations, 48 forecasts and 23 climate reports (the 24th still in the
   hour's buffer).
 
-**Pending:** a day of recording with no unlogged gaps. M2's 7-day weather clock starts with this release.
+M2's 7-day weather clock starts with this release.
+
+**Gap check: passed** (2026-11-01 19:18 MST, 91.8 hours after the install; read only, counts and states):
+- **Polling never stopped.** The engine ran the whole window without a restart. Its 96 feeds made 39,670 polls,
+  against about 39,660 expected from the intervals; 21,628 were "not modified". No feed is failing now, and none
+  last succeeded more than two intervals ago.
+- **Errors:** 5 polls failed, and the next poll of each succeeded.
+- **The gap log:** one weather entry: `nws.CLIMDW.cli` unreachable for 31 minutes (2026-11-01 07:06 MST), then
+  refetched. The rest were Kalshi's own reconnects: the install at 00:32, a drop at 00:58 (about 30 minutes, recovered
+  by discovery and backfill), and 10 seconds on 2026-11-01 at 01:00. All are logged.
+- **Recorded:** 6,381 observations, 1,202 forecasts and 254 climate reports. Every hour of the window has weather
+  items, and every recording file reads.
+- **Holes are NWS's, not losses.** An item is recorded when NWS publishes something new, so the time between items
+  follows NWS's own schedule. That was 1.8 hours median for observations, and about 12 hours between forecast
+  issues. The longest were KNYC's observation (3.6 hours, while the station's latest stayed the same) and Phoenix's
+  and San Antonio's climate reports (24 hours, one issue a day). The polls through those holes all succeeded. **No
+  unlogged gaps.**
+
+**Quiet hours (M1.12c): passed.** The check covered the nights of 2026-10-28 to 2026-10-31. Momentum made between
+2,457 and 4,166 recommendations each night from 22:00 to 07:00, and no notification was shown in those hours. A
+recommendation is not offered at all in quiet hours, so the alert log has no record for them. Since 2026-10-28, 107
+recommendation notifications were shown, with at most 3 in any hour, which is the cap.
 
 **Review.**
 - **Per commit:** `d347239`, 3 found before committing; 2 fixed, 1 no change:
@@ -3182,4 +3203,4 @@ After M2.1 (PR #33, `86726d7`). **No new packages.**
   | 9 | NWS times went through floats, and a time without an offset was read as local | Exact integer nanoseconds; none without an offset; tested |
   | 10 | Codes were checked only hourly, so feeds started up to an hour late | Every 10 minutes |
 
-**M2.2 built.** It waits for the live check (0.1.11) and the owner's merge.
+**M2.2 built and checked live (0.1.11; gap check and quiet hours passed 2026-11-01).** It waits for the owner's merge.
