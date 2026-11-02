@@ -139,7 +139,7 @@ def test_a_feed_is_asked_whether_it_changed_and_each_item_is_emitted_once(tmp_pa
     assert second["If-None-Match"] == 'W/"a"'  # both sent: NWS honours only If-Modified-Since
     assert second["If-Modified-Since"] == "Thu, 01 Jan 2026 00:00:00 GMT"
     assert server.requests[0].headers["User-Agent"].startswith("IKARS/9.9 (+https://github.com/")
-    health = poller.health()["test-news.main"]
+    health = poller.health()["feeds"]["test-news.main"]  # type: ignore[index]
     assert isinstance(health, dict)
     assert (health["polls"], health["not_modified"], health["emitted"], health["errors"]) == (
         4,
@@ -199,7 +199,7 @@ def test_the_server_says_how_long_to_wait(tmp_path: Path) -> None:
     assert waits[0] >= 300 * 0.9  # max-age, less the jitter
     assert waits[1] >= 120 * 0.9  # Retry-After
     assert 60 * 0.9 <= waits[2] <= 120 * 1.1  # a 503 again: never sooner than the interval
-    assert poller.health()["test-news.main"]["errors"] == 2  # type: ignore[index]
+    assert poller.health()["feeds"]["test-news.main"]["errors"] == 2  # type: ignore[index]
     store.close()
 
 
@@ -217,7 +217,7 @@ def test_a_long_outage_is_a_gap_and_a_blip_is_not(tmp_path: Path) -> None:
     )  # fmt: skip
     assert gap.end_ns - gap.start_ns > GAP_AFTER * every * NS
     assert "HTTP 500" in gap.detail
-    assert poller.health()["test-news.main"]["gaps"] == 1  # type: ignore[index]
+    assert poller.health()["feeds"]["test-news.main"]["gaps"] == 1  # type: ignore[index]
     store.close()
 
 
@@ -244,7 +244,7 @@ def test_refused_replies(tmp_path: Path, url: str, reply: httpx.Response, proble
         tmp_path, server, sleeps=1, source=News(url=url), max_bytes=2_000
     )
     assert emitted == []
-    error = poller.health()["test-news.main"]["last_error"]  # type: ignore[index]
+    error = poller.health()["feeds"]["test-news.main"]["last_error"]  # type: ignore[index]
     assert problem in str(error)
     if url.startswith("http:"):
         assert server.requests == []  # never even asked
@@ -320,7 +320,7 @@ def test_a_long_max_age_is_not_a_gap(tmp_path: Path) -> None:
     # merge review 3: a feed polled every 60 s whose server says max-age 300
     server = Server([items("a", headers={"Cache-Control": "max-age=300"})])
     _, poller, _, store = run_source(tmp_path, server, sleeps=5)
-    assert store.gaps() == [] and poller.health()["test-news.main"]["gaps"] == 0  # type: ignore[index]
+    assert store.gaps() == [] and poller.health()["feeds"]["test-news.main"]["gaps"] == 0  # type: ignore[index]
     store.close()
 
 

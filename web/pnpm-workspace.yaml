@@ -4,3 +4,10 @@
 minimumReleaseAge: 10080
 # Install scripts run only for the packages named here (none needed so far).
 onlyBuiltDependencies: []
+# Audit exceptions, each dated, with why (owner, 2026-11-01):
+# GHSA-g3hv-75wg-m249 (moderate, minimatch < 11.0.1, denial of service from a crafted glob): only in
+# the lint tools (ESLint, typescript-eslint), fed our own patterns, never in the built terminal; no
+# parent accepts minimatch 11 yet. Removed once they do (PLAN §9).
+auditConfig:
+  ignoreGhsas:
+    - GHSA-g3hv-75wg-m249
