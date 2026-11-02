@@ -31,9 +31,12 @@ an upgrade still compacts, and a replay reads every recording.
 
 import logging
 import os
+import queue
+import threading
 import time
 from collections import defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
+from concurrent.futures import Future
 from datetime import UTC, datetime
 from itertools import count
 from pathlib import Path
@@ -175,39 +178,86 @@ def hour_start_ns(hour: Hour) -> int:
 
 
 class Recorder:
+    """Rows are buffered on the caller's thread (the event loop) and handed, every few seconds, to
+    the recorder's own writer thread, which builds the Arrow batches and writes them: the loop never
+    waits on that work (M1.R3 B3). Everything that touches the open hours (closing them, reading
+    the trades already recorded) runs on that thread too, in order after the writes handed to it.
+    A failed write is logged and raised by the next ``write``, so the caller records the loss."""
+
     def __init__(self, root: Path, *, flush_seconds: float = 5.0, batch_rows: int = 50_000) -> None:
         self.root = root
         self._flush_seconds = flush_seconds
         self._batch_rows = batch_rows
         self._rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        self._lock = threading.Lock()  # the buffers, and starting the writer thread
+        self._jobs: queue.SimpleQueue[_Job | None] = queue.SimpleQueue()
+        self._thread: threading.Thread | None = None
+        self._failed: BaseException | None = None  # a write that failed, raised by the next write
+        # the writer thread's own
         self._open: dict[tuple[str, Hour], tuple[Any, Any, Path]] = {}  # -> (writer, sink, path)
-        self._pending: list[tuple[Path, str]] = []  # closed hours waiting for compaction
         self._closed_through: dict[str, int] = {}  # channel -> start of its newest closed hour
+        self._pending: list[tuple[Path, str]] = []  # closed hours waiting for compaction
         self.late_rows = 0
         self._last_flush = time.monotonic()
         self.rows_written: dict[str, int] = defaultdict(int)
         self.compaction_failures = 0
+        self.write_failures = 0
 
     # --- writing -----------------------------------------------------------------------------
 
     def write(self, channel: str, row: dict[str, Any]) -> None:
         if channel not in SCHEMAS:
             raise ValueError(f"no such channel {channel!r}")
-        rows = self._rows[channel]
-        rows.append(row)
-        if (
-            len(rows) >= self._batch_rows
-            or time.monotonic() - self._last_flush >= self._flush_seconds
-        ):
-            self.flush()
+        if self._failed is not None:
+            failed, self._failed = self._failed, None
+            raise failed
+        with self._lock:
+            rows = self._rows[channel]
+            rows.append(row)
+            due = len(rows) >= self._batch_rows
+        if due or time.monotonic() - self._last_flush >= self._flush_seconds:
+            self._hand_over()
 
     def flush(self) -> None:
-        for channel in list(self._rows):
-            self._flush_channel(channel)
-        self._last_flush = time.monotonic()
+        """Every buffered row written (waits for the writer thread)."""
+        self._hand_over().result()
 
-    def _flush_channel(self, channel: str) -> None:
-        rows = self._rows.pop(channel, [])
+    def _hand_over(self) -> Future[None]:
+        """The buffered rows to the writer thread; the caller does not wait."""
+        with self._lock:
+            rows, self._rows = self._rows, defaultdict(list)
+        self._last_flush = time.monotonic()
+        return self._run(self._write_rows, rows)
+
+    def _run[T](self, work: Callable[..., T], *args: Any) -> Future[T]:
+        """``work`` on the writer thread, after everything handed to it before."""
+        done: Future[T] = Future()
+        with self._lock:
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(
+                    target=self._serve, name="ikars-recorder", daemon=True
+                )
+                self._thread.start()
+            self._jobs.put((work, args, done))
+        return done
+
+    def _serve(self) -> None:
+        while (job := self._jobs.get()) is not None:
+            work, args, done = job
+            try:
+                done.set_result(work(*args))
+            except BaseException as exc:  # handed to whoever waits; a write's goes to the next
+                done.set_exception(exc)
+                if work == self._write_rows:
+                    self.write_failures += 1
+                    self._failed = exc
+                    log.error("recording failed", extra={"error": repr(exc)})
+
+    def _write_rows(self, rows: dict[str, list[dict[str, Any]]]) -> None:
+        for channel, batch in rows.items():
+            self._write_channel(channel, batch)
+
+    def _write_channel(self, channel: str, rows: list[dict[str, Any]]) -> None:
         by_hour: dict[Hour, list[dict[str, Any]]] = defaultdict(list)
         closed = self._closed_through.get(channel)
         for row in rows:
@@ -242,8 +292,12 @@ class Recorder:
 
     def close_finished(self, now_ns: int) -> int:
         """Close every hour that ended more than the grace period ago and queue it for compaction;
-        returns how many were closed. Cheap: the compaction itself is ``compact_pending``."""
-        self.flush()
+        returns how many were closed. Cheap, but it waits for the writer thread: the engine calls it
+        off the loop. The compaction itself is ``compact_pending``."""
+        self._hand_over()
+        return self._run(self._close_finished, now_ns).result()
+
+    def _close_finished(self, now_ns: int) -> int:
         closed = 0
         for (channel, hour), (writer, sink, path) in list(self._open.items()):
             start = hour_start_ns(hour)
@@ -276,14 +330,23 @@ class Recorder:
             return 0
 
     def close(self) -> None:
-        """Flush everything, close every open hour and compact it (at shutdown)."""
-        self.flush()
+        """Flush everything, close every open hour and compact it (at shutdown); the writer thread
+        ends. Closing again does nothing more."""
+        self._hand_over()
+        self._run(self._close_all).result()
+        with self._lock:
+            thread, self._thread = self._thread, None
+            self._jobs.put(None)
+        if thread is not None:
+            thread.join()
+        self.compact_pending()
+
+    def _close_all(self) -> None:
         for (channel, _hour), (writer, sink, path) in list(self._open.items()):
             writer.close()
             sink.close()
             self._pending.append((path, channel))
         self._open.clear()
-        self.compact_pending()
 
     def recover(self) -> int:
         """At start: finish any compaction a crash interrupted, then compact every hour a previous
@@ -304,8 +367,12 @@ class Recorder:
 
     def known_trade_ids(self, start_ns: int, end_ns: int) -> set[str]:
         """Every ``trade_id`` already recorded with a received time in the hours spanning the window
-        (compacted, open or still buffered), so a backfill stores only what the feed missed."""
-        self._flush_channel("trade")
+        (compacted, open or still buffered), so a backfill stores only what the feed missed. It
+        waits for the writer thread and reads files: the engine calls it off the loop (M1.R3 B7)."""
+        self._hand_over()
+        return self._run(self._known_trade_ids, start_ns, end_ns).result()
+
+    def _known_trade_ids(self, start_ns: int, end_ns: int) -> set[str]:
         found: set[str] = set()
         hour = start_ns - start_ns % HOUR_NS
         while hour <= end_ns:
@@ -323,6 +390,9 @@ class Recorder:
                 found.update(_read_stream(stream, SCHEMAS["trade"])["trade_id"].to_pylist())
             hour += HOUR_NS
         return found
+
+
+_Job = tuple[Callable[..., Any], tuple[Any, ...], Future[Any]]
 
 
 def conform(table: pa.Table, schema: pa.Schema) -> pa.Table:

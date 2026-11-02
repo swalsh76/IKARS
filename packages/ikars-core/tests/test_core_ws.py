@@ -675,3 +675,8 @@ async def test_a_subscription_id_names_its_channel_on_each_link() -> None:
             await asyncio.sleep(0.02)
         assert (feed.channel_of(7), feed.channel_of(8)) == ("trade", "ticker")
         assert feed.channel_of(1) is None  # the old link's ids mean nothing now
+
+
+def test_the_queue_holds_seconds_of_a_busy_feed_not_minutes() -> None:
+    """M1.R3 B6: 200,000 events were 550 to 800 MB and minutes of backlog before the reset."""
+    assert FeedConfig().queue_limit <= 30_000

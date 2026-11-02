@@ -55,7 +55,9 @@ class FeedError(Exception):
 @dataclass(frozen=True, slots=True)
 class FeedConfig:
     url: str = WS_URLS[Environment.DEMO]  # demo unless production is asked for (CLAUDE.md)
-    queue_limit: int = 200_000
+    # about 15 s of a busy feed (some 1,600 frames a second): past it the link is reset rather than
+    # hundreds of megabytes held and the pump minutes behind (M1.R3 B6)
+    queue_limit: int = 25_000
     command_timeout: float = 10.0
     idle_timeout: float | None = 60.0  # no frame at all for this long: the link is stalled
     ping_interval: float | None = 20.0

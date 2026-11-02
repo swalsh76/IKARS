@@ -109,6 +109,7 @@ def test_a_crash_leaves_an_arrow_file_that_the_next_start_compacts(tmp_path: Pat
     recorder = Recorder(tmp_path, flush_seconds=0)
     for n in range(3):
         recorder.write("trade", trade(T0 + n, str(n)))
+    recorder.flush()  # written on the recorder's thread (M1.R3 B3)
     arrow = next(tmp_path.glob("trade/*/*.arrow"))
     # a hard crash: the writer is never closed (the dead process releases the file), and the last
     # batch is torn
@@ -150,6 +151,7 @@ def test_compaction_keeps_the_schema(tmp_path: Path) -> None:
             "delta_e2": -500,
         },
     )
+    recorder.flush()
     path = next(tmp_path.glob("book_delta/*/*.arrow"))
     recorder._open.clear()  # leave the writer behind, as a crash would
     target = compact(path, "book_delta")
@@ -291,6 +293,7 @@ def test_a_damaged_hour_never_stops_a_start_and_is_kept_aside(tmp_path: Path) ->
     target.write_bytes(b"PAR1 not really")  # damaged
     crashed = Recorder(tmp_path, flush_seconds=0)
     crashed.write("trade", trade(T0 + 2, "b"))
+    crashed.flush()
     next(iter(crashed._open.values()))[1].close()  # a crash leaves the hour open
     assert Recorder(tmp_path).recover() == 1  # no exception: the start goes on
     assert read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist() == ["b"]
@@ -303,6 +306,7 @@ def test_an_hour_that_cannot_be_folded_in_is_never_overwritten(
     """M1.R 5: after a failed fold-in, the hour's earlier file was reopened and emptied."""
     first = Recorder(tmp_path, flush_seconds=0)
     first.write("trade", trade(T0 + 1, "a"))
+    first.flush()
     next(iter(first._open.values()))[1].close()  # left open by a crash
 
     def held(path: Path, channel: str) -> Path:
@@ -311,6 +315,7 @@ def test_an_hour_that_cannot_be_folded_in_is_never_overwritten(
     monkeypatch.setattr("ikars_engine.recorder.compact", held)
     second = Recorder(tmp_path, flush_seconds=0)
     second.write("trade", trade(T0 + 2, "b"))
+    second.flush()
     folder = next(tmp_path.glob("trade/*"))
     assert sorted(p.name for p in folder.glob("*.arrow")) == ["00.1.arrow", "00.arrow"]
     assert second.known_trade_ids(T0, T0 + 10) == {"a", "b"}  # both parts are read
@@ -353,6 +358,7 @@ def test_a_sound_file_of_another_schema_is_never_set_aside(tmp_path: Path) -> No
     pq.write_table(pa.table({"received_ns": ["not a number"]}), folder / "00.parquet")
     crashed = Recorder(tmp_path, flush_seconds=0)
     crashed.write("trade", trade(T0 + 1, "a"))
+    crashed.flush()
     next(iter(crashed._open.values()))[1].close()
     restarted = Recorder(tmp_path)
     assert restarted.recover() == 0 and restarted.compaction_failures == 1  # left, not set aside
@@ -410,3 +416,41 @@ def test_a_failed_heartbeat_write_leaves_no_transaction_open(tmp_path: Path) -> 
     again = StateStore(tmp_path / "state.sqlite")
     assert again.heartbeats() == {"ticker": 5} and again.bookmark("made.up") == 1
     again.close()
+
+
+def test_rows_are_written_on_the_recorders_own_thread(tmp_path: Path) -> None:
+    """M1.R3 B3: each flush built the Arrow batches on the event loop (30 to 68 ms every 5 s)."""
+    import threading
+
+    recorder = Recorder(tmp_path, flush_seconds=0)
+    gate = threading.Event()
+    recorder._run(gate.wait)  # the writer thread is busy
+    recorder.write("trade", trade(T0, "a"))  # handed over: the caller does not wait
+    assert recorder.rows_written["trade"] == 0
+    gate.set()
+    recorder.flush()
+    assert recorder.rows_written["trade"] == 1
+    recorder.close()
+    recorder.close()  # again: nothing more
+    assert read_rows(hours(tmp_path, "trade"), "trade").column("trade_id").to_pylist() == ["a"]
+
+
+def test_a_failed_write_is_raised_by_the_next_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M1.R3 B3: off the loop, a failed write must still reach the caller, which logs the loss."""
+    recorder = Recorder(tmp_path)
+
+    def broken(channel: str, rows: list[dict[str, object]]) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(recorder, "_write_channel", broken)
+    recorder.write("trade", trade(T0, "a"))
+    with pytest.raises(OSError):
+        recorder.flush()
+    with pytest.raises(OSError, match="disk full"):
+        recorder.write("trade", trade(T0 + 1, "b"))
+    assert recorder.write_failures == 1
+    monkeypatch.undo()
+    recorder.write("trade", trade(T0 + 2, "c"))  # raised once; recording goes on
+    recorder.close()

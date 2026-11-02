@@ -211,7 +211,12 @@ class KalshiState:
             self.changed_ns[ticker] = at  # a volume-only frame leaves the quote's time
 
     def snapshot(self, message: OrderbookSnapshotMsg, at: int) -> None:
+        """A snapshot makes or replaces the book of a watched market only: a late one (a reply to a
+        request made before the market was unwatched) never brings back a book no delta will keep
+        current (M1.R3 B11)."""
         ticker = message.market_ticker
+        if ticker not in self.watched:
+            return
         self.books.setdefault(ticker, OrderBook(ticker)).apply_snapshot(message)
         self._book_changed(ticker, at)
 
@@ -230,8 +235,9 @@ class KalshiState:
 
     def feed_event(self, row: dict[str, Any]) -> None:
         """A start or reconnect clears every book; a sequence gap on the book channel breaks every
-        book until its next snapshot; ``forget`` drops all that is kept for one market (the index no
-        longer has it), ``unwatch`` its book (M1.13)."""
+        book until its next snapshot, ``break`` one market's (a frame that failed to parse:
+        M1.R3 B2); ``forget`` drops all that is kept for one market (the index no longer has it),
+        ``unwatch`` its book (M1.13)."""
         event, at = row["event"], row["received_ns"]
         if event == "forget":
             for kept in (self.quotes, self.last_price_e6, self.changed_ns, self.books,
@@ -251,6 +257,11 @@ class KalshiState:
                 if not book.broken:
                     book.broken = True
                     self._book_changed(ticker, at)
+        elif event == "break":
+            one = self.books.get(row["detail"])
+            if one is not None and not one.broken:
+                one.broken = True
+                self._book_changed(row["detail"], at)
 
     def _book_changed(self, ticker: str, at: int) -> None:
         self.book_version[ticker] = self.book_version.get(ticker, 0) + 1
