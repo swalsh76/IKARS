@@ -184,7 +184,7 @@ the health shape changed (no change: only the engine reads it). Merge review (me
 ### 2.3 News
 
 **Status.** Plan approved 2026-11-01 (GDELT both; government RSS only; `defusedxml` and our own parser; the rest as
-shown). Built on `m2/3`: `7c0d40d` (the slice), `a19a332` (merge-review fixes). **Open:** PR #35 (base `main`).
+shown). Built on `m2/3`: `7c0d40d` (the slice), `a19a332` (merge-review fixes). **Merged** as `1786381` (PR #35, 2026-11-02).
 Releases: v0.1.12 (from `b2548b5`, 2026-11-01; M2's 7-day news clock starts with it); also in v0.1.13 (1.13).
 Packages: `defusedxml` 0.7.1 (PSF-2.0, no dependencies); type stubs not added (one targeted `type: ignore`).
 
@@ -272,8 +272,8 @@ findings; five found by both. All fixed in `a19a332` unless marked:
 | 14 | Only the newest file has an MD5 in the index | No change: documented; a backfilled file is checked by unzipping (sub-agent) |
 | 15 | `max_bytes or default` read 0 as the default | `is None` (sub-agent) |
 
-**Open.** The gap check: a day of recording with no unlogged gaps (due 2026-11-02 evening); then the owner's merge of
-the stack (#35 → #36 → #37 → #47 → #48).
+**Open.** The gap check: a day of recording with no unlogged gaps (due 2026-11-02 evening). The stack merged first,
+on the owner's word (2026-11-02).
 
 ### Candidate family R. Reversion / fade (owner, 2026-11-01; not approved)
 
