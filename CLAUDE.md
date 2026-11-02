@@ -176,7 +176,9 @@ slice still needs its own approved plan before code.
   installed 00:32 2026-10-29: migrations OK ($20), 24/24 stations, 96 feeds, 0 errors, recording. **Gap check
   passed** 2026-11-01 (91.8 h, no restart, 39,670 polls, 1 logged gap, no unlogged gaps); **quiet hours passed**
   (4 nights, none shown). PR #34 waits for the owner's merge. M2 weather 7-day clock started 2026-10-29. Next: the
-  M2.3 News slice plan (for approval); M1.13 after M2.3; momentum v1's week ends ~2026-11-04. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
+  M2.3 News slice plan (for approval); M1.13 after M2.3; momentum v1's week ends ~2026-11-04. **Candidate family R. Reversion / fade** (owner
+  2026-11-01: the manual in-play Bengals trade) recorded under D13 as *not approved* and in §9, for the M3 proposal;
+  the trade's figures stay out of the repository. The owner allows `gh pr merge` by a local permission rule; merge only when asked.
 
 ## How the owner wants the work run
 
