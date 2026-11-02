@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 import pytest
 from ikars_engine.gdelt import (
+    BEHIND,
     BOOKMARK,
     FILES_PER_READ,
     GdeltNews,
@@ -19,6 +20,7 @@ from ikars_engine.gdelt import (
     newest_file,
     parse_doc,
     parse_gkg,
+    passable,
     unzip_one,
 )
 from ikars_engine.model import Item
@@ -313,7 +315,9 @@ def test_a_doc_search_reads_its_articles_and_refuses_text() -> None:
         {"url": "not a link", "title": "skipped"},
     ]}).encode()  # fmt: skip
     [one] = parse_doc("economy", body)
-    assert one.id == "https://made-up.example/story/1" and one.published_ns == T0 + 15 * 60 * NS
+    assert one.id == "https://made-up.example/story/1"
+    assert one.published_ns is None  # a search gives GDELT's time only, never as the publisher's
+    assert one.payload["gdelt_time"] == "2026-01-01T00:15:00Z"
     assert one.payload["headline"] == "Made-up rates" and one.payload["query"] == "economy"
     assert parse_doc("economy", b"") == [] and parse_doc("economy", b"{}") == []
     with pytest.raises(ValueError, match="article list"):
@@ -343,12 +347,15 @@ def gdelt_run(
     reply: Any,
     *,
     mark: int | None = None,
+    behind: int | None = None,
     until_s: float = 60,
     queries: list[GdeltQuery] | None = None,
 ) -> tuple[list[Item], Poller, StateStore]:
     store = StateStore(tmp_path / "state.sqlite")
     if mark is not None:
         store.set_bookmark(BOOKMARK, mark)
+    if behind is not None:  # a backlog begun before a restart
+        store.set_bookmark(BEHIND, behind)
     clock = FakeClock(until_s=until_s)
     poller = Poller(store, clock, user_agent("9.9"), transport=httpx.MockTransport(reply))
     emitted: list[Item] = []
@@ -398,19 +405,42 @@ def test_missed_files_are_backfilled_a_few_at_a_time(tmp_path: Path) -> None:
     store.close()
 
 
-def test_a_file_gdelt_never_published_is_logged_and_passed(tmp_path: Path) -> None:
-    names = stamps("20260101000000", 3)
-    files = {names[0]: b"", names[2]: gkg_zip([gkg_row(9)])}  # the middle one is missing
-    emitted, poller, store = gdelt_run(tmp_path, made_up_gdelt(files, names[2]), mark=int(names[0]))
-    assert [i.ref.id for i in emitted] == ["https://made-up.example/story/9"]
-    [gap] = store.gaps()
-    assert (gap.channel, gap.recovery, gap.status) == (
-        "gdelt.gkg",
-        "unrecoverable",
-        "unrecoverable",
-    )
-    assert "20260101001500" in gap.detail and store.bookmark(BOOKMARK) == int(names[2])
+def test_a_file_gdelt_never_published_is_logged_apart_from_the_backfill(tmp_path: Path) -> None:
+    names = stamps("20260101000000", 4)
+    files = {n: gkg_zip([gkg_row(k)]) for k, n in enumerate(names)}
+    del files[names[1]]  # two slots older than the newest: GDELT never published it
+    emitted, poller, store = gdelt_run(tmp_path, made_up_gdelt(files, names[3]), mark=int(names[0]))
+    assert [i.ref.id for i in emitted] == [
+        "https://made-up.example/story/2", "https://made-up.example/story/3"
+    ]  # fmt: skip
+    lost, after = store.gaps()  # the lost file, then the backfill around it: never both ways
+    assert (lost.recovery, lost.status) == ("unrecoverable", "unrecoverable")
+    assert "20260101001500" in lost.detail and "HTTP 404" in lost.detail
+    assert after.recovery == "backfill" and after.start_ns == lost.end_ns
+    assert store.bookmark(BOOKMARK) == int(names[3]) and store.bookmark(BEHIND) is None
+    assert poller.notes["gdelt"]["missing"] == 1
     store.close()
+
+
+def test_a_recent_file_not_there_yet_is_retried_not_passed(tmp_path: Path) -> None:
+    names = stamps("20260101000000", 3)
+    files = {names[0]: b"", names[2]: gkg_zip([gkg_row(9)])}  # one slot older: may still come
+    emitted, poller, store = gdelt_run(tmp_path, made_up_gdelt(files, names[2]), mark=int(names[0]),
+                                       until_s=30)  # fmt: skip
+    assert emitted == [] and store.gaps() == []
+    assert store.bookmark(BOOKMARK) == int(names[0])  # the read is tried again
+    assert poller.feeds["gdelt.gkg"].last_error == "HTTP 404"
+    store.close()
+
+
+def test_a_damaged_old_file_is_passed_but_the_network_is_retried() -> None:
+    newest = "20260101010000"
+    assert passable("20260101003000", newest, ValueError("not a zip file"))
+    assert passable("20260101003000", newest, PollError("too large", status=200))
+    assert not passable("20260101003000", newest, PollError("ConnectTimeout"))
+    assert not passable("20260101003000", newest, PollError("HTTP 503", status=503))
+    assert not passable("20260101003000", newest, PollError("HTTP 429", status=429))
+    assert not passable("20260101004500", newest, ValueError("not a zip file"))  # too recent
 
 
 def test_files_older_than_a_day_are_logged_not_fetched(tmp_path: Path) -> None:
@@ -419,11 +449,23 @@ def test_files_older_than_a_day_are_logged_not_fetched(tmp_path: Path) -> None:
     for n in stamps("20260102000000", 96):
         files.setdefault(n, gkg_zip([]))
     emitted, poller, store = gdelt_run(tmp_path, made_up_gdelt(files, newest), mark=20260101000000)
-    old, fetched = store.gaps()  # two windows, never one logged both ways
+    [old] = store.gaps()  # the backfill is logged once it has caught up
     assert old.recovery == "unrecoverable" and "older than a day" in old.detail
-    assert fetched.recovery == "backfill" and fetched.start_ns == old.end_ns
     assert poller.notes["gdelt"]["behind"] > 0  # still catching up the day it can fetch
+    assert poller.notes["gdelt"]["missing"] == 95
     assert store.bookmark(BOOKMARK) == 20260102004500  # one read: the first four files of the day
+    assert store.bookmark(BEHIND) == 20260102000000  # kept for the backfill entry, across restarts
+    store.close()
+
+
+def test_a_backlog_begun_before_a_restart_is_logged_from_its_start(tmp_path: Path) -> None:
+    names = stamps("20260101000000", 4)
+    files = {n: gkg_zip([gkg_row(k)]) for k, n in enumerate(names)}
+    emitted, poller, store = gdelt_run(tmp_path, made_up_gdelt(files, names[3]),
+                                       mark=int(names[1]), behind=20251231230000)  # fmt: skip
+    [gap] = store.gaps()
+    assert gap.recovery == "backfill" and gap.start_ns == T0 - 3_600 * NS
+    assert store.bookmark(BEHIND) is None
     store.close()
 
 
@@ -464,6 +506,11 @@ def test_feeds_of_one_scope_never_send_an_item_twice(tmp_path: Path) -> None:
     assert poller.fresh(b, item) == item
     poller.emitted(b, ["https://made-up.example/1"], ["https://made-up.example/1"])
     assert poller.fresh(a, item) == []  # remembered in the shared scope
+    other = [Found(id="https://made-up.example/2")]
+    assert poller.fresh(a, other) == other  # a claims it
+    poller.emitted(b, ["https://made-up.example/2"], [])  # b listed it too, and sent all it had
+    poller.emitted(a, [], ["https://made-up.example/2"])  # but a failed to send it
+    assert poller.fresh(b, other) == other  # so it was never remembered as sent: not lost
     alone = Feed(name="x.c", url="https://made-up.example/c", every_s=60)
     assert poller.fresh(alone, item) == item  # its own scope
     asyncio.run(poller.aclose())

@@ -74,7 +74,6 @@ class Feed(msgspec.Struct, frozen=True, kw_only=True):
     accept: str = "*/*"
     kind: str | None = None  # the item kind for this feed; None: the source's item_kind
     seen: str | None = None  # the scope of the ids remembered; None: the feed's own (M2.3)
-    max_bytes: int | None = None  # None: the poller's limit
     conditional: bool = True  # False: always the whole reply (a small index read every time)
     # the source fetches what a gap missed and logs its own gaps, what it recovered and what it
     # could not, so the poller logs none for it (M2.3: GDELT's files; per-commit review)
@@ -172,8 +171,15 @@ class Poller:
             "notes": copy.deepcopy(dict(sorted(self.notes.items()))),
         }
 
-    async def fetch(self, feed: Feed) -> Fetched | None:
-        """The feed's reply, or None when it has not changed since the last good poll."""
+    async def turn(self, url: str) -> None:
+        """Wait for ``url``'s host to allow one more request. A poll waits here before its timed
+        call, so a queue of feeds on a slow host never runs out its timeout waiting (merge review
+        5); the request that follows uses this turn."""
+        await self._host(url).acquire(1.0)
+
+    async def fetch(self, feed: Feed, *, turned: bool = False) -> Fetched | None:
+        """The feed's reply, or None when it has not changed since the last good poll.
+        ``turned``: the host's turn was already taken (``turn``)."""
         headers = {"Accept": feed.accept}
         if feed.conditional:
             etag, modified, _, _ = self._store.poll_feed(feed.name)
@@ -181,7 +187,7 @@ class Poller:
                 headers["If-None-Match"] = etag
             if modified:
                 headers["If-Modified-Since"] = modified
-        return await self._get(feed.url, headers, feed.max_bytes)
+        return await self._get(feed.url, headers, turned=turned)
 
     async def once(self, url: str, accept: str = "*/*", max_bytes: int | None = None) -> bytes:
         """One lookup (a station, a forecast grid, a file an index names), with the same rules as
@@ -204,17 +210,27 @@ class Poller:
             sleep=self._clock.sleep,
         )
 
-    async def _get(
-        self, url: str, headers: dict[str, str], max_bytes: int | None = None
-    ) -> Fetched | None:
+    def _host(self, url: str) -> TokenBucket:
         parts = urlsplit(url)
         if parts.scheme != "https" or not parts.hostname:
             raise PollError("only https feeds are polled")
-        limit = max_bytes or self._max_bytes
         bucket = self._buckets.get(parts.hostname)
         if bucket is None:
             bucket = self._buckets[parts.hostname] = self._bucket(self._host_rate)
-        await bucket.acquire(1.0)
+        return bucket
+
+    async def _get(
+        self,
+        url: str,
+        headers: dict[str, str],
+        max_bytes: int | None = None,
+        *,
+        turned: bool = False,
+    ) -> Fetched | None:
+        limit = self._max_bytes if max_bytes is None else max_bytes  # 0 is a limit too
+        bucket = self._host(url)
+        if not turned:
+            await bucket.acquire(1.0)
         try:
             async with self._client.stream("GET", url, headers=headers) as reply:
                 if reply.status_code == 304:
@@ -229,7 +245,7 @@ class Poller:
                 async for chunk in reply.aiter_bytes():
                     body += chunk
                     if len(body) > limit:
-                        raise PollError(f"the reply is larger than {limit} bytes")
+                        raise PollError(f"the reply is larger than {limit} bytes", status=code)
                 etag, modified = reply.headers.get("etag"), reply.headers.get("last-modified")
         except httpx.HTTPError as exc:
             raise PollError(type(exc).__name__) from exc
@@ -250,8 +266,7 @@ class Poller:
         server's max-age when longer: merge review 3)."""
         now = self._clock.now_ns()
         last_ok, healthy = health.last_ok_ns, max(feed.every_s, health.wait_s or 0.0)
-        late = last_ok is not None and now - last_ok > GAP_AFTER * healthy * NS
-        if late and not feed.backfills and last_ok is not None:
+        if not feed.backfills and last_ok is not None and now - last_ok > GAP_AFTER * healthy * NS:
             cause = health.last_error or "the engine was not running"
             detail = f"no good poll ({cause}); the next one returned the feed's current items"
             self.log_gap(feed.name, last_ok, now, "refetched", detail)
@@ -271,6 +286,9 @@ class Poller:
     def set_bookmark(self, name: str, value: int) -> None:
         self._store.set_bookmark(name, value)
 
+    def clear_bookmark(self, name: str) -> None:
+        self._store.delete_bookmarks(name)
+
     def log_gap(self, channel: str, start_ns: int, end_ns: int, recovery: str, detail: str) -> None:
         """A window a source missed, in the engine's gap log: recovered (``refetched``,
         ``backfill``) or not (``unrecoverable``)."""
@@ -278,6 +296,22 @@ class Poller:
         gap = self._store.add_gap(channel, "unreachable", start_ns, end_ns, recovery, now, detail)
         if recovery != "unrecoverable":
             self._store.finish_gap(gap, "done", detail)
+
+    def log_backfill(self, channel: str, start_ns: int, end_ns: int, detail: str) -> None:
+        """A window a source fetched afterwards, logged as ``backfill`` apart from the parts it
+        already logged as lost, so no window is ever logged both ways (merge review)."""
+        lost = sorted(
+            (g.start_ns, g.end_ns)
+            for g in self._store.gaps("unrecoverable")
+            if g.channel == channel and g.end_ns > start_ns and g.start_ns < end_ns
+        )
+        at = start_ns
+        for a, b in lost:
+            if a > at:
+                self.log_gap(channel, at, a, "backfill", detail)
+            at = max(at, b)
+        if at < end_ns:
+            self.log_gap(channel, at, end_ns, "backfill", detail)
 
     def fresh(self, feed: Feed, found: list[Found]) -> list[Found]:
         """The items ``feed``'s scope has not emitted before and no other feed is sending now,
@@ -294,11 +328,16 @@ class Poller:
 
     def emitted(self, feed: Feed, ids: list[str], offered: Sequence[str] = ()) -> None:
         """``ids`` emitted, or still listed, by ``feed`` now; ``offered`` (what ``fresh`` handed
-        out) is no longer claimed."""
+        out) is no longer claimed. An id another feed has claimed is not remembered here: that
+        feed may yet fail to send it (merge review 1)."""
         now = self._clock.now_ns()
         scope = feed.seen or feed.name
-        self._store.remember(scope, ids, now)
-        self._claimed.get(scope, set()).difference_update(offered)
+        claimed = self._claimed.get(scope, set())
+        mine = set(offered)
+        try:
+            self._store.remember(scope, [i for i in ids if i in mine or i not in claimed], now)
+        finally:
+            claimed.difference_update(mine)  # released even when the store fails (merge review 8)
         if self._pruned_ns is None or now - self._pruned_ns > 86_400 * NS:  # once a day
             self._pruned_ns = now
             self.forget_old()
@@ -380,7 +419,8 @@ class PollingSource(PluginBase):
             health.polls += 1
             wait_s = feed.every_s
             try:
-                fetched = await ctx.call(poller.fetch(feed), TIMEOUT_S * 2)
+                await poller.turn(feed.url)  # outside the timeout (merge review 5)
+                fetched = await ctx.call(poller.fetch(feed, turned=True), TIMEOUT_S * 2)
                 if fetched is None:
                     health.not_modified += 1
                 else:

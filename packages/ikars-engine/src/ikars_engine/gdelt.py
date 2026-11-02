@@ -16,8 +16,9 @@ places, people, organisations and tone. Never quotations or the article's text (
 ask for a citation, shown wherever its items appear (M2.7; docs/research/sources.md).
 """
 
+import asyncio
+import contextlib
 import hashlib
-import html
 import io
 import re
 import zipfile
@@ -48,6 +49,7 @@ UNZIPPED_MAX_BYTES = 200_000_000
 MAX_RATIO = 30
 KEPT = {"themes": 64, "places": 32, "people": 32, "organisations": 32}
 BOOKMARK = "gdelt.gkg"
+BEHIND = "gdelt.gkg.behind_since"  # the first file of a backlog being fetched
 STAMP = "%Y%m%d%H%M%S"
 
 _TITLE = re.compile(r"<PAGE_TITLE>(.*?)</PAGE_TITLE>", re.DOTALL)
@@ -132,15 +134,13 @@ def parse_gkg(raw: bytes) -> list[Found]:
         extras = cols[26]
         title = _TITLE.search(extras)
         published = _PUBLISHED.search(extras)
-        when = published.group(1) if published else cols[1]
-        try:
-            published_ns = exact_ns(stamp_time(when))
-        except ValueError:
-            published_ns = None
+        published_ns = None  # the publisher's time only, never GDELT's crawl time (merge review)
+        if published:
+            with contextlib.suppress(ValueError):
+                published_ns = exact_ns(stamp_time(published.group(1)))
         payload: dict[str, Any] = {
-            "headline": plain_text(html.unescape(title.group(1)), HEADLINE_CHARS)
-            if title
-            else None,
+            # entities read once, by plain_text (merge review 7)
+            "headline": plain_text(title.group(1), HEADLINE_CHARS) if title else None,
             "link": link,
             "source": cols[3] or None,
             "gdelt_time": _iso(cols[1]),
@@ -155,6 +155,26 @@ def parse_gkg(raw: bytes) -> list[Found]:
         }
         found.append(Found(id=key, published_ns=published_ns, payload=payload))
     return found
+
+
+def read_file(data: bytes, md5: str | None = None) -> list[Found]:
+    """One GKG zip's articles, its MD5 checked when the index gave it (the index names only the
+    newest file, so a backfilled file is checked only by unzipping it)."""
+    if md5 is not None and hashlib.md5(data, usedforsecurity=False).hexdigest() != md5:
+        raise ValueError("the GKG file does not match the index's MD5")
+    return parse_gkg(unzip_one(data))
+
+
+def passable(name: str, newest: str, exc: Exception) -> bool:
+    """Whether a file that failed is passed (logged as missed) rather than retried: only a file
+    at least two slots older than the newest (a fresh one can still be on its way: merge review 6)
+    whose failure is GDELT's answer (not found, too large, unreadable), never the network's or a
+    busy server's, which a retry fixes (merge review 3)."""
+    if stamp_time(newest) - stamp_time(name) < 2 * FILE_EVERY:
+        return False
+    if isinstance(exc, PollError):
+        return exc.status is not None and exc.status < 500 and exc.status != 429
+    return True
 
 
 class _Article(msgspec.Struct):
@@ -185,10 +205,6 @@ def parse_doc(query: str, body: bytes) -> list[Found]:
         if key is None:
             continue
         seen = a.seendate.replace("T", "").removesuffix("Z")
-        try:
-            seen_ns: int | None = exact_ns(stamp_time(seen))
-        except ValueError:
-            seen_ns = None
         payload = {
             "headline": plain_text(a.title, HEADLINE_CHARS),
             "link": a.url,
@@ -199,7 +215,8 @@ def parse_doc(query: str, body: bytes) -> list[Found]:
             "query": query,
             "via": "gdelt-doc",
         }
-        found.append(Found(id=key, published_ns=seen_ns, payload=payload))
+        # GDELT's seen time is in gdelt_time; the search gives no publisher's time
+        found.append(Found(id=key, published_ns=None, payload=payload))
     return found
 
 
@@ -218,7 +235,10 @@ class GdeltNews(PollingSource):
 
     def __init__(self) -> None:
         self._read_to: str | None = None  # the last file of the reply going out now
-        self._logged_to: datetime | None = None  # a backfill already in the gap log, up to here
+        self._caught_up = False  # that reply reached the newest file
+        # windows missed for good, logged once the reply that found them has gone out, so a read
+        # that fails and is retried never logs them twice (merge review 4)
+        self._pending: list[tuple[datetime, datetime, str]] = []
         self._poller: Poller | None = None
         self._note: dict[str, Any] = {}
 
@@ -234,7 +254,7 @@ class GdeltNews(PollingSource):
         if newest is None:
             raise ValueError("the GDELT index names no GKG file")
         stamp, md5 = newest
-        self._read_to = None
+        self._read_to, self._pending = None, []
         due = self._due(poller, stamp)
         found: list[Found] = []
         for one in due[:FILES_PER_READ]:
@@ -242,26 +262,25 @@ class GdeltNews(PollingSource):
                 data = await ctx.call(
                     poller.once(f"{FILES}{one}.gkg.csv.zip", max_bytes=ZIP_MAX_BYTES), 120.0
                 )
-            except PollError as exc:
-                if exc.status == 404 and one != stamp:  # GDELT never published that one
-                    start = exact_ns(stamp_time(one))
-                    end = exact_ns(stamp_time(one) + FILE_EVERY)
-                    poller.log_gap("gdelt.gkg", start, end, "unrecoverable",
-                                   f"GDELT has no GKG file {one}")  # fmt: skip
-                    self._note["missing"] = self._note.get("missing", 0) + 1
-                    self._read_to = one
-                    continue
-                raise
-            if one == stamp and hashlib.md5(data, usedforsecurity=False).hexdigest() != md5:
-                raise ValueError("the newest GKG file does not match the index's MD5")
-            found.extend(parse_gkg(unzip_one(data)))
+                # off the event loop: a file is megabytes to unpack and read (merge review 2)
+                found.extend(
+                    await asyncio.to_thread(read_file, data, md5 if one == stamp else None)
+                )
+            except (PollError, ValueError) as exc:
+                if not passable(one, stamp, exc):
+                    raise  # retried at the next read: the network, or the newest file
+                when = stamp_time(one)
+                self._pending.append((when, when + FILE_EVERY, f"GKG file {one}: {exc}"))
             self._read_to = one
-        self._note.update({"newest": stamp, "behind": max(0, len(due) - FILES_PER_READ)})
+        behind = max(0, len(due) - FILES_PER_READ)
+        self._caught_up = behind == 0
+        self._note.update({"newest": stamp, "behind": behind})
         return found
 
     def _due(self, poller: Poller, newest: str) -> list[str]:
         """The files after the bookmark up to ``newest``, oldest first; with no bookmark (the first
-        start), the newest only. Files older than ``BACKFILL_S`` are logged as missed."""
+        start), the newest only. A window older than ``BACKFILL_S`` is noted as missed, and the
+        start of a backlog is kept (in the state store, across restarts) for its backfill entry."""
         mark = poller.bookmark(BOOKMARK)
         last = stamp_time(newest)
         if mark is None:
@@ -269,19 +288,11 @@ class GdeltNews(PollingSource):
         after = stamp_time(str(mark)) + FILE_EVERY
         oldest = last - timedelta(seconds=BACKFILL_S)
         if after < oldest:
-            poller.log_gap("gdelt.gkg", exact_ns(after), exact_ns(oldest), "unrecoverable",
-                           "GKG files older than a day are not fetched")  # fmt: skip
-            self._note["missing"] = self._note.get("missing", 0) + int(
-                (oldest - after) / FILE_EVERY
-            )
+            self._pending.append((after, oldest, "GKG files older than a day are not fetched"))
             after = oldest
-        # more than two files behind (the gap rule, at the files' pace): the window is fetched by
-        # name, logged once as a backfill, apart from any part too old to fetch (per-commit review)
-        if last - after >= 2 * FILE_EVERY and (self._logged_to is None or last > self._logged_to):
-            start = after if self._logged_to is None else max(after, self._logged_to)
-            poller.log_gap("gdelt.gkg", exact_ns(start), exact_ns(last), "backfill",
-                           "missed GKG files fetched by name")  # fmt: skip
-            self._logged_to = last
+        # more than two files behind (the gap rule, at the files' pace): a backlog to fetch by name
+        if last - after >= 2 * FILE_EVERY and poller.bookmark(BEHIND) is None:
+            poller.set_bookmark(BEHIND, int(after.strftime(STAMP)))
         out = []
         while after <= last:
             out.append(after.strftime(STAMP))
@@ -289,10 +300,26 @@ class GdeltNews(PollingSource):
         return out
 
     def delivered(self, feed: Feed) -> None:
-        if feed.name == "gdelt.gkg" and self._read_to is not None and self._poller is not None:
-            self._poller.set_bookmark(BOOKMARK, int(self._read_to))
-            self._note["file"] = self._read_to
-            self._read_to = None
+        """The reply's items went out: the bookmark moves on, the missed windows are logged, and a
+        backlog now caught up is logged once as a backfill (merge review 4)."""
+        poller = self._poller
+        if feed.name != "gdelt.gkg" or poller is None:
+            return
+        for start, end, detail in self._pending:
+            poller.log_gap("gdelt.gkg", exact_ns(start), exact_ns(end), "unrecoverable", detail)
+            self._note["missing"] = self._note.get("missing", 0) + (end - start) // FILE_EVERY
+        self._pending = []
+        if self._read_to is None:
+            return
+        poller.set_bookmark(BOOKMARK, int(self._read_to))
+        self._note["file"] = self._read_to
+        behind_from = poller.bookmark(BEHIND)
+        if behind_from is not None and self._caught_up:
+            end = stamp_time(self._read_to) + FILE_EVERY
+            poller.log_backfill("gdelt.gkg", exact_ns(stamp_time(str(behind_from))),
+                                exact_ns(end), "missed GKG files fetched by name")  # fmt: skip
+            poller.clear_bookmark(BEHIND)
+        self._read_to = None
 
     async def manage(
         self,
