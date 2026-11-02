@@ -129,6 +129,20 @@ test("market: the live quote, the chart, the book and the linked items", async (
   expect(refused).toEqual([]);
 });
 
+test("market: the chart keeps its size when nothing beside it sets the row's height", async ({ page }) => {
+  // a market with no book (settled, or not watched): the chart alone sets its row's height, and a
+  // chart that sizes itself to its box must never make that box grow (owner, 2026-11-01)
+  await page.goto(await signInUrl());
+  await page.goto(`${base()}/market/KXDEMO-26JAN02-T9`);
+  const chart = page.getByTestId("price-chart");
+  await expect(chart.locator("canvas").first()).toBeVisible();
+  const height = async () => (await chart.boundingBox())?.height ?? 0;
+  const first = await height();
+  await page.waitForTimeout(3_000);
+  expect(await height()).toBe(first);
+  expect(first).toBeLessThan(600);
+});
+
 test("ledger: its state, your records paged, and a ticker filter", async ({ page }) => {
   const refused = watchPolicy(page);
   await page.goto(await signInUrl());
