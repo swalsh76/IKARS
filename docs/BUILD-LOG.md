@@ -3539,3 +3539,63 @@ Brought forward from PLAN §9 (owner, 2026-11-01). Branch `m1/14`, stacked on `m
   every 10 minutes per market, until it settles.
 - **The rest as shown:** tests with made-up markets, a dry run measuring the start-up requests, a test release, then
   the check that the settled NBA market seen on 2026-11-01 opens again.
+
+#### 1.14 built (2026-11-01)
+
+**Built** on `m1/14` (stacked on `m1/13`):
+
+| Commit | What |
+|---|---|
+| `ba99efe` | the slice |
+| `81b08ab` | merge-review fixes |
+
+**No new packages.**
+
+**Dry run** (Kalshi's public listing, 2026-11-01):
+- **Closed, waiting for a result:** 18,290 markets, 19 pages, 3 s.
+- **Settled in the last 3 days:** 310,459 markets, 311 pages, 130 s.
+- **Owner:** settled markets are read in the background once the feed is live, so they never hold the feed back.
+
+- **At start:** a full discovery reads unopened, open and every closed market. Once the feed is live, a background pass
+  (`recent_settled`) reads the markets settled in the last 3 days.
+  - It pauses half a second between pages, so the gap backfill and the discovery cycles get the request budget.
+  - It moves the index version once, at the end.
+  - The index after a restart is then a running engine's.
+- **`kalshi/lookup.py` (`MarketLookup`)** finds a market the index lacks: Kalshi's live store, then its historical
+  store, with a bounded cache.
+  - A recent market goes into the index, and so into the market channel.
+  - Concurrent asks of one ticker share one request.
+  - A ticker not shaped like Kalshi's is never asked.
+- **The Market screen and its chart** use it, with candlesticks from the historical store past the cutoff. The
+  recommendation drill-down uses it for the title and fees. The recommendation lists look up missing titles in the
+  background.
+  - A Kalshi failure answers 503 ("try again"), never "no such market".
+- **The journal:** each minute, the unsettled recommendations whose market the index lacks are looked up, batched by
+  ticker, each at most once every 10 minutes, until settled. `result`, `trading` and fees read through the lookup.
+
+**Verified.** Python: 1,645 tests, 11 new for the lookups, with made-up markets on a fake Kalshi. Coverage:
+`kalshi/lookup.py` 86%. Lint, types and the data guard are clean.
+
+**Review.**
+- **Per commit:** `ba99efe`, 1 found before committing, fixed. The recommendation drill-down awaited a lookup
+  unguarded, so a busy Kalshi made it a 500.
+- **Merge review:** `/code-review medium`, 10 findings, fixed in `81b08ab` unless marked. A second, sub-agent reviewer
+  was not used: the slice is small and self-contained (R16: where it helps).
+
+  | # | Finding | Done |
+  |---|---|---|
+  | 1 | Closed markets waiting for a result over 3 days went missing after a restart | Every closed market is read (3 s) |
+  | 2 | Concurrent lookups of one ticker each called Kalshi | One shared request; tested |
+  | 3 | The settled load could hold the gap backfill and discovery behind it for minutes | A pause between pages |
+  | 4 | Each of ~300,000 puts moved the index version, so lists re-sorted on every poll | The version moves once at the end; tested |
+  | 5 | The lookups' version moved even when nothing changed | Only on a change; tested |
+  | 6 | A settled market with a result other than yes or no was asked about for 30 days | Settled is final; tested |
+  | 7 | A failed batch stopped the pass, and the rest still waited 10 minutes | Each batch marked and guarded alone; tested |
+  | 8 | The ticker from the address went into Kalshi URLs unchecked | A ticker shape check; tested |
+  | 9 | Combos bumped the index's skipped count; a cached open market's "trading" can lag | Combos stay out of the index. The lag: no change. The journal's pass refreshes it every 10 minutes, and marks fall at 30 and 60 minutes |
+  | 10 | A Kalshi failure read as "no such market" | 503 "try again"; tested |
+
+**Live check: pending** (a test release on the owner's word):
+- After the restart, `KXNBATOTAL-26NOV01TORLAL-254` opens again with its chart.
+- The settled pass completes in the background.
+- The journal's lookups settle what was missed.
