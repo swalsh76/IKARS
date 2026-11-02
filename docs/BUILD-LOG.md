@@ -3851,3 +3851,5 @@ release.
 **Seen, not R3a's** (to R3b): `/v1/hello` reports `engine_version` 0.0.0 (the release stamps Velopack's version,
 not the package's; `program.version` says 0.1.17); an open terminal's one-second stream pass costs about 25 to 35
 ms of loop time each second (portfolio, alerts, the recommendations page), older than R3a.
+
+**v0.1.18 published** (test pre-release from `899652b`, 2026-11-02; release run green) for the scoring fix's live check.
