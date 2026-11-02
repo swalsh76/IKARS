@@ -232,6 +232,32 @@ family is a signal module, not a separate system.
 Approved order: **N + M first** (back-testable on existing data), **S** once the live book is in the engine, **P**
 after a read-only perp research slice confirms the API and costs.
 
+**Candidate families (not approved; scope frozen at D1 to D21).** Recorded so a milestone proposal can take them
+up; nothing is built for them until the owner approves one. Like the families above, each one would be a signal
+module.
+
+| Family | Edge over humans | Needs | Main risk |
+|---|---|---|---|
+| **R. Reversion / fade** (owner's manual in-play trade, 2026-11-01) | Humans over-react to an early setback, such as a heavy favourite's price dropping sharply in the first quarter, and the price comes back. Buy the drop and sell on the rebound. | A fair value to tell an over-reaction from a real repricing: other-venue odds (G7) or a live score feed (D5 option D, parked); before either exists, the pre-game price and the time left as a rough anchor. D14's scale-in / ladder and take-profit (or a bracket with a stop), the sizing cap (G2), and D7's fees on every fill. | Averaging down into a real repricing (an injury, say) compounds the loss, and a binary contract can go to 0. |
+
+The variants of R, by how the position is built and closed:
+
+- **Averaging down / buying the dip.** Add to a position after the price falls, which lowers the average cost.
+  The exit target can be the first entry price, or only above the blended cost: the 2026-11-01 trade exited above
+  its blended cost but below its first entry, so the second lot rescued a first lot that was losing.
+- **Scale-in ladder.** The adds are planned at set price levels (D14). If each add is bigger than the last, it is
+  a martingale, which the sizing cap (G2) must forbid.
+- **Trading out.** Exit on the rebound instead of holding to settlement.
+- **Repeated round trips (range trading; scalping when the moves are small).** Re-enter after an exit and repeat
+  the cycle. Fees on each fill (D7) decide whether the small moves are worth taking.
+
+For the ledger and tax records, a laddered position closes lot by lot under FIFO (D18), so one exit can close a
+first lot at a loss and a later lot at a gain. Whether wash-sale rules reach event contracts is a question for
+M5's tax export.
+
+R is the opposite of momentum: on the same drop, the momentum rule (M) would point the other way. If both are
+approved, the Strategy review (G19) compares their records on the same markets.
+
 ### D14. Custom order types (R10; APPROVED 2026-10-26)
 
 **Native in Kalshi** (from KalTerm3's trading client and KAPS's plan; to be re-checked against the API reference in
@@ -824,6 +850,9 @@ Strata server (D24) is the one new resource: a home-network service, as the NAS 
   when the ledger reaches tens of thousands.
 - One `times` module for the duplicated time helpers (`api.utc_text` and `ledger.iso_utc`; `alerts._ns` and
   `ledger_import.ns_of`): with the next slice that touches those files (2026-10-27 platform review, item 10).
+- The candidate family **R. Reversion / fade** (D13; owner, 2026-11-01), with its variants: averaging down, the
+  scale-in ladder, trading out, and repeated round trips. It comes back through the M3 Signals proposal, ideally
+  with other-venue odds (G7), and is first run as watch orders and paper fills (D14).
 - Momentum v1's record after a week (about 2026-11-04) decides whether a v2 is registered (owner, 2026-10-28):
   read through the Strategy review (G19); M1.12c must cope with its volume (about 7 to 20 a minute).
 - A rollback keeps the newer version's own `app` records (IKARS's events, not Kalshi's) only in the ledger copy set
