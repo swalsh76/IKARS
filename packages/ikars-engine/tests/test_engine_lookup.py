@@ -91,6 +91,39 @@ async def test_the_journals_unsettled_markets_are_looked_up_until_they_settle(
     assert await lookup.settle(["NOWHERE"]) == 1  # asked again after the retry time
 
 
+async def test_a_scalar_settlement_is_found_with_what_yes_paid(tmp_path: Path) -> None:
+    walkover = {**settled("WO", "scalar", close=LONG_AGO), "settlement_value_dollars": "0.5000"}
+    blank = {**settled("BLANK", "scalar", close=LONG_AGO)}  # no value: never guessed
+    rig = Rig(tmp_path, [walkover, blank])
+    lookup = MarketLookup(rig.kalshi.data(), rig.discovery.index, rig.clock.now_ns)
+    assert await lookup.settle(["WO", "BLANK"]) == 2
+    assert lookup.info("WO").settlement() == ("scalar", 500_000)  # type: ignore[union-attr]
+    assert lookup.info("BLANK").settlement() is None  # type: ignore[union-attr]
+    assert lookup.settled == 1
+
+
+@pytest.mark.parametrize(
+    ("result", "value", "expected"),
+    [
+        ("yes", None, ("yes", 1_000_000)),
+        ("no", "0.0000", ("no", 0)),
+        ("scalar", "0.5400", ("scalar", 540_000)),
+        ("scalar", None, None),
+        (None, None, None),  # not settled yet
+    ],
+)
+def test_a_settlement_is_its_result_and_what_yes_paid(
+    result: str | None, value: str | None, expected: tuple[str, int] | None
+) -> None:
+    from ikars_engine.kalshi.discovery import MarketIndex
+
+    index = MarketIndex(now_ns=lambda: 0)
+    index.put(Market.model_validate(
+        {**market("M", status="finalized"), "result": result, "settlement_value_dollars": value}
+    ))  # fmt: skip
+    assert index.markets["M"].settlement() == expected
+
+
 async def test_a_lists_missing_titles_come_in_the_background(tmp_path: Path) -> None:
     rig = Rig(tmp_path, [settled("T1", close=LONG_AGO), settled("T2", close=LONG_AGO)])
     lookup = MarketLookup(rig.kalshi.data(), rig.discovery.index, rig.clock.now_ns)

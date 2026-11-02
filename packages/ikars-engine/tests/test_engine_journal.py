@@ -240,12 +240,12 @@ async def test_what_is_queued_at_shutdown_is_written(tmp_path: Path) -> None:
 
 def test_the_journal_learns_settlements_once_a_minute(tmp_path: Path) -> None:
     clock = VirtualClock(T0)
-    results: dict[str, str | None] = {"KXDEMO-26JAN01-T50": None}
+    results: dict[str, tuple[str, int] | None] = {"KXDEMO-26JAN01-T50": None}
     service = JournalService(Journal(tmp_path / "journal.sqlite"), {}, clock.now_ns,
                              result=lambda t: results.get(t), trading=lambda t: False)  # fmt: skip
     service._write([item("r1", T0, rec())])
     assert service.journal.unsettled(T0) == ["KXDEMO-26JAN01-T50"]
-    results["KXDEMO-26JAN01-T50"] = "yes"
+    results["KXDEMO-26JAN01-T50"] = ("yes", 1_000_000)
     clock.advance_to(T0 + 30 * S)
     service._write([])  # within the minute: not looked up again yet
     assert service.journal.recent()[0].settled is None
@@ -275,6 +275,6 @@ def test_a_journal_from_v0_1_7_gains_settlements_with_a_backup(tmp_path: Path) -
     path = tmp_path / "journal.sqlite"
     open_store(path, JOURNAL_MIGRATIONS[:1]).close()  # the schema v0.1.7 shipped
     journal = Journal(path)
-    journal.settle("KXDEMO-26JAN01-T50", "no", T0)
+    journal.settle("KXDEMO-26JAN01-T50", "no", 0, T0)
     journal.close()
     assert list(tmp_path.glob("journal.*.bak.sqlite"))  # the old file kept first

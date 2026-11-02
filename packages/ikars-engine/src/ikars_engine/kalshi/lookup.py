@@ -207,7 +207,7 @@ class MarketLookup:
                                 extra={"ticker": ticker, "error": type(exc).__name__})  # fmt: skip
                     continue
             info = self._keep(ticker, market)
-            if info is not None and info.result in ("yes", "no"):
+            if info is not None and info.settlement() is not None:
                 self.settled += 1
 
     async def _market_historical(self, ticker: str) -> Market | None:

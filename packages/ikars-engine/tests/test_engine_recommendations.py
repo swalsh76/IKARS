@@ -133,7 +133,7 @@ def test_checks_are_scored_once_and_kept(tmp_path: Path) -> None:
     assert journal.score(lambda ticker: FEES, at) == 2
     assert journal.changes == before + 1  # a shown score changed (merge review 6)
     assert journal.score(lambda ticker: FEES, at) == 0  # nothing new
-    journal.settle("KXB", "yes", at)
+    journal.settle("KXB", "yes", 1_000_000, at)
     assert journal.score(lambda ticker: FEES, at) == 1
     kept = {e.id: e.marks[0] for e in journal.entries(["r1", "r2", "r3"])}
     assert (kept["r1"].score_e6, kept["r1"].at_settlement) == (40_000, False)
@@ -162,6 +162,35 @@ def test_checks_are_scored_once_and_kept(tmp_path: Path) -> None:
     assert entry is not None  # the market has since left the index: the kept score stays
     assert recommendation_view(entry).marks[0].score_e6 == 40_000
     journal.close()
+
+
+def test_a_scalar_settlement_is_scored_at_what_it_paid(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.add(item("r1", made("KXS")))
+    at = T0 + 1800 * S
+    journal.mark("r1", 1800, at, None, None, True)  # closed: waits for its settlement
+    journal.settle("KXS", "scalar", 540_000, at)  # 54c a YES contract (M1.14 live check)
+    assert journal.score(lambda ticker: FEES, at) == 1
+    entry = journal.get("r1")
+    assert entry is not None and (entry.settled, entry.yes_paid_e6) == ("scalar", 540_000)
+    assert (entry.marks[0].score_e6, entry.marks[0].at_settlement) == (
+        620_000,
+        True,
+    )  # $5.40 - $4.78
+    assert journal.unsettled(T0) == []  # settled: never asked about again
+    journal.close()
+
+
+def test_a_journal_from_v0_1_15_gains_what_yes_paid(tmp_path: Path) -> None:
+    path = tmp_path / "journal.sqlite"
+    old = open_store(path, JOURNAL_MIGRATIONS[:3])  # as v0.1.15 left it: yes or no only
+    old.execute("INSERT INTO settlement VALUES ('KXA', 'yes', ?), ('KXB', 'no', ?)", (T0, T0))
+    old.close()
+    journal = Journal(path)
+    paid = dict(journal._db.execute("SELECT ticker, yes_paid_e6 FROM settlement").fetchall())
+    assert paid == {"KXA": 1_000_000, "KXB": 0}
+    journal.close()
+    assert list(tmp_path.glob("journal.*.bak.sqlite"))  # the old file kept first
 
 
 def test_a_journal_from_v0_1_8_gains_responses_and_kept_scores(tmp_path: Path) -> None:

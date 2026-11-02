@@ -103,6 +103,7 @@ class ReplayMarkets:
             category=row["category"] or "", title=row["title"] or "", status=row["status"] or "",
             close_time=None if close is None else ns_time(close), result=row["result"],
             volume_24h_e2=0, climate_code=row["climate_code"],
+            settlement_value_e6=row["settlement_value_e6"],
         )  # fmt: skip
         if row["fee_type"] is not None and row["fee_multiplier_e6"] is not None:
             self.fees[series] = fee_schedule(row["fee_type"], row["fee_multiplier_e6"])
@@ -352,9 +353,9 @@ async def run_replay(
                              rerun=frozenset(p.spec.name for p in chosen), tick=tick)  # fmt: skip
     markets = replay.markets
 
-    def result(ticker: str) -> str | None:
+    def result(ticker: str) -> tuple[str, int] | None:
         info = markets.markets.get(ticker)
-        return None if info is None else info.result
+        return None if info is None else info.settlement()
 
     def trading(ticker: str) -> bool | None:
         info = markets.markets.get(ticker)

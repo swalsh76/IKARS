@@ -138,11 +138,17 @@ JOURNAL_MIGRATIONS = (
     ALTER TABLE mark ADD COLUMN at_settlement INTEGER;
     CREATE INDEX mark_unscored ON mark (at_ns) WHERE scored IS NULL;
     """,
+    # 4 (M1.14 live check, owner): what a YES contract paid, so a scalar result (a fraction, such as
+    # 50c on a walkover) is scored too; the settlements before it were all yes ($1) or no (nothing)
+    """
+    ALTER TABLE settlement ADD COLUMN yes_paid_e6 INTEGER;
+    UPDATE settlement SET yes_paid_e6 = CASE result WHEN 'yes' THEN 1000000 ELSE 0 END;
+    """,
 )
 # an entry with its settlement and response; the WHERE and ORDER come from this module only
 _ENTRIES = (
-    "SELECT r.id, r.received_ns, r.state, r.superseded_by, r.source, r.payload, s.result, a.answer"
-    " FROM recommendation r LEFT JOIN settlement s ON s.ticker = r.ticker"
+    "SELECT r.id, r.received_ns, r.state, r.superseded_by, r.source, r.payload, s.result,"
+    " s.yes_paid_e6, a.answer FROM recommendation r LEFT JOIN settlement s ON s.ticker = r.ticker"
     " LEFT JOIN response a ON a.id = r.id"
 )
 
@@ -171,8 +177,9 @@ class Entry:
     source: str
     recommendation: Recommendation
     marks: list[Mark]
-    settled: str | None = None  # the market's result once it settled: yes or no
+    settled: str | None = None  # the market's result once it settled: yes, no or scalar
     response: str | None = None  # the owner's: taken, ignored or dismissed
+    yes_paid_e6: int | None = None  # what a YES contract paid at that settlement
 
 
 class Journal:
@@ -274,13 +281,13 @@ class Journal:
         for _ in range(SCORE_PAGES):
             rows = self._db.execute(
                 "SELECT m.id, m.horizon_s, m.yes_bid_e6, m.yes_ask_e6, m.closed, r.payload,"
-                " s.result, m.at_ns, m.rowid FROM mark m JOIN recommendation r ON r.id = m.id"
+                " s.yes_paid_e6, m.at_ns, m.rowid FROM mark m JOIN recommendation r ON r.id = m.id"
                 " LEFT JOIN settlement s ON s.ticker = r.ticker"
                 " WHERE m.scored IS NULL AND NOT (m.closed = 1 AND s.ticker IS NULL)"
                 " AND (m.at_ns, m.rowid) > (?, ?) ORDER BY m.at_ns, m.rowid LIMIT ?",
                 (*after, limit),
             ).fetchall()
-            for rid, horizon, bid, ask, closed, payload, settled, at, row in rows:
+            for rid, horizon, bid, ask, closed, payload, paid, at, row in rows:
                 after = (at, row)
                 rec = _decode(payload)
                 schedule = fees(rec.ticker)
@@ -290,7 +297,7 @@ class Journal:
                     continue
                 value, at_settlement = mark_score_e6(
                     schedule, rec.side, rec.count_e2, rec.entry_price_e6, bid, ask,
-                    None if closed is None else bool(closed), settled,
+                    None if closed is None else bool(closed), paid,
                 )  # fmt: skip
                 done.append((value, int(at_settlement), rid, horizon))
             if len(rows) < limit or len(done) >= limit:
@@ -348,9 +355,12 @@ class Journal:
         )
         return [ticker for (ticker,) in rows]
 
-    def settle(self, ticker: str, result: str, at_ns: int) -> None:
+    def settle(self, ticker: str, result: str, yes_paid_e6: int, at_ns: int) -> None:
+        """A market's settlement: its result and what a YES contract paid (kept once)."""
         self._db.execute(
-            "INSERT OR IGNORE INTO settlement VALUES (?, ?, ?)", (ticker, result, at_ns)
+            "INSERT OR IGNORE INTO settlement (ticker, result, at_ns, yes_paid_e6)"
+            " VALUES (?, ?, ?, ?)",
+            (ticker, result, at_ns, yes_paid_e6),
         )
 
     def recent(self, limit: int = RECENT) -> list[Entry]:
@@ -389,9 +399,18 @@ class Journal:
                 )
         return [
             Entry(
-                rid, made, state, by, source, _decode(payload), marks.get(rid, []), settled, answer
+                rid,
+                made,
+                state,
+                by,
+                source,
+                _decode(payload),
+                marks.get(rid, []),
+                settled,
+                answer,
+                paid,
             )  # fmt: skip
-            for rid, made, state, by, source, payload, settled, answer in rows
+            for rid, made, state, by, source, payload, settled, paid, answer in rows
         ]
 
 
@@ -404,8 +423,9 @@ class JournalService:
     journal: Journal
     quotes: Mapping[str, tuple[int | None, int | None]]  # the live YES bid and ask, by ticker
     now_ns: Callable[[], int]
-    # a market's result once it settled ("yes" or "no"; the market index's), else None
-    result: Callable[[str], str | None] = lambda ticker: None
+    # a market's settlement, the market index's: its result (yes, no or scalar) and what a YES
+    # contract paid (``MarketInfo.settlement``); None before
+    result: Callable[[str], tuple[str, int] | None] = lambda ticker: None
     # whether a market still trades (True), has stopped (False), or is not known (None)
     trading: Callable[[str], bool | None] = lambda ticker: None
     # a market's fee schedule, by ticker (None: not known)
@@ -476,9 +496,9 @@ class JournalService:
         if now - self.settled_at_ns >= SETTLE_EVERY_NS:  # once a minute, from the market index
             self.settled_at_ns = now
             for ticker in self.journal.unsettled(now - LONGEST_NS):
-                result = self.result(ticker)
-                if result in ("yes", "no"):
-                    self.journal.settle(ticker, result, now)
+                found = self.result(ticker)
+                if found is not None:
+                    self.journal.settle(ticker, *found, now)
         self.journal.score(self.fees, now)
 
     def step(self) -> None:

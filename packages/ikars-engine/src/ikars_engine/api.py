@@ -330,7 +330,7 @@ def recommendation_view(
         if not m.scored:
             value, settled = (None, False) if schedule is None else mark_score_e6(
                 schedule, rec.side, rec.count_e2, rec.entry_price_e6, m.yes_bid_e6, m.yes_ask_e6,
-                m.closed, entry.settled,
+                m.closed, entry.yes_paid_e6,
             )  # fmt: skip
         marks.append(c.MarkView(horizon_s=m.horizon_s, at_utc=utc_text(m.at_ns),
                                 yes_bid_e6=m.yes_bid_e6, yes_ask_e6=m.yes_ask_e6, score_e6=value,
