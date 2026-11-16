@@ -21,7 +21,7 @@
     "load": "playwright test -c playwright.load.config.ts"
   },
   "dependencies": {
-    "ag-grid-community": "36.2.0",
+    "ag-grid-community": "36.3.0",
     "ag-grid-react": "36.2.0",
     "lightweight-charts": "5.2.1",
     "react": "19.3.1",
